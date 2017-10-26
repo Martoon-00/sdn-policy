@@ -1,0 +1,102 @@
+name:                sdn-policy
+version:             0.1.0.0
+description:         Concurrent SDN policies composition
+homepage:            https://github.com/githubuser/sdn-policy#readme
+license:             BSD3
+license-file:        LICENSE
+author:              Konstantin Ivanov
+maintainer:          martoon.hsk@gmail.com
+copyright:           2017 K. Ivanov
+category:            Web
+build-type:          Simple
+extra-source-files:  README.md
+cabal-version:       >=1.10
+
+library
+  hs-source-dirs:      src
+  exposed-modules:     Sdn.CStruct
+                       Sdn.Policy
+  build-depends:       base >= 4.7 && < 5
+                     , containers
+                     , universum
+  default-language:    Haskell2010
+  default-extensions:  FlexibleContexts
+                       FlexibleInstances
+                       OverloadedStrings
+                       TypeOperators
+                       ConstraintKinds
+                       LambdaCase
+                       MultiParamTypeClasses
+                       MultiWayIf
+                       NoImplicitPrelude
+                       OverloadedStrings
+                       ScopedTypeVariables
+                       TupleSections
+                       TypeApplications
+                       TypeOperators
+                       RecordWildCards
+                       ViewPatterns
+                       ExplicitForAll
+  ghc-options:         -Wall
+
+
+executable sdn-policy-exe
+  hs-source-dirs:      trial
+  main-is:             Main.hs
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  build-depends:       base
+                     , sdn-policy
+                     , universum
+  default-language:    Haskell2010
+  default-extensions:  FlexibleContexts
+                       FlexibleInstances
+                       OverloadedStrings
+                       TypeOperators
+                       ConstraintKinds
+                       LambdaCase
+                       MultiParamTypeClasses
+                       MultiWayIf
+                       NoImplicitPrelude
+                       OverloadedStrings
+                       ScopedTypeVariables
+                       TupleSections
+                       TypeApplications
+                       TypeOperators
+                       RecordWildCards
+                       ViewPatterns
+                       ExplicitForAll
+  ghc-options:         -Wall
+
+
+test-suite sdn-policy-test
+  type:                exitcode-stdio-1.0
+  hs-source-dirs:      test
+  main-is:             Spec.hs
+  build-depends:       base
+                     , sdn-policy
+                     , universum
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  default-language:    Haskell2010
+  default-extensions:  FlexibleContexts
+                       FlexibleInstances
+                       OverloadedStrings
+                       TypeOperators
+                       ConstraintKinds
+                       LambdaCase
+                       MultiParamTypeClasses
+                       MultiWayIf
+                       NoImplicitPrelude
+                       OverloadedStrings
+                       ScopedTypeVariables
+                       TupleSections
+                       TypeApplications
+                       TypeOperators
+                       RecordWildCards
+                       ViewPatterns
+                       ExplicitForAll
+  ghc-options:         -Wall
+
+
+source-repository head
+  type:     git
+  location: https://github.com/martoon-00/sdn-policy

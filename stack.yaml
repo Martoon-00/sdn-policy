@@ -1,0 +1,11 @@
+resolver: lts-9.1
+
+packages:
+- '.'
+
+extra-deps:
+  - universum-0.7.0
+
+flags: {}
+
+extra-package-dbs: []
