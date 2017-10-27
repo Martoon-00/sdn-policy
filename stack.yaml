@@ -2,9 +2,25 @@ resolver: lts-9.1
 
 packages:
 - '.'
+- location:
+    git: https://github.com/serokell/msgpack-haskell.git
+    commit: d0dc2d7bdeef569d1fe6cf876d04046e0845e796
+  extra-dep: true
+  subdirs:
+    - msgpack
+    - msgpack-rpc
+- location:
+    git: https://github.com/serokell/time-warp.git
+    commit: 95cbc74818a25cb1b96d68e287272a5ad9f71a65
+  extra-dep: true
 
 extra-deps:
-  - universum-0.7.0
+- acid-state-0.14.3
+- fmt-0.5.0.0
+- log-warper-1.4.0
+- serokell-util-0.5.0
+- time-units-1.0.0
+- universum-0.7.1
 
 flags: {}
 
