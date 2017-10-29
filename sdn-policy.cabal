@@ -16,9 +16,14 @@ library
   hs-source-dirs:      src
   exposed-modules:     Sdn.CStruct
                        Sdn.Policy
+                       Sdn.ProposalStrategy
   build-depends:       base >= 4.7 && < 5
                      , containers
+                     , data-default
+                     , time-units
                      , time-warp
+                     , random
+                     , QuickCheck
                      , universum
   default-language:    Haskell2010
   default-extensions:  FlexibleContexts
