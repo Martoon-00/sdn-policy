@@ -1,61 +1,126 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies    #-}
 
 -- | Various contexts of processes
 
 module Sdn.Context where
 
-import           Control.Lens (makeLenses)
+import           Control.Concurrent.STM (STM)
+import           Control.Lens           (makeLenses)
+import           Control.Monad.Reader   (withReaderT)
+import           Control.TimeWarp.Rpc   (MonadRpc, NetworkAddress, RpcRequest (..))
+import           Control.TimeWarp.Timed (MonadTimed)
+import           Data.Default           (Default (def))
 import           Universum
 
-import           Sdn.Policy   (PoliciesHeap)
-import           Sdn.Types    (BallotId)
+import           Sdn.Policy
+import           Sdn.Quorum
+import           Sdn.Roles
+import           Sdn.Types
+import           Sdn.Util
 
 
-class HasLens s a where
-    lensOf :: Lens' s a
+-- * General
 
-accessing
-    :: forall a s m.
-       (MonadIO m, MonadReader (TVar s) m, HasLens s a)
-    => (a -> a) -> m a
-accessing modifier = do
-    var <- ask
+data ProcessContext s = ProcessContext
+    { pcState   :: TVar s
+    , pcMembers :: Members
+    }
+
+type HasContext s m =
+    ( MonadIO m
+    , MonadReader (ProcessContext s) m
+    )
+
+withProcessState
+    :: (MonadIO m, MonadReader (ProcessContext s) m)
+    => StateT s STM a -> m a
+withProcessState modifier = do
+    var <- pcState <$> ask
     liftIO . atomically $ do
-        modifyTVar' var (lensOf %~ modifier)
-        view lensOf <$> readTVar var
+        st <- readTVar var
+        (res, st') <- runStateT modifier st
+        writeTVar var st'
+        return res
 
+inProcessCtx
+    :: MonadIO m
+    => s -> ReaderT (ProcessContext s) m a -> ReaderT Members m a
+inProcessCtx initState action = do
+    var <- liftIO $ newTVarIO initState
+    withReaderT (ProcessContext var) action
 
-data LeaderContext = LeaderContext
-    { _lcBallot  :: BallotId
-    , _lcCstruct :: PoliciesHeap
+ctxMembers :: MonadReader (ProcessContext s) m => m Members
+ctxMembers = pcMembers <$> ask
+
+-- * Per-process contexts
+-- ** Leader
+
+data LeaderState = LeaderState
+    { _leaderBallotId        :: BallotId
+    , _leaderCStruct         :: Configuration
+    , _leaderPendingPolicies :: [Policy]
+    , _leaderVotes           :: Map BallotId (Votes Configuration)
     }
 
-makeLenses ''LeaderContext
+makeLenses ''LeaderState
 
-instance HasLens LeaderContext BallotId where
-    lensOf = lcBallot
-instance HasLens LeaderContext PoliciesHeap where
-    lensOf = lcCstruct
+instance Default LeaderState where
+    def = LeaderState def mempty mempty mempty
 
+inLeaderCtx
+    :: MonadIO m
+    => ReaderT (ProcessContext LeaderState) m a -> ReaderT Members m a
+inLeaderCtx = inProcessCtx def
 
-data AcceptorContext = AcceptorContext
-    { _acBallot  :: BallotId
-    , _acCstruct :: PoliciesHeap
+-- ** Acceptor
+
+data AcceptorState = AcceptorState
+    { _acceptorId       :: AcceptorId
+    , _acceptorBallotId :: BallotId
+    , _acceptorCStruct  :: Configuration
     }
 
-makeLenses ''AcceptorContext
+makeLenses ''AcceptorState
 
-instance HasLens AcceptorContext BallotId where
-    lensOf = acBallot
-instance HasLens AcceptorContext PoliciesHeap where
-    lensOf = acCstruct
+defAcceptorState :: AcceptorId -> AcceptorState
+defAcceptorState id = AcceptorState id (BallotId (-1)) mempty
 
+inAcceptorCtx
+    :: MonadIO m
+    => AcceptorId
+    -> ReaderT (ProcessContext AcceptorState) m a
+    -> ReaderT Members m a
+inAcceptorCtx = inProcessCtx . defAcceptorState
 
-data LearnerContext = LearnerContext
-    { _lrcCstruct :: PoliciesHeap
+-- ** Learner
+
+data LearnerState = LearnerState
+    { _learnerVotes   :: Votes Configuration
+    , _learnerLearned :: Configuration
     }
 
-makeLenses ''LearnerContext
+makeLenses ''LearnerState
 
-instance HasLens LearnerContext PoliciesHeap where
-    lensOf = lrcCstruct
+instance Default LearnerState where
+    def = LearnerState mempty mempty
+
+inLearnerCtx
+    :: MonadIO m
+    => ReaderT (ProcessContext LearnerState) m a -> ReaderT Members m a
+inLearnerCtx = inProcessCtx def
+
+-- * Misc
+
+broadcastTo
+    :: ( MonadTimed m
+       , MonadRpc m
+       , MonadReader (ProcessContext s) m
+       , RpcRequest msg
+       , Response msg ~ ()
+       )
+    => (Members -> [NetworkAddress]) -> msg -> m ()
+broadcastTo getAddresses msg = do
+    members <- pcMembers <$> ask
+    let addresses = getAddresses members
+    forM_ addresses $ \addr -> submit addr msg

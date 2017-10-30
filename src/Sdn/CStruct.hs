@@ -4,6 +4,8 @@
 
 module Sdn.CStruct where
 
+import           Data.Default     (Default)
+import           Data.MessagePack (MessagePack)
 import           Universum
 
 -- * Conflict
@@ -30,18 +32,21 @@ type SuperConflict a b =
 data Acceptance cmd
     = Accepted cmd
     | Rejected cmd
-    deriving (Eq, Ord)
+    deriving (Eq, Ord, Generic)
 
 -- | Command rejection doesn't conflict with any other command.
 instance Conflict a a => Conflict (Acceptance a) (Acceptance a) where
     Accepted cmd1 `conflicts` Accepted cmd2 = conflicts cmd1 cmd2
     _ `conflicts` _ = False
 
+instance MessagePack p => MessagePack (Acceptance p)
+
 -- * Commands & cstructs
 
 -- | Defines basic operations with commands and cstructs.
--- Requires "conflict" relationship to be defined for them.
-class SuperConflict cmd cstruct =>
+-- Requires "conflict" relationship to be defined for them,
+-- and "bottom" cstruct to exist.
+class (SuperConflict cmd cstruct, Default cstruct) =>
       Command cmd cstruct | cstruct -> cmd, cmd -> cstruct where
 
     -- | Add command to CStruct, if no conflict arise.
@@ -54,6 +59,9 @@ class SuperConflict cmd cstruct =>
     -- | Calculate Least Upper Bound of two cstructs.
     -- This function is always defined.
     lub :: cstruct -> cstruct -> cstruct
+
+    -- | @extends c1 c2@ is true iff @glb c c2 = c1@ for some @c@.
+    extends :: cstruct -> cstruct -> Bool
 
 -- | Utility function, which unsures that arguments being combined does not
 -- conflict.

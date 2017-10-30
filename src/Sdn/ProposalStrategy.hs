@@ -6,7 +6,8 @@
 module Sdn.ProposalStrategy
     ( GenSeed (..)
     , ProposalStrategy
-    , mkStrategy
+    , MonadProposal
+    , execStrategy
 
     -- * strategies
     , generating
@@ -56,10 +57,10 @@ getGenSeed = \case
     RandomSeed -> liftIO randomIO
     FixedSeed s -> pure s
 
-mkStrategy
+execStrategy
     :: MonadProposal m
     => GenSeed -> ProposalStrategy p -> (p -> m ()) -> m ()
-mkStrategy seed (ProposalStrategy strategy) consumer = do
+execStrategy seed (ProposalStrategy strategy) consumer = do
     let pcPush = consumer
     pcGen <- mkStdGen <$> getGenSeed seed
     pcCont <- newTVarIO def

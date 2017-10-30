@@ -14,13 +14,24 @@ cabal-version:       >=1.10
 
 library
   hs-source-dirs:      src
-  exposed-modules:     Sdn.CStruct
+  exposed-modules:     Sdn.Context
+                       Sdn.CStruct
+                       Sdn.Messages
+                       Sdn.Phases
                        Sdn.Policy
                        Sdn.ProposalStrategy
+                       Sdn.Roles
+                       Sdn.Types
+                       Sdn.Util
+                       Sdn.Quorum
   build-depends:       base >= 4.7 && < 5
                      , containers
                      , data-default
                      , lens
+                     , msgpack
+                     , mtl
+                     , stm
+                     , template-haskell
                      , time-units
                      , time-warp
                      , random
@@ -44,6 +55,7 @@ library
                        RecordWildCards
                        ViewPatterns
                        ExplicitForAll
+                       DeriveGeneric
   ghc-options:         -Wall
 
 
