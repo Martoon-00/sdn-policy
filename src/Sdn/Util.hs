@@ -1,16 +1,21 @@
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TypeFamilies    #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE StandaloneDeriving         #-}
+{-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 -- | Various utility functions
 
 module Sdn.Util where
 
 import           Formatting             (Format, bprint, build, later)
+import           System.Wlog            (LoggerNameBox (..))
 import           Universum
 
 import           Control.TimeWarp.Rpc   (MonadRpc (..), NetworkAddress, RpcRequest (..),
                                          mkRequest)
-import           Control.TimeWarp.Timed (MonadTimed (..), fork_)
+import           Control.TimeWarp.Timed (MonadTimed (..), ThreadId, fork_)
 import           Language.Haskell.TH    (Dec, Name, Q)
 
 -- | Declare instance for one-way message.
@@ -28,3 +33,7 @@ buildList =
     later $ \values ->
     mconcat $
         one "[" <> (intersperse ", " $ bprint build <$> values) <> one "]"
+
+type instance ThreadId (LoggerNameBox m) = ThreadId m
+deriving instance MonadTimed m => MonadTimed (LoggerNameBox m)
+deriving instance MonadRpc m => MonadRpc (LoggerNameBox m)

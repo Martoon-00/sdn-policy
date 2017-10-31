@@ -9,7 +9,6 @@ import           Data.MessagePack (MessagePack)
 import           Universum
 
 import           Sdn.Policy
-import           Sdn.Roles
 import           Sdn.Types
 import           Sdn.Util
 

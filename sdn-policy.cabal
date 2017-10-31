@@ -19,8 +19,9 @@ library
                        Sdn.Messages
                        Sdn.Phases
                        Sdn.Policy
+                       Sdn.Processes
                        Sdn.ProposalStrategy
-                       Sdn.Roles
+                       Sdn.Topology
                        Sdn.Types
                        Sdn.Util
                        Sdn.Quorum

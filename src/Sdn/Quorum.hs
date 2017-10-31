@@ -10,7 +10,7 @@ import           Data.List    (subsequences)
 import qualified Data.Map     as M
 import           Universum
 
-import           Sdn.Roles
+import           Sdn.Types
 
 -- | For each acceptor - something proposed by him.
 newtype Votes a = Votes (M.Map AcceptorId a)

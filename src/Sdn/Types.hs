@@ -21,3 +21,18 @@ instance Default BallotId where
 
 instance MessagePack BallotId
 
+
+data Members = Members
+    { acceptorsNum :: Int
+    , learnersNum  :: Int
+    }
+
+instance Default Members where
+    def = Members
+        { acceptorsNum = 3
+        , learnersNum = 1
+        }
+
+
+newtype AcceptorId = AcceptorId Int
+    deriving (Eq, Ord, Show, Enum, Num, MessagePack, Real, Integral)

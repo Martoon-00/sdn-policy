@@ -1,3 +1,5 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+
 -- | Policies arangement.
 
 module Sdn.Policy where
@@ -5,19 +7,29 @@ module Sdn.Policy where
 
 import           Data.MessagePack    (MessagePack (..))
 import qualified Data.Set            as S
+import           Data.String         (IsString)
 import qualified Data.Text.Buildable
-import           Formatting          (bprint, build, (%))
+import           Formatting          (bprint, build, sformat, (%))
+import           Test.QuickCheck     (Arbitrary (..), scale)
 import           Universum
 
 import           Sdn.CStruct         (Acceptance (..), Command (..), Conflict (..),
                                       checkingAgreement)
 import           Sdn.Util
 
+newtype PolicyName = PolicyName Text
+    deriving (Eq, Ord, Show, Buildable, IsString, MessagePack)
+
+instance Arbitrary PolicyName where
+    arbitrary =
+        scale (* 10) $
+        PolicyName . sformat ("policy #"%build) <$> arbitrary @Int
+
 -- | Abstract SDN policy.
 data Policy
-    = GoodPolicy Text       -- ^ Agrees with any other one
-    | BadPolicy Text        -- ^ Conflicts with any other one
-    | MoodyPolicy Int Text  -- ^ Conflicts if group ids are equal
+    = GoodPolicy PolicyName       -- ^ Agrees with any other one
+    | BadPolicy PolicyName        -- ^ Conflicts with any other one
+    | MoodyPolicy Int PolicyName  -- ^ Conflicts if group ids are equal
     deriving (Eq, Ord, Generic)
 
 instance Buildable Policy where
@@ -26,7 +38,7 @@ instance Buildable Policy where
         BadPolicy name -> bprint ("Bad \""%build%"\"") name
         MoodyPolicy id name -> bprint ("Moody #"%build%" \""%build%"\"") id name
 
-policyName :: Policy -> Text
+policyName :: Policy -> PolicyName
 policyName = \case
     GoodPolicy name    -> name
     BadPolicy name     -> name

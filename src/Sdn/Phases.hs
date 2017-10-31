@@ -14,9 +14,9 @@ import           Sdn.Context
 import           Sdn.CStruct
 import           Sdn.Messages
 import           Sdn.Policy
+import           Sdn.Processes
 import           Sdn.ProposalStrategy
 import           Sdn.Quorum
-import           Sdn.Roles
 import           Sdn.Util
 
 type MonadPhase m =
@@ -32,7 +32,7 @@ propose
 propose seed strategy =
     execStrategy seed strategy $ \policy -> do
         logInfo $ sformat ("Proposed policy: "%build) policy
-        submit leaderAddress (ProposalMsg policy)
+        submit (processAddress Leader) (ProposalMsg policy)
 
 rememberProposal
     :: (MonadPhase m, HasContext LeaderState m)
@@ -51,7 +51,7 @@ phrase1a = do
         leaderBallotId += 1
         Phase1aMsg <$> use leaderBallotId
 
-    broadcastTo acceptorsAddresses msg
+    broadcastTo (processesAddresses Acceptor) msg
 
 phase1b
     :: (MonadPhase m, HasContext AcceptorState m)
@@ -64,7 +64,7 @@ phase1b (Phase1aMsg ballotId) = do
             <*> use acceptorBallotId
             <*> use acceptorCStruct
 
-    submit leaderAddress msg
+    submit (processAddress Leader) msg
 
 phase2a
     :: (MonadPhase m, HasContext LeaderState m)
@@ -90,7 +90,7 @@ phase2a (Phase1bMsg accId ballotId cstruct) = do
                      Just res -> pure $ Just (Phase2aMsg ballotId res)
 
     whenJust maybeMsg $
-        broadcastTo acceptorsAddresses
+        broadcastTo (processesAddresses Acceptor)
   where
     reportBadGamma gamma =
         logError $
@@ -115,7 +115,7 @@ phase2b (Phase2aMsg ballotId cstruct) = do
            pure Nothing
 
     whenJust maybeMsg $
-        broadcastTo learnersAddresses
+        broadcastTo (processesAddresses Learner)
 
 learn
     :: (MonadPhase m, HasContext LearnerState m)

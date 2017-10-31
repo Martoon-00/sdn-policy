@@ -7,7 +7,6 @@ module Sdn.Context where
 
 import           Control.Concurrent.STM (STM)
 import           Control.Lens           (makeLenses)
-import           Control.Monad.Reader   (withReaderT)
 import           Control.TimeWarp.Rpc   (MonadRpc, NetworkAddress, RpcRequest (..))
 import           Control.TimeWarp.Timed (MonadTimed)
 import           Data.Default           (Default (def))
@@ -16,7 +15,6 @@ import           Universum
 
 import           Sdn.Policy
 import           Sdn.Quorum
-import           Sdn.Roles
 import           Sdn.Types
 import           Sdn.Util
 
@@ -44,13 +42,6 @@ withProcessState modifier = do
         lift $ writeTVar var st'
         return res
 
-inProcessCtx
-    :: MonadIO m
-    => s -> ReaderT (ProcessContext s) m a -> ReaderT Members m a
-inProcessCtx initState action = do
-    var <- liftIO $ newTVarIO initState
-    withReaderT (ProcessContext var) action
-
 ctxMembers :: MonadReader (ProcessContext s) m => m Members
 ctxMembers = pcMembers <$> ask
 
@@ -69,11 +60,6 @@ makeLenses ''LeaderState
 instance Default LeaderState where
     def = LeaderState def mempty mempty mempty
 
-inLeaderCtx
-    :: MonadIO m
-    => ReaderT (ProcessContext LeaderState) m a -> ReaderT Members m a
-inLeaderCtx = inProcessCtx def
-
 -- ** Acceptor
 
 data AcceptorState = AcceptorState
@@ -87,13 +73,6 @@ makeLenses ''AcceptorState
 defAcceptorState :: AcceptorId -> AcceptorState
 defAcceptorState id = AcceptorState id (BallotId (-1)) mempty
 
-inAcceptorCtx
-    :: MonadIO m
-    => AcceptorId
-    -> ReaderT (ProcessContext AcceptorState) m a
-    -> ReaderT Members m a
-inAcceptorCtx = inProcessCtx . defAcceptorState
-
 -- ** Learner
 
 data LearnerState = LearnerState
@@ -105,11 +84,6 @@ makeLenses ''LearnerState
 
 instance Default LearnerState where
     def = LearnerState mempty mempty
-
-inLearnerCtx
-    :: MonadIO m
-    => ReaderT (ProcessContext LearnerState) m a -> ReaderT Members m a
-inLearnerCtx = inProcessCtx def
 
 -- * Misc
 
