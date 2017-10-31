@@ -84,8 +84,8 @@ phase2a (Phase1bMsg accId ballotId cstruct) = do
             else do
                 let quorumsVotes = allMinQuorums members newQuorums
                     gamma = map (foldr lub def . toList) quorumsVotes
-                    mres  = foldrM glb def gamma
-                case mres of
+                    maybeRes = foldrM glb def gamma
+                case maybeRes of
                      Nothing  -> reportBadGamma gamma $> Nothing
                      Just res -> pure $ Just (Phase2aMsg ballotId res)
 
@@ -122,28 +122,28 @@ learn
     => Phase2bMsg -> m ()
 learn (Phase2bMsg accId cstruct) = do
     withProcessState $ do
-        wasCStruct <- learnerVotes . at accId . non mempty <<.= cstruct
-        unless (cstruct `extends` wasCStruct) $
-            reportBadCStruct wasCStruct cstruct
+        prevCStruct <- learnerVotes . at accId . non mempty <<.= cstruct
+        unless (cstruct `extends` prevCStruct) $
+            reportBadCStruct prevCStruct cstruct
 
         allCStructs <- toList <$> use learnerVotes
         let learned = foldr lub def allCStructs
-        wasLearned <- learnerLearned <<.= learned
-        unless (learned `extends` wasLearned) $
-            reportBadLearnedCStruct wasLearned learned
-        unless (learned /= wasLearned) $
+        prevLearned <- learnerLearned <<.= learned
+        unless (learned `extends` prevLearned) $
+            reportBadLearnedCStruct prevLearned learned
+        unless (learned /= prevLearned) $
             reportNewLearnedCStruct learned
   where
-    reportBadCStruct was new =
+    reportBadCStruct prev new =
         logError $
         sformat ("New cstruct doesn't extend current one:\n"%
                  "\t"%build%"\n\t->\n\t"%build)
-                was new
-    reportBadLearnedCStruct was new =
+                prev new
+    reportBadLearnedCStruct prev new =
         logError $
         sformat ("New learned cstruct doesn't extend current one:\n"%
                  "\t"%build%"\n\t->\n\t"%build)
-                was new
+                prev new
     reportNewLearnedCStruct new =
         logInfo $
         sformat ("New learned cstruct: "%build) new
