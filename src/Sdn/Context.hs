@@ -11,6 +11,7 @@ import           Control.Monad.Reader   (withReaderT)
 import           Control.TimeWarp.Rpc   (MonadRpc, NetworkAddress, RpcRequest (..))
 import           Control.TimeWarp.Timed (MonadTimed)
 import           Data.Default           (Default (def))
+import           System.Wlog            (NamedPureLogger, WithLogger, launchNamedPureLog)
 import           Universum
 
 import           Sdn.Policy
@@ -33,14 +34,14 @@ type HasContext s m =
     )
 
 withProcessState
-    :: (MonadIO m, MonadReader (ProcessContext s) m)
-    => StateT s STM a -> m a
+    :: (MonadIO m, WithLogger m, MonadReader (ProcessContext s) m)
+    => StateT s (NamedPureLogger STM) a -> m a
 withProcessState modifier = do
     var <- pcState <$> ask
-    liftIO . atomically $ do
-        st <- readTVar var
+    launchNamedPureLog (liftIO . atomically) $ do
+        st <- lift $ readTVar var
         (res, st') <- runStateT modifier st
-        writeTVar var st'
+        lift $ writeTVar var st'
         return res
 
 inProcessCtx

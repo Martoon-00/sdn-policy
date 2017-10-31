@@ -6,6 +6,8 @@ import           Control.Lens           (at, non, zoom, (%=), (+=), (.=), (<<.=)
 import           Control.TimeWarp.Rpc   (MonadRpc)
 import           Control.TimeWarp.Timed (MonadTimed (..))
 import           Data.Default           (def)
+import           Formatting             (build, sformat, (%))
+import           System.Wlog            (WithLogger, logDebug, logError, logInfo)
 import           Universum
 
 import           Sdn.Context
@@ -21,26 +23,30 @@ type MonadPhase m =
     ( MonadIO m
     , MonadTimed m
     , MonadRpc m
+    , WithLogger m
     )
 
 propose
     :: MonadPhase m
     => GenSeed -> ProposalStrategy Policy -> m ()
 propose seed strategy =
-    execStrategy seed strategy $ \policy ->
+    execStrategy seed strategy $ \policy -> do
+        logInfo $ sformat ("Proposed policy: "%build) policy
         submit leaderAddress (ProposalMsg policy)
 
-rememberProposals
+rememberProposal
     :: (MonadPhase m, HasContext LeaderState m)
     => ProposalMsg -> m ()
-rememberProposals (ProposalMsg policy) = do
-    withProcessState $
+rememberProposal (ProposalMsg policy) = do
+    withProcessState $ do
         leaderPendingPolicies %= (policy :)
 
 phrase1a
     :: (MonadPhase m, HasContext LeaderState m)
     => m ()
 phrase1a = do
+    logDebug "Starting new ballot"
+
     msg <- withProcessState $ do
         leaderBallotId += 1
         Phase1aMsg <$> use leaderBallotId
@@ -79,11 +85,16 @@ phase2a (Phase1bMsg accId ballotId cstruct) = do
                 let quorumsVotes = allMinQuorums members newQuorums
                     gamma = map (foldr lub def . toList) quorumsVotes
                     mres  = foldrM glb def gamma
-                res <- maybe undefined pure mres
-                pure $ Just (Phase2aMsg ballotId res)
+                case mres of
+                     Nothing  -> reportBadGamma gamma $> Nothing
+                     Just res -> pure $ Just (Phase2aMsg ballotId res)
 
     whenJust maybeMsg $
         broadcastTo acceptorsAddresses
+  where
+    reportBadGamma gamma =
+        logError $
+        sformat ("Got contradictory Gamma: "%buildList) gamma
 
 phase2b
     :: (MonadPhase m, HasContext AcceptorState m)
@@ -113,14 +124,28 @@ learn (Phase2bMsg accId cstruct) = do
     withProcessState $ do
         wasCStruct <- learnerVotes . at accId . non mempty <<.= cstruct
         unless (cstruct `extends` wasCStruct) $
-            undefined
+            reportBadCStruct wasCStruct cstruct
 
         allCStructs <- toList <$> use learnerVotes
         let learned = foldr lub def allCStructs
         wasLearned <- learnerLearned <<.= learned
         unless (learned `extends` wasLearned) $
-            undefined
+            reportBadLearnedCStruct wasLearned learned
         unless (learned /= wasLearned) $
-            undefined
+            reportNewLearnedCStruct learned
+  where
+    reportBadCStruct was new =
+        logError $
+        sformat ("New cstruct doesn't extend current one:\n"%
+                 "\t"%build%"\n\t->\n\t"%build)
+                was new
+    reportBadLearnedCStruct was new =
+        logError $
+        sformat ("New learned cstruct doesn't extend current one:\n"%
+                 "\t"%build%"\n\t->\n\t"%build)
+                was new
+    reportNewLearnedCStruct new =
+        logInfo $
+        sformat ("New learned cstruct: "%build) new
 
 

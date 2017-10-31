@@ -3,19 +3,28 @@
 module Sdn.Policy where
 
 
-import           Data.MessagePack (MessagePack (..))
-import qualified Data.Set         as S
+import           Data.MessagePack    (MessagePack (..))
+import qualified Data.Set            as S
+import qualified Data.Text.Buildable
+import           Formatting          (bprint, build, (%))
 import           Universum
 
-import           Sdn.CStruct      (Acceptance (..), Command (..), Conflict (..),
-                                   checkingAgreement)
+import           Sdn.CStruct         (Acceptance (..), Command (..), Conflict (..),
+                                      checkingAgreement)
+import           Sdn.Util
 
 -- | Abstract SDN policy.
 data Policy
     = GoodPolicy Text       -- ^ Agrees with any other one
     | BadPolicy Text        -- ^ Conflicts with any other one
-    | MoodyPolicy Int Text  -- ^ Conflicts if ids are equal
+    | MoodyPolicy Int Text  -- ^ Conflicts if group ids are equal
     deriving (Eq, Ord, Generic)
+
+instance Buildable Policy where
+    build = \case
+        GoodPolicy name -> bprint ("Good \""%build%"\"") name
+        BadPolicy name -> bprint ("Bad \""%build%"\"") name
+        MoodyPolicy id name -> bprint ("Moody #"%build%" \""%build%"\"") id name
 
 policyName :: Policy -> Text
 policyName = \case
@@ -38,6 +47,9 @@ type PolicyEntry = Acceptance Policy
 -- | For our simplified model with abstract policies, cstruct is just set of
 -- policies.
 type Configuration = S.Set PolicyEntry
+
+instance Buildable Configuration where
+    build = bprint buildList . toList
 
 instance MessagePack Configuration where
     toObject = toObject . S.toList

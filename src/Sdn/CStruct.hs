@@ -4,8 +4,10 @@
 
 module Sdn.CStruct where
 
-import           Data.Default     (Default)
-import           Data.MessagePack (MessagePack)
+import           Data.Default        (Default)
+import           Data.MessagePack    (MessagePack)
+import qualified Data.Text.Buildable
+import           Formatting          (bprint, build)
 import           Universum
 
 -- * Conflict
@@ -38,6 +40,11 @@ data Acceptance cmd
 instance Conflict a a => Conflict (Acceptance a) (Acceptance a) where
     Accepted cmd1 `conflicts` Accepted cmd2 = conflicts cmd1 cmd2
     _ `conflicts` _ = False
+
+instance Buildable p => Buildable (Acceptance p) where
+    build = \case
+        Accepted p -> "+ " <> bprint build p
+        Rejected p -> "x " <> bprint build p
 
 instance MessagePack p => MessagePack (Acceptance p)
 
