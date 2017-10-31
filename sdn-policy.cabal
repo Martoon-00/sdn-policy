@@ -16,6 +16,7 @@ library
   hs-source-dirs:      src
   exposed-modules:     Sdn.Context
                        Sdn.CStruct
+                       Sdn.Logging
                        Sdn.Messages
                        Sdn.Phases
                        Sdn.Policy
@@ -69,6 +70,7 @@ executable sdn-policy-exe
   main-is:             Main.hs
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   build-depends:       base
+                     , data-default
                      , sdn-policy
                      , time-warp
                      , universum

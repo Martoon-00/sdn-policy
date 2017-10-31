@@ -14,6 +14,7 @@ module Sdn.ProposalStrategy
     , simple
 
     -- * strategy combinators
+    , periodic
     , limited
     , delayed
     ) where
@@ -75,22 +76,26 @@ instance Monoid (ProposalStrategy p) where
             fork_ $ strategy2 ctx{ pcGen = gen2 }
 
 
-generating :: Microsecond -> Gen p -> ProposalStrategy p
-generating period generator = do
+generating :: Gen p -> ProposalStrategy p
+generating generator = do
     ProposalStrategy $ \ProposalContext{..} ->
+        let (seed, _) = next pcGen
+        in  pcPush $ unGen generator (mkQCGen seed) 30
+
+simple :: p -> ProposalStrategy p
+simple = generating . pure
+
+periodic :: Microsecond -> ProposalStrategy p -> ProposalStrategy p
+periodic period (ProposalStrategy strategy) =
+    ProposalStrategy $ \ctx@ProposalContext{..} ->
         let loop gen = do
-                wait (for period)
                 WhetherContinue further <- readTVarIO pcCont
                 when further $ do
-                    let (seed, gen') = next gen
-                    let value = unGen generator (mkQCGen seed) 30
-                    pcPush value
-                    loop gen'
+                    let (gen1, gen2) = split gen
+                    strategy ctx{ pcGen = gen1 }
+                    wait (for period)
+                    loop gen2
         in  fork_ $ loop pcGen
-
-simple :: Microsecond -> p -> ProposalStrategy p
-simple period policy = generating period (pure policy)
-
 
 limited :: Microsecond -> ProposalStrategy p -> ProposalStrategy p
 limited duration (ProposalStrategy strategy) =

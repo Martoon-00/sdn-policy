@@ -1,6 +1,10 @@
 module Main where
 
-import Universum
+import           Control.TimeWarp.Rpc (runMsgPackRpc)
+import           Data.Default         (def)
+import           Universum
+
+import           Sdn.Topology         (launchClassicPaxos)
 
 main :: IO ()
-main = return ()
+main = runMsgPackRpc $ launchClassicPaxos def

@@ -10,7 +10,7 @@
 module Sdn.Util where
 
 import           Formatting             (Format, bprint, build, later)
-import           System.Wlog            (LoggerNameBox (..))
+import           System.Wlog            (CanLog (..), LoggerNameBox (..))
 import           Universum
 
 import           Control.TimeWarp.Rpc   (MonadRpc (..), NetworkAddress, RpcRequest (..),
@@ -37,3 +37,7 @@ buildList =
 type instance ThreadId (LoggerNameBox m) = ThreadId m
 deriving instance MonadTimed m => MonadTimed (LoggerNameBox m)
 deriving instance MonadRpc m => MonadRpc (LoggerNameBox m)
+
+instance {-# OVERLAPPABLE #-}
+         (MonadIO m, Monad m) => CanLog m where
+    dispatchMessage = liftIO ... dispatchMessage

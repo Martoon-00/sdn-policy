@@ -84,7 +84,7 @@ data Acceptor = Acceptor AcceptorId
 instance Process Acceptor where
     type ProcessState Acceptor = AcceptorState
 
-    processName (Acceptor id) = "acceptor" <> fromString (show id)
+    processName (Acceptor id) = "acceptor" <> fromString (toString $ pretty id)
     processAddress (Acceptor id) = (localhost, 6000 + fromIntegral id)
     processesNumber = acceptorsNum
     initProcessState (Acceptor id) = defAcceptorState id
@@ -95,7 +95,7 @@ data Learner = Learner Int
 instance Process Learner where
     type ProcessState Learner = LearnerState
 
-    processName (Learner id) = "learner" <> fromString (show id)
+    processName (Learner id) = "learner" <> fromString (toString $ pretty id)
     processAddress (Learner id) = (localhost, 7000 + id)
     processesNumber = learnersNum
     initProcessState _ = def

@@ -19,12 +19,19 @@ import           Sdn.ProposalStrategy
 import           Sdn.Quorum
 import           Sdn.Util
 
+-- * Commons
+
 type MonadPhase m =
     ( MonadIO m
     , MonadTimed m
     , MonadRpc m
     , WithLogger m
     )
+
+logIncoming :: (WithLogger m, Buildable msg) => msg -> m ()
+logIncoming = logDebug . sformat ("Incoming message: "%build)
+
+-- * Phases
 
 propose
     :: MonadPhase m
@@ -37,7 +44,9 @@ propose seed strategy =
 rememberProposal
     :: (MonadPhase m, HasContext LeaderState m)
     => ProposalMsg -> m ()
-rememberProposal (ProposalMsg policy) = do
+rememberProposal msg@(ProposalMsg policy) = do
+    logIncoming msg
+
     withProcessState $ do
         leaderPendingPolicies %= (policy :)
 
@@ -56,23 +65,27 @@ phrase1a = do
 phase1b
     :: (MonadPhase m, HasContext AcceptorState m)
     => Phase1aMsg -> m ()
-phase1b (Phase1aMsg ballotId) = do
-    msg <- withProcessState $ do
+phase1b msg@(Phase1aMsg ballotId) = do
+    logIncoming msg
+
+    furtherMsg <- withProcessState $ do
         acceptorBallotId %= max ballotId
         Phase1bMsg
             <$> use acceptorId
             <*> use acceptorBallotId
             <*> use acceptorCStruct
 
-    submit (processAddress Leader) msg
+    submit (processAddress Leader) furtherMsg
 
 phase2a
     :: (MonadPhase m, HasContext LeaderState m)
     => Phase1bMsg -> m ()
-phase2a (Phase1bMsg accId ballotId cstruct) = do
+phase2a msg@(Phase1bMsg accId ballotId cstruct) = do
+    logIncoming msg
     members <- ctxMembers
+
     maybeMsg <- withProcessState $ do
-        zoom (leaderVotes . at ballotId . non mempty) $ do
+        maybeCombined <- zoom (leaderVotes . at ballotId . non mempty) $ do
             oldQuorums <- get
             identity %= addVote accId cstruct
             newQuorums <- get
@@ -84,10 +97,18 @@ phase2a (Phase1bMsg accId ballotId cstruct) = do
             else do
                 let quorumsVotes = allMinQuorums members newQuorums
                     gamma = map (foldr lub def . toList) quorumsVotes
-                    maybeRes = foldrM glb def gamma
-                case maybeRes of
-                     Nothing  -> reportBadGamma gamma $> Nothing
-                     Just res -> pure $ Just (Phase2aMsg ballotId res)
+                    maybeCombined = foldrM glb def gamma
+                whenNothing_ maybeCombined $
+                    reportBadGamma gamma
+                pure maybeCombined
+
+        case maybeCombined of
+            Nothing -> pure Nothing
+            Just combined -> do
+                policies <- use leaderPendingPolicies
+                leaderPendingPolicies .= []
+                let combined' = foldr acceptOrRejectCommand combined policies
+                pure $ Just (Phase2aMsg ballotId combined')
 
     whenJust maybeMsg $
         broadcastTo (processesAddresses Acceptor)
@@ -99,7 +120,9 @@ phase2a (Phase1bMsg accId ballotId cstruct) = do
 phase2b
     :: (MonadPhase m, HasContext AcceptorState m)
     => Phase2aMsg -> m ()
-phase2b (Phase2aMsg ballotId cstruct) = do
+phase2b msg@(Phase2aMsg ballotId cstruct) = do
+    logIncoming msg
+
     maybeMsg <- withProcessState $ do
         localBallotId <- use acceptorBallotId
         localCstruct <- use acceptorCStruct
@@ -120,7 +143,9 @@ phase2b (Phase2aMsg ballotId cstruct) = do
 learn
     :: (MonadPhase m, HasContext LearnerState m)
     => Phase2bMsg -> m ()
-learn (Phase2bMsg accId cstruct) = do
+learn msg@(Phase2bMsg accId cstruct) = do
+    logIncoming msg
+
     withProcessState $ do
         prevCStruct <- learnerVotes . at accId . non mempty <<.= cstruct
         unless (cstruct `extends` prevCStruct) $
@@ -131,7 +156,7 @@ learn (Phase2bMsg accId cstruct) = do
         prevLearned <- learnerLearned <<.= learned
         unless (learned `extends` prevLearned) $
             reportBadLearnedCStruct prevLearned learned
-        unless (learned /= prevLearned) $
+        when (learned /= prevLearned) $
             reportNewLearnedCStruct learned
   where
     reportBadCStruct prev new =

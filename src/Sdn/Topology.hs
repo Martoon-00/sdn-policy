@@ -3,14 +3,15 @@
 module Sdn.Topology where
 
 import           Control.TimeWarp.Rpc   (Method (..), MonadRpc, serve)
-import           Control.TimeWarp.Timed (Microsecond, MonadTimed, for, fork_, interval,
-                                         sec, wait, work)
+import           Control.TimeWarp.Timed (Microsecond, MonadTimed, after, for, fork_,
+                                         interval, ms, sec, wait, work)
 import           Data.Default           (Default (..))
 import           System.Wlog            (CanLog, LoggerNameBox, usingLoggerName)
 import           Test.QuickCheck        (arbitrary)
 import           Universum
 
 import           Sdn.Context
+import           Sdn.Logging
 import           Sdn.Messages
 import           Sdn.Phases
 import           Sdn.Policy
@@ -34,10 +35,10 @@ instance Default Topology where
         Topology
         { topologyMembers = def
         , topologyProposalStrategy =
-              generating (interval 3 sec) (GoodPolicy <$> arbitrary)
+              generating (GoodPolicy <$> arbitrary)
         , topologySeed = RandomSeed
         , topologyBallotDuration = interval 3 sec
-        , topologyLifetime = interval 15 sec
+        , topologyLifetime = interval 2 sec
         }
 
 -- | Create single newProcess.
@@ -56,13 +57,19 @@ launchClassicPaxos
     :: (MonadIO m, CanLog m, MonadTimed m, MonadRpc m)
     => Topology -> m ()
 launchClassicPaxos Topology{..} = flip runReaderT topologyMembers $ do
-    newProcess Proposer $ do
+    initLogging
+
+    newProcess Proposer . work (for topologyLifetime) $ do
+        -- wait for servers to bootstrap
+        wait (for 10 ms)
         let strategy = limited topologyLifetime topologyProposalStrategy
         execStrategy topologySeed strategy $ \policy ->
             submit (processAddress Leader) (ProposalMsg policy)
 
-    newProcess Leader $ do
-        work (for topologyLifetime) $
+    newProcess Leader . work (for topologyLifetime) $ do
+        work (for topologyLifetime) $ do
+            -- wait for first proposal before start
+            wait (for 20 ms)
             forever $ phrase1a >> wait (for topologyBallotDuration)
 
         serve (processPort Leader)
@@ -71,16 +78,18 @@ launchClassicPaxos Topology{..} = flip runReaderT topologyMembers $ do
             ]
 
     forM_ (processesOf Acceptor topologyMembers) $
-        \process -> newProcess process $ do
+        \process -> newProcess process . work (for topologyLifetime) $ do
             serve (processPort process)
                 [ Method phase1b
                 , Method phase2b
                 ]
 
     forM_ (processesOf Learner topologyMembers) $
-        \process -> newProcess process $ do
-             serve (processPort process)
+        \process -> newProcess process . work (for topologyLifetime) $ do
+            serve (processPort process)
                 [ Method learn
                 ]
 
+    -- wait for everything to complete
+    wait (after 100 ms topologyLifetime)
 

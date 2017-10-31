@@ -10,7 +10,7 @@ import qualified Data.Set            as S
 import           Data.String         (IsString)
 import qualified Data.Text.Buildable
 import           Formatting          (bprint, build, sformat, (%))
-import           Test.QuickCheck     (Arbitrary (..), scale)
+import           Test.QuickCheck     (Arbitrary (..), getNonNegative, scale)
 import           Universum
 
 import           Sdn.CStruct         (Acceptance (..), Command (..), Conflict (..),
@@ -23,7 +23,8 @@ newtype PolicyName = PolicyName Text
 instance Arbitrary PolicyName where
     arbitrary =
         scale (* 10) $
-        PolicyName . sformat ("policy #"%build) <$> arbitrary @Int
+        PolicyName . sformat ("policy #"%build @Int) . getNonNegative
+            <$> arbitrary
 
 -- | Abstract SDN policy.
 data Policy
