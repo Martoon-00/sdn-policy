@@ -1,12 +1,17 @@
+{-# LANGUAGE TypeFamilies #-}
+
 -- | Make up network layout
 
 module Sdn.Topology where
 
-import           Control.TimeWarp.Rpc   (Method (..), MonadRpc, serve)
+import           Control.Monad.Catch    (catchAll)
+import           Control.TimeWarp.Rpc   (Method (..), MonadRpc, RpcRequest (..), serve)
 import           Control.TimeWarp.Timed (Microsecond, MonadTimed, after, for, fork_,
                                          interval, ms, sec, wait, work)
 import           Data.Default           (Default (..))
-import           System.Wlog            (CanLog, LoggerNameBox, usingLoggerName)
+import           Formatting             (build, sformat, shown, (%))
+import           System.Wlog            (CanLog, LoggerNameBox, WithLogger, logDebug,
+                                         logError, usingLoggerName)
 import           Test.QuickCheck        (arbitrary)
 import           Universum
 
@@ -53,8 +58,22 @@ newProcess process action =
     usingLoggerName (processName process) $
     action
 
+method
+    :: ( MonadCatch m
+       , WithLogger m
+       , RpcRequest msg
+       , Response msg ~ ()
+       , Buildable msg
+       )
+    => (msg -> m ()) -> Method m
+method endpoint = Method $ \msg -> do
+    logDebug $ sformat ("Incoming message: "%build) msg
+    endpoint msg `catchAll` handler
+  where
+    handler = logError . sformat shown
+
 launchClassicPaxos
-    :: (MonadIO m, CanLog m, MonadTimed m, MonadRpc m)
+    :: (MonadIO m, MonadCatch m, CanLog m, MonadTimed m, MonadRpc m)
     => Topology -> m ()
 launchClassicPaxos Topology{..} = flip runReaderT topologyMembers $ do
     initLogging
@@ -73,21 +92,21 @@ launchClassicPaxos Topology{..} = flip runReaderT topologyMembers $ do
             forever $ phrase1a >> wait (for topologyBallotDuration)
 
         serve (processPort Leader)
-            [ Method rememberProposal
-            , Method phase2a
+            [ method rememberProposal
+            , method phase2a
             ]
 
     forM_ (processesOf Acceptor topologyMembers) $
         \process -> newProcess process . work (for topologyLifetime) $ do
             serve (processPort process)
-                [ Method phase1b
-                , Method phase2b
+                [ method phase1b
+                , method phase2b
                 ]
 
     forM_ (processesOf Learner topologyMembers) $
         \process -> newProcess process . work (for topologyLifetime) $ do
             serve (processPort process)
-                [ Method learn
+                [ method learn
                 ]
 
     -- wait for everything to complete

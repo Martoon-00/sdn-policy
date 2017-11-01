@@ -16,6 +16,7 @@ library
   hs-source-dirs:      src
   exposed-modules:     Sdn.Context
                        Sdn.CStruct
+                       Sdn.Error
                        Sdn.Logging
                        Sdn.Messages
                        Sdn.Phases
@@ -27,8 +28,10 @@ library
                        Sdn.Util
                        Sdn.Quorum
   build-depends:       base >= 4.7 && < 5
+                     , ansi-terminal
                      , containers
                      , data-default
+                     , exceptions
                      , formatting
                      , lens
                      , log-warper

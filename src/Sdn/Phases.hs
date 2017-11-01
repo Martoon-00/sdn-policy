@@ -7,29 +7,42 @@ import           Control.TimeWarp.Rpc   (MonadRpc)
 import           Control.TimeWarp.Timed (MonadTimed (..))
 import           Data.Default           (def)
 import           Formatting             (build, sformat, (%))
-import           System.Wlog            (WithLogger, logDebug, logError, logInfo)
+import           System.Wlog            (WithLogger, logDebug, logInfo)
 import           Universum
 
 import           Sdn.Context
 import           Sdn.CStruct
+import           Sdn.Error
 import           Sdn.Messages
 import           Sdn.Policy
 import           Sdn.Processes
 import           Sdn.ProposalStrategy
 import           Sdn.Quorum
+import           Sdn.Types
 import           Sdn.Util
 
 -- * Commons
 
 type MonadPhase m =
     ( MonadIO m
+    , MonadThrow m
     , MonadTimed m
     , MonadRpc m
     , WithLogger m
     )
 
-logIncoming :: (WithLogger m, Buildable msg) => msg -> m ()
-logIncoming = logDebug . sformat ("Incoming message: "%build)
+-- | Evaluate cstruct with all those policies, which are present
+-- in votes from all acceptors of some quorum.
+gatherFromAllQuorums
+    :: (MonadThrow m, Command policy cstruct, Buildable cstruct)
+    => Members -> Votes cstruct -> m cstruct
+gatherFromAllQuorums members votes =
+    let quorumsVotes = allMinQuorums members votes
+        gamma = map (foldr lub def . toList) quorumsVotes
+    in  case foldrM glb def gamma of
+            Nothing -> throwM . ProtocolError $
+                       sformat ("Got contradictory Gamma: "%buildList) gamma
+            Just x -> pure x
 
 -- * Phases
 
@@ -44,9 +57,7 @@ propose seed strategy =
 rememberProposal
     :: (MonadPhase m, HasContext LeaderState m)
     => ProposalMsg -> m ()
-rememberProposal msg@(ProposalMsg policy) = do
-    logIncoming msg
-
+rememberProposal (ProposalMsg policy) = do
     withProcessState $ do
         leaderPendingPolicies %= (policy :)
 
@@ -65,9 +76,7 @@ phrase1a = do
 phase1b
     :: (MonadPhase m, HasContext AcceptorState m)
     => Phase1aMsg -> m ()
-phase1b msg@(Phase1aMsg ballotId) = do
-    logIncoming msg
-
+phase1b (Phase1aMsg ballotId) = do
     furtherMsg <- withProcessState $ do
         acceptorBallotId %= max ballotId
         Phase1bMsg
@@ -80,8 +89,7 @@ phase1b msg@(Phase1aMsg ballotId) = do
 phase2a
     :: (MonadPhase m, HasContext LeaderState m)
     => Phase1bMsg -> m ()
-phase2a msg@(Phase1bMsg accId ballotId cstruct) = do
-    logIncoming msg
+phase2a (Phase1bMsg accId ballotId cstruct) = do
     members <- ctxMembers
 
     maybeMsg <- withProcessState $ do
@@ -94,13 +102,7 @@ phase2a msg@(Phase1bMsg accId ballotId cstruct) = do
             -- cstruct further
             if oldQuorums == newQuorums
             then pure Nothing
-            else do
-                let quorumsVotes = allMinQuorums members newQuorums
-                    gamma = map (foldr lub def . toList) quorumsVotes
-                    maybeCombined = foldrM glb def gamma
-                whenNothing_ maybeCombined $
-                    reportBadGamma gamma
-                pure maybeCombined
+            else Just <$> gatherFromAllQuorums members newQuorums
 
         case maybeCombined of
             Nothing -> pure Nothing
@@ -112,17 +114,11 @@ phase2a msg@(Phase1bMsg accId ballotId cstruct) = do
 
     whenJust maybeMsg $
         broadcastTo (processesAddresses Acceptor)
-  where
-    reportBadGamma gamma =
-        logError $
-        sformat ("Got contradictory Gamma: "%buildList) gamma
 
 phase2b
     :: (MonadPhase m, HasContext AcceptorState m)
     => Phase2aMsg -> m ()
-phase2b msg@(Phase2aMsg ballotId cstruct) = do
-    logIncoming msg
-
+phase2b (Phase2aMsg ballotId cstruct) = do
     maybeMsg <- withProcessState $ do
         localBallotId <- use acceptorBallotId
         localCstruct <- use acceptorCStruct
@@ -143,29 +139,32 @@ phase2b msg@(Phase2aMsg ballotId cstruct) = do
 learn
     :: (MonadPhase m, HasContext LearnerState m)
     => Phase2bMsg -> m ()
-learn msg@(Phase2bMsg accId cstruct) = do
-    logIncoming msg
+learn (Phase2bMsg accId cstruct) = do
+    members <- ctxMembers
 
     withProcessState $ do
         prevCStruct <- learnerVotes . at accId . non mempty <<.= cstruct
         unless (cstruct `extends` prevCStruct) $
-            reportBadCStruct prevCStruct cstruct
+            errorBadCStruct prevCStruct cstruct
 
-        allCStructs <- toList <$> use learnerVotes
-        let learned = foldr lub def allCStructs
-        prevLearned <- learnerLearned <<.= learned
-        unless (learned `extends` prevLearned) $
-            reportBadLearnedCStruct prevLearned learned
-        when (learned /= prevLearned) $
-            reportNewLearnedCStruct learned
+        votes <- use learnerVotes
+        learned <- use learnerLearned
+        newLearned <- gatherFromAllQuorums members votes
+        if newLearned `extends` learned
+        then do
+            learnerLearned .= newLearned
+            when (learned /= newLearned) $
+                reportNewLearnedCStruct newLearned
+        else
+            errorBadLearnedCStruct learned learned
   where
-    reportBadCStruct prev new =
-        logError $
+    errorBadCStruct prev new =
+        throwM . ProtocolError $
         sformat ("New cstruct doesn't extend current one:\n"%
                  "\t"%build%"\n\t->\n\t"%build)
                 prev new
-    reportBadLearnedCStruct prev new =
-        logError $
+    errorBadLearnedCStruct prev new =
+        throwM . ProtocolError $
         sformat ("New learned cstruct doesn't extend current one:\n"%
                  "\t"%build%"\n\t->\n\t"%build)
                 prev new
