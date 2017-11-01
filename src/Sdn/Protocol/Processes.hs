@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes        #-}
+{-# LANGUAGE DefaultSignatures          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE Rank2Types                 #-}
 {-# LANGUAGE TypeFamilies               #-}
@@ -19,28 +20,55 @@ import           Sdn.Base
 import           Sdn.Extra
 import           Sdn.Protocol.Context
 
+-- | Unique features of each process.
 class Process p where
+    -- | State kept by the process
     type ProcessState p :: *
 
+    -- | Name of the process, used in logging.
     processName :: p -> LoggerName
-    processAddress :: p -> NetworkAddress
-    processesNumber :: Members -> Int
-    initProcessState :: p -> ProcessState p
 
+    -- | Address binded to given process.
+    -- All processes have predefined determined addresses.
+    processAddress :: p -> NetworkAddress
+
+    -- | Number of processes of this kind.
+    processesNumber :: Members -> Int
+
+    -- | Initial state of the process.
+    initProcessState :: p -> ProcessState p
+    default initProcessState
+        :: Default (ProcessState p)
+        => p -> ProcessState p
+    initProcessState _ = def
+
+-- | Provide context for given process.
 inProcessCtx
     :: forall p m a.
        (MonadIO m, Process p)
-    => p -> ReaderT (ProcessContext (ProcessState p)) m a
+    => p
+    -> ReaderT (ProcessContext (ProcessState p)) m a
     -> ReaderT Members m a
 inProcessCtx participant action = do
     var <- liftIO $ newTVarIO (initProcessState participant)
     withReaderT (ProcessContext var) action
 
+-- | Port binded to given process.
 processPort
     :: Process p
     => p -> Port
 processPort = snd . processAddress
 
+-- | Get all the processes of this kind.
+processesOf
+    :: forall p i.
+       (Process p, Integral i)
+    => (i -> p) -> Members -> [p]
+processesOf maker members =
+    let number = fromIntegral $ processesNumber @p members
+    in  map maker [1 .. number]
+
+-- | Get all addresses of processes of this kind.
 processesAddresses
     :: forall p i.
        (Process p, Integral i)
@@ -50,25 +78,18 @@ processesAddresses
 processesAddresses maker members =
     map processAddress $ processesOf maker members
 
-processesOf
-    :: forall p i.
-       (Process p, Integral i)
-    => (i -> p) -> Members -> [p]
-processesOf maker members =
-    let number = fromIntegral $ processesNumber @p members
-    in  map maker [1 .. number]
-
--- * Instances
+-- * Instances of the processes
 
 data Proposer = Proposer
 
 instance Process Proposer where
     type ProcessState Proposer = ()
 
-    processName _ = "proposer"
+    processName _ =
+        "proposer"
+            & loggerNameT %~ withColor ANSI.Dull ANSI.Magenta
     processAddress Proposer = (localhost, 4000)
     processesNumber _ = 1
-    initProcessState Proposer = def
 
 
 data Leader = Leader
@@ -81,7 +102,6 @@ instance Process Leader where
             & loggerNameT %~ withColor ANSI.Vivid ANSI.Magenta
     processAddress Leader = (localhost, 5000)
     processesNumber _ = 1
-    initProcessState Leader = def
 
 
 data Acceptor = Acceptor AcceptorId
@@ -107,4 +127,3 @@ instance Process Learner where
             & loggerNameT %~ withColor ANSI.Vivid ANSI.Cyan
     processAddress (Learner id) = (localhost, 7000 + id)
     processesNumber = learnersNum
-    initProcessState _ = def
