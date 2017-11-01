@@ -35,4 +35,7 @@ instance Default Members where
 
 
 newtype AcceptorId = AcceptorId Int
-    deriving (Eq, Ord, Show, Enum, Num, MessagePack, Real, Integral, Buildable)
+    deriving (Eq, Ord, Show, Enum, Num, MessagePack, Real, Integral)
+
+instance Buildable AcceptorId where
+    build (AcceptorId id) = bprint ("from accptor #"%build) id

@@ -7,13 +7,16 @@
 
 module Sdn.Processes where
 
+import           Control.Lens         (from)
 import           Control.Monad.Reader (withReaderT)
 import           Control.TimeWarp.Rpc (NetworkAddress, Port, localhost)
 import           Data.Default         (Default (..))
+import qualified System.Console.ANSI  as ANSI
 import           System.Wlog          (LoggerName)
 import           Universum
 
 import           Sdn.Context
+import           Sdn.Logging
 import           Sdn.Types
 
 class Process p where
@@ -73,7 +76,9 @@ data Leader = Leader
 instance Process Leader where
     type ProcessState Leader = LeaderState
 
-    processName _ = "leader"
+    processName _ =
+        "leader"
+            & loggerNameT %~ withColor ANSI.Vivid ANSI.Magenta
     processAddress Leader = (localhost, 5000)
     processesNumber _ = 1
     initProcessState Leader = def
@@ -84,7 +89,9 @@ data Acceptor = Acceptor AcceptorId
 instance Process Acceptor where
     type ProcessState Acceptor = AcceptorState
 
-    processName (Acceptor id) = "acceptor" <> fromString (toString $ pretty id)
+    processName (Acceptor id) =
+        "acceptor" <> (pretty id ^. from loggerNameT)
+            & loggerNameT %~ withColor ANSI.Vivid ANSI.Yellow
     processAddress (Acceptor id) = (localhost, 6000 + fromIntegral id)
     processesNumber = acceptorsNum
     initProcessState (Acceptor id) = defAcceptorState id
@@ -95,7 +102,9 @@ data Learner = Learner Int
 instance Process Learner where
     type ProcessState Learner = LearnerState
 
-    processName (Learner id) = "learner" <> fromString (toString $ pretty id)
+    processName (Learner id) =
+        "learner" <> (pretty id ^. from loggerNameT)
+            & loggerNameT %~ withColor ANSI.Vivid ANSI.Cyan
     processAddress (Learner id) = (localhost, 7000 + id)
     processesNumber = learnersNum
     initProcessState _ = def

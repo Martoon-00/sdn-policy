@@ -13,11 +13,14 @@ packages:
     git: https://github.com/serokell/time-warp.git
     commit: 95cbc74818a25cb1b96d68e287272a5ad9f71a65
   extra-dep: true
+- location:
+    git: https://github.com/martoon-00/log-warper.git
+    commit: 09848703af25716586b862b150d353df4e9168c9
+  extra-dep: true
 
 extra-deps:
 - acid-state-0.14.3
 - fmt-0.5.0.0
-- log-warper-1.4.0
 - serokell-util-0.5.0
 - time-units-1.0.0
 - universum-0.7.1
