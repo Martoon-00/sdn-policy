@@ -1,6 +1,6 @@
 -- | Errors used in protocol
 
-module Sdn.Error where
+module Sdn.Base.Error where
 
 import           Universum
 

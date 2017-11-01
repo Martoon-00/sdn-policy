@@ -14,21 +14,27 @@ cabal-version:       >=1.10
 
 library
   hs-source-dirs:      src
-  exposed-modules:     Sdn.Context
-                       Sdn.CStruct
-                       Sdn.Error
-                       Sdn.Logging
-                       Sdn.Messages
-                       Sdn.Phases
-                       Sdn.Policy
-                       Sdn.Processes
-                       Sdn.ProposalStrategy
-                       Sdn.Topology
-                       Sdn.Types
-                       Sdn.Util
-                       Sdn.Quorum
+  exposed-modules:     Sdn.Base
+                       Sdn.Extra
+                       Sdn.Protocol
+  other-modules:       Sdn.Base.CStruct
+                       Sdn.Base.Error
+                       Sdn.Base.Policy
+                       Sdn.Base.ProposalStrategy
+                       Sdn.Base.Quorum
+                       Sdn.Base.Types
+
+                       Sdn.Extra.Logging
+                       Sdn.Extra.Util
+
+                       Sdn.Protocol.Context
+                       Sdn.Protocol.Messages
+                       Sdn.Protocol.Phases
+                       Sdn.Protocol.Processes
+                       Sdn.Protocol.Topology
   build-depends:       base >= 4.7 && < 5
                      , ansi-terminal
+                     , autoexporter
                      , containers
                      , data-default
                      , exceptions

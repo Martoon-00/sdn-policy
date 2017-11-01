@@ -2,7 +2,7 @@
 
 -- | Make up network layout
 
-module Sdn.Topology where
+module Sdn.Protocol.Topology where
 
 import           Control.Monad.Catch    (catchAll)
 import           Control.TimeWarp.Rpc   (Method (..), MonadRpc, RpcRequest (..), serve)
@@ -15,15 +15,12 @@ import           System.Wlog            (CanLog, LoggerNameBox, WithLogger, logD
 import           Test.QuickCheck        (arbitrary)
 import           Universum
 
-import           Sdn.Context
-import           Sdn.Logging
-import           Sdn.Messages
-import           Sdn.Phases
-import           Sdn.Policy
-import           Sdn.Processes
-import           Sdn.ProposalStrategy
-import           Sdn.Types
-import           Sdn.Util
+import           Sdn.Base
+import           Sdn.Extra
+import           Sdn.Protocol.Context
+import           Sdn.Protocol.Messages
+import           Sdn.Protocol.Phases
+import           Sdn.Protocol.Processes
 
 -- | Contains all info to build network which serves consensus algorithm.
 data Topology = Topology
@@ -111,4 +108,3 @@ launchClassicPaxos Topology{..} = flip runReaderT topologyMembers $ do
 
     -- wait for everything to complete
     wait (after 100 ms topologyLifetime)
-

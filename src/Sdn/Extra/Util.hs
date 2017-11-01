@@ -7,7 +7,7 @@
 
 -- | Various utility functions
 
-module Sdn.Util where
+module Sdn.Extra.Util where
 
 import           Formatting             (Format, bprint, build, later)
 import           System.Wlog            (CanLog (..), LoggerNameBox (..))

@@ -3,7 +3,7 @@
 
 -- | Various contexts of processes
 
-module Sdn.Context where
+module Sdn.Protocol.Context where
 
 import           Control.Concurrent.STM (STM)
 import           Control.Lens           (makeLenses)
@@ -13,10 +13,8 @@ import           Data.Default           (Default (def))
 import           System.Wlog            (NamedPureLogger, WithLogger, launchNamedPureLog)
 import           Universum
 
-import           Sdn.Policy
-import           Sdn.Quorum
-import           Sdn.Types
-import           Sdn.Util
+import           Sdn.Base
+import           Sdn.Extra
 
 
 -- * General

@@ -1,6 +1,6 @@
 -- | Configure logging for network.
 
-module Sdn.Logging where
+module Sdn.Extra.Logging where
 
 import           Control.Lens          (Iso', iso)
 import qualified System.Console.ANSI   as ANSI

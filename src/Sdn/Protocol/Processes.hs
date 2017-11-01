@@ -5,7 +5,7 @@
 
 -- | Network addresses binded to processes.
 
-module Sdn.Processes where
+module Sdn.Protocol.Processes where
 
 import           Control.Lens         (from)
 import           Control.Monad.Reader (withReaderT)
@@ -15,9 +15,9 @@ import qualified System.Console.ANSI  as ANSI
 import           System.Wlog          (LoggerName)
 import           Universum
 
-import           Sdn.Context
-import           Sdn.Logging
-import           Sdn.Types
+import           Sdn.Base
+import           Sdn.Extra
+import           Sdn.Protocol.Context
 
 class Process p where
     type ProcessState p :: *

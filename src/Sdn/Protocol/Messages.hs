@@ -3,17 +3,15 @@
 
 -- | Messages different processes send to each other
 
-module Sdn.Messages where
+module Sdn.Protocol.Messages where
 
 import           Data.MessagePack    (MessagePack)
 import qualified Data.Text.Buildable
 import           Formatting          (bprint, build, (%))
 import           Universum
 
-import           Sdn.Policy
-import           Sdn.Types
-import           Sdn.Util
-
+import           Sdn.Base
+import           Sdn.Extra
 
 newtype ProposalMsg = ProposalMsg Policy
     deriving (Generic)

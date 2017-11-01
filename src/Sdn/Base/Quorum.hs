@@ -3,14 +3,14 @@
 
 -- | Quorum-related stuff
 
-module Sdn.Quorum where
+module Sdn.Base.Quorum where
 
-import           Control.Lens (At (..), Index, IxValue, Ixed (..), Wrapped (..), iso)
-import           Data.List    (subsequences)
-import qualified Data.Map     as M
+import           Control.Lens   (At (..), Index, IxValue, Ixed (..), Wrapped (..), iso)
+import           Data.List      (subsequences)
+import qualified Data.Map       as M
 import           Universum
 
-import           Sdn.Types
+import           Sdn.Base.Types
 
 -- | For each acceptor - something proposed by him.
 newtype Votes a = Votes (M.Map AcceptorId a)

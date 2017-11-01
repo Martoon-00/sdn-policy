@@ -1,6 +1,6 @@
 -- | Phases of algorithm
 
-module Sdn.Phases where
+module Sdn.Protocol.Phases where
 
 import           Control.Lens           (at, non, zoom, (%=), (+=), (.=), (<<.=))
 import           Control.TimeWarp.Rpc   (MonadRpc)
@@ -10,16 +10,11 @@ import           Formatting             (build, sformat, (%))
 import           System.Wlog            (WithLogger, logDebug, logInfo)
 import           Universum
 
-import           Sdn.Context
-import           Sdn.CStruct
-import           Sdn.Error
-import           Sdn.Messages
-import           Sdn.Policy
-import           Sdn.Processes
-import           Sdn.ProposalStrategy
-import           Sdn.Quorum
-import           Sdn.Types
-import           Sdn.Util
+import           Sdn.Base
+import           Sdn.Extra
+import           Sdn.Protocol.Context
+import           Sdn.Protocol.Messages
+import           Sdn.Protocol.Processes
 
 -- * Commons
 
@@ -171,5 +166,3 @@ learn (Phase2bMsg accId cstruct) = do
     reportNewLearnedCStruct new =
         logInfo $
         sformat ("New learned cstruct: "%build) new
-
-

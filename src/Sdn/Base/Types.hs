@@ -2,7 +2,7 @@
 
 -- | Most of the primitive types used by protocol
 
-module Sdn.Types where
+module Sdn.Base.Types where
 
 import           Data.Default        (Default (..))
 import           Data.MessagePack    (MessagePack)

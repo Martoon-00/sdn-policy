@@ -2,7 +2,7 @@
 
 -- | Interface for commands and cstructs.
 
-module Sdn.CStruct where
+module Sdn.Base.CStruct where
 
 import           Data.Default        (Default)
 import           Data.MessagePack    (MessagePack)

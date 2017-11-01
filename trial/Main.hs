@@ -4,7 +4,7 @@ import           Control.TimeWarp.Rpc (runMsgPackRpc)
 import           Data.Default         (def)
 import           Universum
 
-import           Sdn.Topology         (launchClassicPaxos)
+import           Sdn.Protocol         (launchClassicPaxos)
 
 main :: IO ()
 main = runMsgPackRpc $ launchClassicPaxos def

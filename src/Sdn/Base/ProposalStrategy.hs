@@ -3,7 +3,7 @@
 
 -- | Some useful types.
 
-module Sdn.ProposalStrategy
+module Sdn.Base.ProposalStrategy
     ( GenSeed (..)
     , ProposalStrategy
     , MonadProposal

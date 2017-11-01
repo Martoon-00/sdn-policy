@@ -2,7 +2,7 @@
 
 -- | Policies arangement.
 
-module Sdn.Policy where
+module Sdn.Base.Policy where
 
 
 import           Data.MessagePack    (MessagePack (..))
@@ -13,9 +13,9 @@ import           Formatting          (bprint, build, sformat, (%))
 import           Test.QuickCheck     (Arbitrary (..), getNonNegative, scale)
 import           Universum
 
-import           Sdn.CStruct         (Acceptance (..), Command (..), Conflict (..),
+import           Sdn.Base.CStruct    (Acceptance (..), Command (..), Conflict (..),
                                       checkingAgreement)
-import           Sdn.Util
+import           Sdn.Extra.Util
 
 newtype PolicyName = PolicyName Text
     deriving (Eq, Ord, Show, Buildable, IsString, MessagePack)
