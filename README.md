@@ -17,13 +17,19 @@ comparing to protocols which perform some conflict resolution in place.
 
 Most intersting modules are:
 
-* **src/Sdn.Protocol.Phases** - logic which lies beyond each phrase
-* **src/Sdn.Protocol.Topology** - functions construct a network with appropriate processes
+* [Phases](./src/Sdn/Protocol/Phases.hs) - logic which lies beyond each phrase
+* [Topology](./src/Sdn/Protocol/Topology.hs) - functions which construct a network with appropriate processes
 
-## Tools
+## Launch
+
+To launch demo you need [stack](https://docs.haskellstack.org/en/stable/README/) tool.
+
+Executing `./launch-demo.sh` performs 1 consensus ballot.
+
+## Used tools
 
 This prototype uses **time-warp** library. This allows to write some properties
 for protocol, like
-> *2/3 acceptors are online => proposed policies still can be applied*
+> * 2 / 3 acceptors are online => proposed policies still can be applied*
 
 emulating passage of time and network unreliability.
