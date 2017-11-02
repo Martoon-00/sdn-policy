@@ -27,5 +27,3 @@ for protocol, like
 > *2/3 acceptors are online => proposed policies still can be applied*
 
 emulating passage of time and network unreliability.
-
-Also **log-warper** library is used as base for logging.

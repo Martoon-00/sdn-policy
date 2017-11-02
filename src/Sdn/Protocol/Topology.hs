@@ -4,15 +4,14 @@
 
 module Sdn.Protocol.Topology where
 
-import           Control.Monad.Catch    (catchAll)
-import           Control.TimeWarp.Rpc   (Method (..), MonadRpc, RpcRequest (..), serve)
-import           Control.TimeWarp.Timed (Microsecond, MonadTimed, after, for, fork_,
-                                         interval, ms, sec, wait, work)
-import           Data.Default           (Default (..))
-import           Formatting             (build, sformat, shown, (%))
-import           System.Wlog            (CanLog, LoggerNameBox, WithLogger, logDebug,
-                                         logError, usingLoggerName)
-import           Test.QuickCheck        (arbitrary)
+import           Control.Monad.Catch      (catchAll)
+import           Control.TimeWarp.Logging (LoggerNameBox, usingLoggerName)
+import           Control.TimeWarp.Rpc     (Method (..), MonadRpc, RpcRequest (..), serve)
+import           Control.TimeWarp.Timed   (Microsecond, MonadTimed, after, for, fork_,
+                                           interval, ms, sec, wait, work)
+import           Data.Default             (Default (..))
+import           Formatting               (build, sformat, shown, (%))
+import           Test.QuickCheck          (arbitrary)
 import           Universum
 
 import           Sdn.Base
@@ -57,23 +56,22 @@ newProcess process action =
 
 method
     :: ( MonadCatch m
-       , WithLogger m
+       , MonadLog m
        , RpcRequest msg
        , Response msg ~ ()
        , Buildable msg
        )
     => (msg -> m ()) -> Method m
 method endpoint = Method $ \msg -> do
-    logDebug $ sformat ("Incoming message: "%build) msg
+    logInfo $ sformat ("Incoming message: "%build) msg
     endpoint msg `catchAll` handler
   where
     handler = logError . sformat shown
 
 launchClassicPaxos
-    :: (MonadIO m, MonadCatch m, CanLog m, MonadTimed m, MonadRpc m)
+    :: (MonadIO m, MonadCatch m, MonadTimed m, MonadRpc m)
     => Topology -> m ()
 launchClassicPaxos Topology{..} = flip runReaderT topologyMembers $ do
-    initLogging
 
     newProcess Proposer . work (for topologyLifetime) $ do
         -- wait for servers to bootstrap

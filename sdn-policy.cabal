@@ -39,11 +39,12 @@ library
                      , data-default
                      , exceptions
                      , formatting
+                     , fmt
                      , lens
-                     , log-warper
                      , msgpack
                      , mtl
                      , stm
+                     , stm-chans
                      , template-haskell
                      , text
                      , text-format

@@ -10,12 +10,11 @@
 module Sdn.Extra.Util where
 
 import           Formatting             (Format, bprint, build, later)
-import           System.Wlog            (CanLog (..), LoggerNameBox (..))
 import           Universum
 
 import           Control.TimeWarp.Rpc   (MonadRpc (..), NetworkAddress, RpcRequest (..),
                                          mkRequest)
-import           Control.TimeWarp.Timed (MonadTimed (..), ThreadId, fork_)
+import           Control.TimeWarp.Timed (MonadTimed (..), fork_)
 import           Language.Haskell.TH    (Dec, Name, Q)
 
 -- | Declare instance for one-way message.
@@ -34,10 +33,3 @@ buildList =
     mconcat $
         one "[" <> (intersperse ", " $ bprint build <$> values) <> one "]"
 
-type instance ThreadId (LoggerNameBox m) = ThreadId m
-deriving instance MonadTimed m => MonadTimed (LoggerNameBox m)
-deriving instance MonadRpc m => MonadRpc (LoggerNameBox m)
-
-instance {-# OVERLAPPABLE #-}
-         (MonadIO m, Monad m) => CanLog m where
-    dispatchMessage = liftIO ... dispatchMessage

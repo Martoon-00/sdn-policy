@@ -37,8 +37,8 @@ data Phase1bMsg = Phase1bMsg AcceptorId BallotId Configuration
     deriving (Generic)
 
 instance Buildable Phase1bMsg where
-    build (Phase1bMsg a b c) =
-        bprint ("Phase 1b message "%build%" "%build%" "%build) a b c
+    build (Phase1bMsg (AcceptorId a) b c) =
+        bprint ("Phase 1b message from acceptor #"%build%" "%build%" "%build) a b c
 
 instance MessagePack Phase1bMsg
 declareMessage ''Phase1bMsg
@@ -59,8 +59,8 @@ data Phase2bMsg = Phase2bMsg AcceptorId Configuration
     deriving (Generic)
 
 instance Buildable Phase2bMsg where
-    build (Phase2bMsg a c) =
-        bprint ("Phase 2b message "%build%" "%build) a c
+    build (Phase2bMsg (AcceptorId a) c) =
+        bprint ("Phase 2b message from acceptor #"%build%" "%build) a c
 
 instance MessagePack Phase2bMsg
 declareMessage ''Phase2bMsg

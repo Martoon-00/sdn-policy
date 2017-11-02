@@ -7,7 +7,6 @@ import           Control.TimeWarp.Rpc   (MonadRpc)
 import           Control.TimeWarp.Timed (MonadTimed (..))
 import           Data.Default           (def)
 import           Formatting             (build, sformat, (%))
-import           System.Wlog            (WithLogger, logDebug, logInfo)
 import           Universum
 
 import           Sdn.Base
@@ -24,7 +23,7 @@ type MonadPhase m =
     , MonadThrow m
     , MonadTimed m
     , MonadRpc m
-    , WithLogger m
+    , MonadLog m
     )
 
 -- | Evaluate cstruct with all those policies, which are present
@@ -71,7 +70,7 @@ phrase1a
     :: (MonadPhase m, HasContext LeaderState m)
     => m ()
 phrase1a = do
-    logDebug "Starting new ballot"
+    logInfo "Starting new ballot"
 
     msg <- withProcessState $ do
         -- increment ballot id
@@ -155,7 +154,7 @@ learn
 learn (Phase2bMsg accId cstruct) = do
     members <- ctxMembers
 
-    withProcessState $ do
+    learned <- withProcessState $ do
         do  -- rewrite cstruct kept for this acceptor
             prevCStruct <- learnerVotes . at accId . non mempty <<.= cstruct
 
@@ -173,8 +172,9 @@ learn (Phase2bMsg accId cstruct) = do
                 errorBadLearnedCStruct prevLearned prevLearned
 
             -- report if the interesting happened
-            when (newLearned /= prevLearned) $
-                reportNewLearnedCStruct newLearned
+            pure $ guard (newLearned /= prevLearned) $> newLearned
+
+    whenJust learned reportNewLearnedCStruct
   where
     errorBadCStruct prev new =
         throwM . ProtocolError $

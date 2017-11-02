@@ -10,7 +10,6 @@ import           Control.Lens           (makeLenses)
 import           Control.TimeWarp.Rpc   (MonadRpc, NetworkAddress, RpcRequest (..))
 import           Control.TimeWarp.Timed (MonadTimed)
 import           Data.Default           (Default (def))
-import           System.Wlog            (NamedPureLogger, WithLogger, launchNamedPureLog)
 import           Universum
 
 import           Sdn.Base
@@ -33,14 +32,14 @@ type HasContext s m =
 -- | Atomically modify state stored by process.
 -- If exception is thrown in the process, no changes apply.
 withProcessState
-    :: (MonadIO m, WithLogger m, MonadReader (ProcessContext s) m)
-    => StateT s (NamedPureLogger STM) a -> m a
+    :: (MonadIO m, MonadReader (ProcessContext s) m)
+    => StateT s STM a -> m a
 withProcessState modifier = do
     var <- pcState <$> ask
-    launchNamedPureLog (liftIO . atomically) $ do
-        st <- lift $ readTVar var
+    liftIO . atomically $ do
+        st <- readTVar var
         (res, st') <- runStateT modifier st
-        lift $ writeTVar var st'
+        writeTVar var st'
         return res
 
 -- | Get 'Members' stored in context.

@@ -8,12 +8,12 @@
 
 module Sdn.Protocol.Processes where
 
-import           Control.Lens         (from)
-import           Control.Monad.Reader (withReaderT)
-import           Control.TimeWarp.Rpc (NetworkAddress, Port, localhost)
-import           Data.Default         (Default (..))
-import qualified System.Console.ANSI  as ANSI
-import           System.Wlog          (LoggerName)
+import           Control.Lens             (from)
+import           Control.Monad.Reader     (withReaderT)
+import           Control.TimeWarp.Logging (LoggerName)
+import           Control.TimeWarp.Rpc     (NetworkAddress, Port, localhost)
+import           Data.Default             (Default (..))
+import qualified System.Console.ANSI      as ANSI
 import           Universum
 
 import           Sdn.Base

@@ -1,27 +1,23 @@
+{-# LANGUAGE DataKinds #-}
+
 -- | Configure logging for network.
 
 module Sdn.Extra.Logging where
 
-import           Control.Lens          (Iso', iso)
-import qualified System.Console.ANSI   as ANSI
-import           System.Wlog
-import           System.Wlog.Formatter
+import           Control.Concurrent             (forkIO)
+import qualified Control.Concurrent.STM.TBMChan as TBM
+import           Control.Lens                   (Iso', iso)
+import           Control.TimeWarp.Logging       (LoggerName, WithNamedLogger (..))
+import           Control.TimeWarp.Timed         (Microsecond, MonadTimed (..))
+import           Data.Time.Units                (toMicroseconds)
+import           Formatting                     (left, right, sformat, (%))
+import           GHC.IO.Unsafe                  (unsafePerformIO)
+import qualified System.Console.ANSI            as ANSI
 import           Universum
 
 
-(&>) :: s -> State s () -> s
-(&>) = flip execState
-
 loggerNameT :: Iso' LoggerName Text
 loggerNameT = iso pretty (fromString . toString)
-
-initLogging :: MonadIO m => m ()
-initLogging =
-    setupLogging (Just centiUtcTimeF) $
-        productionB{ _lcTree = tree, _lcTermSeverity = Just Debug }
-  where
-    tree :: LoggerTree
-    tree = mempty { _ltSeverity = Just Debug }
 
 withColor :: ANSI.ColorIntensity -> ANSI.Color -> Text -> Text
 withColor intensity color text =
@@ -30,3 +26,47 @@ withColor intensity color text =
     , text
     , toText $ ANSI.setSGRCode [ANSI.Reset]
     ]
+
+data LogEntry = LogEntry LoggerName Microsecond Text
+
+loggingFormatter :: LogEntry -> Text
+loggingFormatter (LogEntry name (toMicroseconds -> time) msg) =
+    mconcat
+    [ inGray "["
+    , pretty name
+    , inGray "]"
+    , " "
+    , inGray "["
+    , timeText
+    , inGray "]"
+    , " "
+    , msg
+    ]
+  where
+    inGray = withColor ANSI.Dull ANSI.White
+    timeText =
+        let seconds = time `div` 1000000
+            centiseconds = time `div` 10000 `mod` 100
+        in sformat (left 3 '0'%":"%right 2 '0') seconds centiseconds
+
+logBuffer :: TBM.TBMChan LogEntry
+logBuffer = unsafePerformIO $ do
+    chan <- TBM.newTBMChanIO 100
+    _ <- forkIO . void . runMaybeT . forever $ do
+        entry <- MaybeT . atomically $ TBM.readTBMChan chan
+        lift . putText $ loggingFormatter entry
+
+    return chan
+{-# NOINLINE logBuffer #-}
+
+type MonadLog m = With [MonadIO, MonadTimed, WithNamedLogger] m
+
+logInfo :: MonadLog m => Text -> m ()
+logInfo msg = do
+    time <- virtualTime
+    name <- getLoggerName
+    let entry = LogEntry name time msg
+    liftIO . atomically $ TBM.writeTBMChan logBuffer entry
+
+logError :: MonadLog m => Text -> m ()
+logError = logInfo . (withColor ANSI.Dull ANSI.Red "Error: " <> )
