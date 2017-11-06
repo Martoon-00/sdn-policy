@@ -102,6 +102,12 @@ instance Default LearnerState where
 
 -- * Misc
 
+data AllStates = AllStates
+    { leaderState     :: LeaderState
+    , acceptorsStates :: [AcceptorState]
+    , learnersStates  :: [LearnerState]
+    }
+
 -- | Send a message to given participants.
 broadcastTo
     :: ( MonadTimed m

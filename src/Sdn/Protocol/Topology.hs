@@ -5,10 +5,11 @@
 module Sdn.Protocol.Topology where
 
 import           Control.Monad.Catch      (catchAll)
+import           Control.Monad.Reader     (withReaderT)
 import           Control.TimeWarp.Logging (LoggerNameBox, usingLoggerName)
 import           Control.TimeWarp.Rpc     (Method (..), MonadRpc, RpcRequest (..), serve)
-import           Control.TimeWarp.Timed   (Microsecond, MonadTimed, after, for, fork_,
-                                           interval, ms, sec, wait, work)
+import           Control.TimeWarp.Timed   (Microsecond, MonadTimed, for, fork_, interval,
+                                           ms, sec, till, virtualTime, wait, work)
 import           Data.Default             (Default (..))
 import           Formatting               (build, sformat, shown, (%))
 import           Test.QuickCheck          (arbitrary)
@@ -22,7 +23,7 @@ import           Sdn.Protocol.Phases
 import           Sdn.Protocol.Processes
 
 -- | Contains all info to build network which serves consensus algorithm.
-data Topology = Topology
+data TopologySettings = TopologySettings
     { topologyMembers          :: Members
     , topologyProposalStrategy :: ProposalStrategy Policy
     , topologySeed             :: GenSeed
@@ -31,9 +32,9 @@ data Topology = Topology
     }
 
 -- | Example of topology.
-instance Default Topology where
+instance Default TopologySettings where
     def =
-        Topology
+        TopologySettings
         { topologyMembers = def
         , topologyProposalStrategy =
               generating (GoodPolicy <$> arbitrary)
@@ -42,19 +43,33 @@ instance Default Topology where
         , topologyLifetime = interval 2 sec
         }
 
+-- | Provides info about topology in runtime.
+data TopologyMonitor m = TopologyMonitor
+    { -- | Returns when all active processes in the topology finish
+      awaitCompletion :: m ()
+      -- | Fetch states of all processes in topology
+    , readAllStates   :: STM AllStates
+    }
+
+runWithMembers :: Monad m => Members -> ReaderT Members m a -> m a
+runWithMembers = flip runReaderT
+
 -- | Create single newProcess.
 newProcess
     :: (MonadIO m, MonadTimed m, Process p)
     => p
     -> LoggerNameBox (ReaderT (ProcessContext (ProcessState p)) m) ()
-    -> ReaderT Members m ()
-newProcess process action =
+    -> ReaderT Members m (STM (ProcessState p))
+newProcess process action = do
+    stateBox <- liftIO $ newTVarIO (initProcessState process)
     fork_ $
-    inProcessCtx process $
-    usingLoggerName (processName process) $
-    action
+        withReaderT (ProcessContext stateBox) $
+        usingLoggerName (processName process) $
+        action
+    return $ readTVar stateBox
 
-method
+-- | Create single messages listener for server.
+listener
     :: ( MonadCatch m
        , MonadLog m
        , RpcRequest msg
@@ -62,47 +77,56 @@ method
        , Buildable msg
        )
     => (msg -> m ()) -> Method m
-method endpoint = Method $ \msg -> do
+listener endpoint = Method $ \msg -> do
     logInfo $ sformat ("Incoming message: "%build) msg
     endpoint msg `catchAll` handler
   where
     handler = logError . sformat shown
 
+-- | Launch Classic Paxos algorithm.
 launchClassicPaxos
     :: (MonadIO m, MonadCatch m, MonadTimed m, MonadRpc m)
-    => Topology -> m ()
-launchClassicPaxos Topology{..} = flip runReaderT topologyMembers $ do
+    => TopologySettings -> m (TopologyMonitor m)
+launchClassicPaxos TopologySettings{..} = runWithMembers topologyMembers $ do
 
-    newProcess Proposer . work (for topologyLifetime) $ do
+    _ <- newProcess Proposer . work (for topologyLifetime) $ do
         -- wait for servers to bootstrap
         wait (for 10 ms)
         let strategy = limited topologyLifetime topologyProposalStrategy
         execStrategy topologySeed strategy $ \policy ->
             submit (processAddress Leader) (ProposalMsg policy)
 
-    newProcess Leader . work (for topologyLifetime) $ do
+    leaderState <- newProcess Leader . work (for topologyLifetime) $ do
         work (for topologyLifetime) $ do
             -- wait for first proposal before start
             wait (for 20 ms)
             forever $ phrase1a >> wait (for topologyBallotDuration)
 
         serve (processPort Leader)
-            [ method rememberProposal
-            , method phase2a
+            [ listener rememberProposal
+            , listener phase2a
             ]
 
-    forM_ (processesOf Acceptor topologyMembers) $
+    acceptorsStates <- forM (processesOf Acceptor topologyMembers) $
         \process -> newProcess process . work (for topologyLifetime) $ do
             serve (processPort process)
-                [ method phase1b
-                , method phase2b
+                [ listener phase1b
+                , listener phase2b
                 ]
 
-    forM_ (processesOf Learner topologyMembers) $
+    learnersStates <- forM (processesOf Learner topologyMembers) $
         \process -> newProcess process . work (for topologyLifetime) $ do
             serve (processPort process)
-                [ method learn
+                [ listener learn
                 ]
 
-    -- wait for everything to complete
-    wait (after 100 ms topologyLifetime)
+    let readAllStates =
+            AllStates
+            <$> leaderState
+            <*> sequence acceptorsStates
+            <*> sequence learnersStates
+
+    curTime <- virtualTime
+    let awaitCompletion = wait (till 100 ms (curTime + topologyLifetime))
+
+    return TopologyMonitor{..}
