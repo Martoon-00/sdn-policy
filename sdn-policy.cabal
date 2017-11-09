@@ -16,11 +16,11 @@ library
   hs-source-dirs:      src
   exposed-modules:     Sdn.Base
                        Sdn.Extra
+                       Sdn.ProposalStrategy
                        Sdn.Protocol
   other-modules:       Sdn.Base.CStruct
                        Sdn.Base.Error
                        Sdn.Base.Policy
-                       Sdn.Base.ProposalStrategy
                        Sdn.Base.Quorum
                        Sdn.Base.Types
 
@@ -108,10 +108,24 @@ executable demo
 test-suite sdn-policy-test
   type:                exitcode-stdio-1.0
   hs-source-dirs:      test
-  main-is:             Spec.hs
+  main-is:             Test.hs
+  other-modules:       Spec
+                       Test.Sdn.ClassicSpec
+                       Test.Sdn.Properties
+                       Test.Sdn.Util
   build-depends:       base
+                     , async
+                     , containers
+                     , data-default
+                     , formatting
+                     , hspec
+                     , monad-control
+                     , mtl
                      , sdn-policy
+                     , stm
                      , time-warp
+                     , random
+                     , QuickCheck
                      , universum
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   default-language:    Haskell2010

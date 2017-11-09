@@ -7,7 +7,8 @@ module Sdn.Extra.Logging where
 import           Control.Concurrent             (forkIO)
 import qualified Control.Concurrent.STM.TBMChan as TBM
 import           Control.Lens                   (Iso', iso)
-import           Control.TimeWarp.Logging       (LoggerName, WithNamedLogger (..))
+import           Control.TimeWarp.Logging       (LoggerName, LoggerName (..),
+                                                 WithNamedLogger (..))
 import           Control.TimeWarp.Timed         (Microsecond, MonadTimed (..))
 import           Data.Time.Units                (toMicroseconds)
 import           Formatting                     (left, right, sformat, (%))
@@ -61,12 +62,24 @@ logBuffer = unsafePerformIO $ do
 
 type MonadLog m = With [MonadIO, MonadTimed, WithNamedLogger] m
 
+dropName :: LoggerName
+dropName = "drop"
+
+isDropName :: LoggerName -> Bool
+isDropName (LoggerName name) =
+    let LoggerName dropName' = dropName
+    in  dropName' `isPrefixOf` name
+
+setDropLoggerName :: WithNamedLogger m => m a -> m a
+setDropLoggerName = modifyLoggerName (dropName <> )
+
 logInfo :: MonadLog m => Text -> m ()
 logInfo msg = do
     time <- virtualTime
     name <- getLoggerName
     let entry = LogEntry name time msg
-    liftIO . atomically $ TBM.writeTBMChan logBuffer entry
+    unless (isDropName name) $
+        liftIO . atomically $ TBM.writeTBMChan logBuffer entry
 
 logError :: MonadLog m => Text -> m ()
 logError = logInfo . (withColor ANSI.Dull ANSI.Red "Error: " <> )

@@ -4,7 +4,7 @@
 
 module Sdn.Base.CStruct where
 
-import           Data.Default        (Default)
+import           Data.Default        (Default (..))
 import           Data.MessagePack    (MessagePack)
 import qualified Data.Text.Buildable
 import           Formatting          (bprint, build)
@@ -34,7 +34,7 @@ type SuperConflict a b =
 data Acceptance cmd
     = Accepted cmd
     | Rejected cmd
-    deriving (Eq, Ord, Generic)
+    deriving (Eq, Ord, Show, Generic)
 
 -- | Command rejection doesn't conflict with any other command.
 instance Conflict a a => Conflict (Acceptance a) (Acceptance a) where
@@ -69,6 +69,12 @@ class (SuperConflict cmd cstruct, Default cstruct) =>
 
     -- | @extends c1 c2@ is true iff @glb c c2 = c1@ for some @c@.
     extends :: cstruct -> cstruct -> Bool
+
+-- | Construct cstruct from single command.
+liftCommand :: Command (Acceptance cmd) cstruct => cmd -> cstruct
+liftCommand cmd =
+    fromMaybe (error "Can't make up cstruct from single command") $
+    addCommand (Accepted cmd) def
 
 -- | Utility function, which unsures that arguments being combined does not
 -- conflict.

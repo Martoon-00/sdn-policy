@@ -83,7 +83,7 @@ processesAddresses maker members =
 data Proposer = Proposer
 
 instance Process Proposer where
-    type ProcessState Proposer = ()
+    type ProcessState Proposer = ProposerState
 
     processName _ =
         "proposer"

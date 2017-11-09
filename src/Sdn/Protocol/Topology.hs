@@ -1,3 +1,4 @@
+{-# LANGUAGE Rank2Types   #-}
 {-# LANGUAGE TypeFamilies #-}
 
 -- | Make up network layout
@@ -6,7 +7,7 @@ module Sdn.Protocol.Topology where
 
 import           Control.Monad.Catch      (catchAll)
 import           Control.Monad.Reader     (withReaderT)
-import           Control.TimeWarp.Logging (LoggerNameBox, usingLoggerName)
+import           Control.TimeWarp.Logging (WithNamedLogger, modifyLoggerName)
 import           Control.TimeWarp.Rpc     (Method (..), MonadRpc, RpcRequest (..), serve)
 import           Control.TimeWarp.Timed   (Microsecond, MonadTimed, for, fork_, interval,
                                            ms, sec, till, virtualTime, wait, work)
@@ -17,8 +18,8 @@ import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra
+import           Sdn.ProposalStrategy
 import           Sdn.Protocol.Context
-import           Sdn.Protocol.Messages
 import           Sdn.Protocol.Phases
 import           Sdn.Protocol.Processes
 
@@ -26,7 +27,7 @@ import           Sdn.Protocol.Processes
 data TopologySettings = TopologySettings
     { topologyMembers          :: Members
     , topologyProposalStrategy :: ProposalStrategy Policy
-    , topologySeed             :: GenSeed
+    , topologyProposalSeed     :: GenSeed
     , topologyBallotDuration   :: Microsecond
     , topologyLifetime         :: Microsecond
     }
@@ -38,7 +39,7 @@ instance Default TopologySettings where
         { topologyMembers = def
         , topologyProposalStrategy =
               generating (GoodPolicy <$> arbitrary)
-        , topologySeed = RandomSeed
+        , topologyProposalSeed = RandomSeed
         , topologyBallotDuration = interval 3 sec
         , topologyLifetime = interval 2 sec
         }
@@ -46,9 +47,9 @@ instance Default TopologySettings where
 -- | Provides info about topology in runtime.
 data TopologyMonitor m = TopologyMonitor
     { -- | Returns when all active processes in the topology finish
-      awaitCompletion :: m ()
+      awaitTermination :: m ()
       -- | Fetch states of all processes in topology
-    , readAllStates   :: STM AllStates
+    , readAllStates    :: STM AllStates
     }
 
 runWithMembers :: Monad m => Members -> ReaderT Members m a -> m a
@@ -56,15 +57,15 @@ runWithMembers = flip runReaderT
 
 -- | Create single newProcess.
 newProcess
-    :: (MonadIO m, MonadTimed m, Process p)
+    :: (MonadIO m, MonadTimed m, WithNamedLogger m, Process p)
     => p
-    -> LoggerNameBox (ReaderT (ProcessContext (ProcessState p)) m) ()
+    -> ReaderT (ProcessContext (ProcessState p)) m ()
     -> ReaderT Members m (STM (ProcessState p))
 newProcess process action = do
     stateBox <- liftIO $ newTVarIO (initProcessState process)
     fork_ $
         withReaderT (ProcessContext stateBox) $
-        usingLoggerName (processName process) $
+        modifyLoggerName (<> processName process) $
         action
     return $ readTVar stateBox
 
@@ -83,18 +84,26 @@ listener endpoint = Method $ \msg -> do
   where
     handler = logError . sformat shown
 
+type MonadTopology m =
+    ( MonadIO m
+    , MonadCatch m
+    , WithNamedLogger m
+    , MonadTimed m
+    , MonadRpc m
+    )
+
+type TopologyLauncher =
+    forall m. MonadTopology m => TopologySettings -> m (TopologyMonitor m)
+
 -- | Launch Classic Paxos algorithm.
-launchClassicPaxos
-    :: (MonadIO m, MonadCatch m, MonadTimed m, MonadRpc m)
-    => TopologySettings -> m (TopologyMonitor m)
+launchClassicPaxos :: TopologyLauncher
 launchClassicPaxos TopologySettings{..} = runWithMembers topologyMembers $ do
 
-    _ <- newProcess Proposer . work (for topologyLifetime) $ do
+    proposerState <- newProcess Proposer . work (for topologyLifetime) $ do
         -- wait for servers to bootstrap
         wait (for 10 ms)
         let strategy = limited topologyLifetime topologyProposalStrategy
-        execStrategy topologySeed strategy $ \policy ->
-            submit (processAddress Leader) (ProposalMsg policy)
+        propose topologyProposalSeed strategy
 
     leaderState <- newProcess Leader . work (for topologyLifetime) $ do
         work (for topologyLifetime) $ do
@@ -122,11 +131,12 @@ launchClassicPaxos TopologySettings{..} = runWithMembers topologyMembers $ do
 
     let readAllStates =
             AllStates
-            <$> leaderState
+            <$> proposerState
+            <*> leaderState
             <*> sequence acceptorsStates
             <*> sequence learnersStates
 
     curTime <- virtualTime
-    let awaitCompletion = wait (till 100 ms (curTime + topologyLifetime))
+    let awaitTermination = wait (till 100 ms (curTime + topologyLifetime))
 
     return TopologyMonitor{..}

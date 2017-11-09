@@ -14,7 +14,7 @@ import           Sdn.Base.Types
 
 -- | For each acceptor - something proposed by him.
 newtype Votes a = Votes (M.Map AcceptorId a)
-    deriving (Eq, Ord, Monoid, Container)
+    deriving (Eq, Ord, Show, Monoid, Container)
 
 instance Wrapped (Votes a) where
     type Unwrapped (Votes a) = M.Map AcceptorId a

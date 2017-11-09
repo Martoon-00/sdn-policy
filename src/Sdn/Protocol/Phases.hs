@@ -2,7 +2,7 @@
 
 module Sdn.Protocol.Phases where
 
-import           Control.Lens           (at, non, (%=), (+=), (.=), (<<%=), (<<.=))
+import           Control.Lens           (at, non, (%=), (+=), (.=), (<<%=), (<<.=), (<>=))
 import           Control.TimeWarp.Rpc   (MonadRpc)
 import           Control.TimeWarp.Timed (MonadTimed (..))
 import           Data.Default           (def)
@@ -11,6 +11,7 @@ import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra
+import           Sdn.ProposalStrategy
 import           Sdn.Protocol.Context
 import           Sdn.Protocol.Messages
 import           Sdn.Protocol.Processes
@@ -33,11 +34,11 @@ type MonadPhase m =
 -- in abstract way and literally sorts out all the minimal-on-inclusion quorums
 -- to evaluate cstruct.
 gatherCStructFromAllQuorums
-    :: (MonadThrow m, Command policy cstruct, Buildable cstruct)
+    :: (MonadThrow m, Command policy cstruct, Buildable cstruct, Show cstruct)
     => Members -> Votes cstruct -> m cstruct
 gatherCStructFromAllQuorums members votes =
     let quorumsVotes = allMinQuorums members votes
-        gamma = map (foldr lub def . toList) quorumsVotes
+        gamma = map (foldr1 lub . toList) quorumsVotes
         combined = foldrM glb def gamma
     in  maybe (errorContradictory gamma) pure combined
   where
@@ -48,12 +49,15 @@ gatherCStructFromAllQuorums members votes =
 -- * Phases
 
 propose
-    :: MonadPhase m
+    :: (MonadPhase m, HasContext ProposerState m)
     => GenSeed -> ProposalStrategy Policy -> m ()
-propose seed strategy =
-    -- start producing policies according to given strategy
+propose seed strategy = do
+    -- start producing policies according to given proposal strategy
     execStrategy seed strategy $ \policy -> do
         logInfo $ sformat ("Proposing policy: "%build) policy
+        -- remember them (for testing purposes)
+        withProcessState $
+            proposerProposedPolicies <>= one policy
         -- and send those policies to leader
         submit (processAddress Leader) (ProposalMsg policy)
 

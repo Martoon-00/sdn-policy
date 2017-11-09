@@ -1,0 +1,54 @@
+-- | Various useful properties in our protocol.
+
+module Test.Sdn.Properties where
+
+import           Control.Monad.Error.Class (throwError)
+import qualified Data.Set                  as S
+import           Formatting                (build, sformat, (%))
+import           Universum
+
+import           Sdn.Base
+import           Sdn.Protocol
+import           Test.Sdn.Util
+
+
+proposedPoliciesWereLearned :: PropertyChecker
+proposedPoliciesWereLearned AllStates{..} = do
+    let proposed's = _proposerProposedPolicies proposerState
+    let learned's = _learnerLearned <$> learnersStates
+
+    forM_ proposed's $ \p ->
+        forM_ (zip [1..] learned's) $ \(learnerId, learned) ->
+            unless (learned `extends` liftCommand p) $ failProp p learnerId
+  where
+    failProp p (li :: Int) =
+        throwError $
+        sformat ("Proposed "%build%" wasn't leart by learner "%build) p li
+
+learnedPoliciesWereProposed :: PropertyChecker
+learnedPoliciesWereProposed AllStates{..} = do
+    let proposed's = _proposerProposedPolicies proposerState
+    let validOutcomes = S.fromList $ [Accepted, Rejected] <*> toList proposed's
+    let learned's = _learnerLearned <$> learnersStates
+    forM_ (zip [1..] learned's) $ \(learnerId, learned) ->
+        forM_ learned $ \l ->
+            unless (l `S.member` validOutcomes) $ failProp l learnerId
+  where
+    failProp p (li :: Int) =
+        throwError $
+        sformat ("Learned "%build%" by "%build%" was never proposed") p li
+
+learnersAgree :: PropertyChecker
+learnersAgree AllStates{..} = do
+    let learned = _learnerLearned <$> learnersStates
+    l :| ls <- maybe (Left "No learners") Right $ nonEmpty learned
+    forM_ ls $ \l' ->
+        when (l /= l') $ Left "learners disagree"
+
+
+basicProperties :: forall m. MonadIO m => [ProtocolProperty m]
+basicProperties =
+    [ eventually proposedPoliciesWereLearned
+    , invariant learnedPoliciesWereProposed
+    , eventually learnersAgree
+    ]

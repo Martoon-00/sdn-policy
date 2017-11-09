@@ -3,7 +3,7 @@
 
 -- | Some useful types.
 
-module Sdn.Base.ProposalStrategy
+module Sdn.ProposalStrategy
     ( GenSeed (..)
     , ProposalStrategy
     , MonadProposal
@@ -51,11 +51,11 @@ newtype ProposalStrategy p =
 
 data GenSeed
     = RandomSeed
-    | FixedSeed Int
+    | FixedSeed StdGen
 
-getGenSeed :: MonadIO m => GenSeed -> m Int
+getGenSeed :: MonadIO m => GenSeed -> m StdGen
 getGenSeed = \case
-    RandomSeed -> liftIO randomIO
+    RandomSeed -> mkStdGen <$> liftIO randomIO
     FixedSeed s -> pure s
 
 execStrategy
@@ -63,7 +63,7 @@ execStrategy
     => GenSeed -> ProposalStrategy p -> (p -> m ()) -> m ()
 execStrategy seed (ProposalStrategy strategy) consumer = do
     let pcPush = consumer
-    pcGen <- mkStdGen <$> getGenSeed seed
+    pcGen <- getGenSeed seed
     pcCont <- newTVarIO def
     strategy ProposalContext{..}
 

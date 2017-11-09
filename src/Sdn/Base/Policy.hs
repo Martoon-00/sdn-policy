@@ -31,7 +31,7 @@ data Policy
     = GoodPolicy PolicyName       -- ^ Agrees with any other one
     | BadPolicy PolicyName        -- ^ Conflicts with any other one
     | MoodyPolicy Int PolicyName  -- ^ Conflicts if group ids are equal
-    deriving (Eq, Ord, Generic)
+    deriving (Eq, Ord, Show, Generic)
 
 instance Buildable Policy where
     build = \case

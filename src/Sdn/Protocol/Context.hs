@@ -10,6 +10,7 @@ import           Control.Lens           (makeLenses)
 import           Control.TimeWarp.Rpc   (MonadRpc, NetworkAddress, RpcRequest (..))
 import           Control.TimeWarp.Timed (MonadTimed)
 import           Data.Default           (Default (def))
+import qualified Data.Set               as S
 import           Universum
 
 import           Sdn.Base
@@ -47,6 +48,18 @@ ctxMembers :: MonadReader (ProcessContext s) m => m Members
 ctxMembers = pcMembers <$> ask
 
 -- * Per-process contexts
+-- ** Proposer
+
+data ProposerState = ProposerState
+    { _proposerProposedPolicies :: S.Set Policy
+      -- ^ Policies ever proposed (for testing purposes)
+    }
+
+makeLenses ''ProposerState
+
+instance Default ProposerState where
+    def = ProposerState mempty
+
 -- ** Leader
 
 -- * State kept by leader.
@@ -56,7 +69,7 @@ data LeaderState = LeaderState
     , _leaderPendingPolicies :: [Policy]
       -- ^ Proposed policies which were not replicated among acceptors yet
     , _leaderVotes           :: Map BallotId (Votes Configuration)
-      -- ^ CStructs received in 2b messages.
+      -- ^ CStructs received in 2b messages
     }
 
 makeLenses ''LeaderState
@@ -71,7 +84,7 @@ instance Default LeaderState where
 data AcceptorState = AcceptorState
     { _acceptorId       :: AcceptorId
       -- ^ Identificator of this acceptor, should be read-only
-      -- TODO
+      -- TODO: make read-only
     , _acceptorBallotId :: BallotId
       -- ^ Last heard ballotId from leader
     , _acceptorCStruct  :: Configuration
@@ -103,7 +116,8 @@ instance Default LearnerState where
 -- * Misc
 
 data AllStates = AllStates
-    { leaderState     :: LeaderState
+    { proposerState   :: ProposerState
+    , leaderState     :: LeaderState
     , acceptorsStates :: [AcceptorState]
     , learnersStates  :: [LearnerState]
     }
