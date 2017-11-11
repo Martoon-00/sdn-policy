@@ -7,7 +7,7 @@ module Sdn.Protocol.Context where
 
 import           Control.Concurrent.STM (STM)
 import           Control.Lens           (makeLenses)
-import           Control.TimeWarp.Rpc   (MonadRpc, NetworkAddress, RpcRequest (..))
+import           Control.TimeWarp.Rpc   (MonadRpc, NetworkAddress)
 import           Control.TimeWarp.Timed (MonadTimed)
 import           Data.Default           (Default (def))
 import qualified Data.Set               as S
@@ -124,11 +124,11 @@ data AllStates = AllStates
 
 -- | Send a message to given participants.
 broadcastTo
-    :: ( MonadTimed m
+    :: ( MonadCatch m
+       , MonadTimed m
        , MonadRpc m
        , MonadReader (ProcessContext s) m
-       , RpcRequest msg
-       , Response msg ~ ()
+       , Message msg
        )
     => (Members -> [NetworkAddress]) -> msg -> m ()
 broadcastTo getAddresses msg = do

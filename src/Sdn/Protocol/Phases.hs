@@ -2,7 +2,7 @@
 
 module Sdn.Protocol.Phases where
 
-import           Control.Lens           (at, non, (%=), (+=), (.=), (<<%=), (<<.=), (<>=))
+import           Control.Lens           (at, non, (%=), (+=), (.=), (<%=), (<<.=), (<>=))
 import           Control.TimeWarp.Rpc   (MonadRpc)
 import           Control.TimeWarp.Timed (MonadTimed (..))
 import           Data.Default           (def)
@@ -21,7 +21,7 @@ import           Sdn.Protocol.Processes
 -- | Common constraints for all phrases.
 type MonadPhase m =
     ( MonadIO m
-    , MonadThrow m
+    , MonadCatch m
     , MonadTimed m
     , MonadRpc m
     , MonadLog m
@@ -109,7 +109,7 @@ phase2a (Phase1bMsg accId ballotId cstruct) = do
         -- add received vote to set of votes stored locally for this ballot,
         -- initializing this set if doesn't exist yet
         newVotes <-
-            leaderVotes . at ballotId . non mempty <<%= addVote accId cstruct
+            leaderVotes . at ballotId . non mempty <%= addVote accId cstruct
 
         -- if some quorums appeared, recalculate Gamma and apply pending policies
         if isQuorum members newVotes

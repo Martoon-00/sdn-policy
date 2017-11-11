@@ -15,6 +15,7 @@ import           Universum
 
 import           Control.TimeWarp.Rpc   (MonadRpc (..), NetworkAddress, RpcRequest (..),
                                          mkRequest)
+import qualified Control.TimeWarp.Rpc   as Rpc
 import           Control.TimeWarp.Timed (MonadTimed (..), fork_)
 import           Language.Haskell.TH    (Dec, Name, Q)
 
@@ -22,11 +23,13 @@ import           Language.Haskell.TH    (Dec, Name, Q)
 declareMessage :: Name -> Q [Dec]
 declareMessage msgType = mkRequest msgType ''()
 
+type Message msg = (RpcRequest msg, Response msg ~ ())
+
 -- | Send asyncronously, supposing that remote method call returns nothing.
 submit
-    :: (MonadTimed m, MonadRpc m, RpcRequest msg, Response msg ~ ())
+    :: (MonadCatch m, MonadTimed m, MonadRpc m, Message msg)
     => NetworkAddress -> msg -> m ()
-submit = fork_ ... send
+submit = fork_ ... Rpc.submit
 
 buildList :: Buildable a => Format r ([a] -> r)
 buildList =

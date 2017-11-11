@@ -8,7 +8,7 @@ module Sdn.Protocol.Topology where
 import           Control.Monad.Catch      (catchAll)
 import           Control.Monad.Reader     (withReaderT)
 import           Control.TimeWarp.Logging (WithNamedLogger, modifyLoggerName)
-import           Control.TimeWarp.Rpc     (Method (..), MonadRpc, RpcRequest (..), serve)
+import           Control.TimeWarp.Rpc     (Method (..), MonadRpc, serve)
 import           Control.TimeWarp.Timed   (Microsecond, MonadTimed, for, fork_, interval,
                                            ms, sec, till, virtualTime, wait, work)
 import           Data.Default             (Default (..))
@@ -73,8 +73,7 @@ newProcess process action = do
 listener
     :: ( MonadCatch m
        , MonadLog m
-       , RpcRequest msg
-       , Response msg ~ ()
+       , Message msg
        , Buildable msg
        )
     => (msg -> m ()) -> Method m

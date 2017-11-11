@@ -119,6 +119,7 @@ test-suite sdn-policy-test
                      , data-default
                      , formatting
                      , hspec
+                     , MonadRandom 
                      , monad-control
                      , mtl
                      , sdn-policy
