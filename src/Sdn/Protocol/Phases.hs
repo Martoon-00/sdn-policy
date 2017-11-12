@@ -50,7 +50,7 @@ gatherCStructFromAllQuorums members votes =
 
 propose
     :: (MonadPhase m, HasContext ProposerState m)
-    => GenSeed -> Schedule Policy -> m ()
+    => GenSeed -> Schedule m Policy -> m ()
 propose seed schedule = do
     -- start producing policies according to given proposal schedule
     runSchedule seed schedule $ \policy -> do

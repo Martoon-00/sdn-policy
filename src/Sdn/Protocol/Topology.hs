@@ -23,12 +23,14 @@ import           Sdn.Protocol.Phases
 import           Sdn.Protocol.Processes
 import           Sdn.Schedule
 
+type TopologySchedule p = forall m. MonadTopology m => Schedule m p
+
 -- | Contains all info to build network which serves consensus algorithm.
 data TopologySettings = TopologySettings
     { topologyMembers          :: Members
-    , topologyProposalSchedule :: Schedule Policy
+    , topologyProposalSchedule :: TopologySchedule Policy
     , topologySeed             :: GenSeed
-    , topologyBallotsSchedule  :: Schedule ()
+    , topologyBallotsSchedule  :: TopologySchedule ()
     , topologyLifetime         :: Microsecond
     }
 
@@ -108,7 +110,7 @@ launchClassicPaxos TopologySettings{..} = runWithMembers topologyMembers $ do
         work (for topologyLifetime) $ do
             -- wait for first proposal before start
             wait (for 20 ms)
-            runSchedule ballotSeed topologyBallotsSchedule $ \() -> phrase1a
+            runSchedule_ ballotSeed $ topologyBallotsSchedule >> lift phrase1a
 
         serve (processPort Leader)
             [ listener rememberProposal

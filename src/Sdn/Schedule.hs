@@ -7,6 +7,7 @@ module Sdn.Schedule
     ( Schedule
     , MonadSchedule
     , runSchedule
+    , runSchedule_
 
     , GenSeed (..)
     , splitGenSeed
@@ -52,8 +53,7 @@ data ScheduleContext m p = ScheduleContext
 
 -- | Schedule allows to periodically execute some job,
 -- providing it with data @p@ which may vary from time to time.
-newtype Schedule p = Schedule
-    (forall m. MonadSchedule m => ScheduleContext m p -> m ())
+newtype Schedule m p = Schedule (ScheduleContext m p -> m ())
 
 -- | Which seed to use for randomness.
 data GenSeed
@@ -73,15 +73,20 @@ splitGenSeed (FixedSeed seed) = both %~ FixedSeed $ split seed
 -- | Execute given job on schedule.
 runSchedule
     :: MonadSchedule m
-    => GenSeed -> Schedule p -> (p -> m ()) -> m ()
+    => GenSeed -> Schedule m p -> (p -> m ()) -> m ()
 runSchedule seed (Schedule schedule) consumer = do
     let scPush = consumer
     scGen <- getGenSeed seed
     scCont <- newTVarIO def
     schedule ScheduleContext{..}
 
+-- | Execute schedule without any job passed.
+runSchedule_ :: MonadSchedule m
+    => GenSeed -> Schedule m () -> m ()
+runSchedule_ seed schedule = runSchedule seed schedule $ \() -> pass
+
 -- | Allows to execute schedules in parallel.
-instance Monoid (Schedule p) where
+instance MonadTimed m => Monoid (Schedule m p) where
     mempty = Schedule $ \_ -> pass
     Schedule strategy1 `mappend` Schedule strategy2 =
         Schedule $ \ctx -> do
@@ -89,15 +94,15 @@ instance Monoid (Schedule p) where
             fork_ $ strategy1 ctx{ scGen = gen1 }
             fork_ $ strategy2 ctx{ scGen = gen2 }
 
-instance Functor Schedule where
+instance Functor (Schedule m) where
     fmap f (Schedule s) = Schedule $ \ctx ->
         s ctx{ scPush = scPush ctx . f }
 
-instance Applicative Schedule where
+instance Applicative (Schedule m) where
     pure = return
     (<*>) = ap
 
-instance Monad Schedule where
+instance Monad (Schedule m) where
     return = simple
     Schedule s1 >>= f = Schedule $ \ctx ->
         let (gen1, gen2) = split (scGen ctx)
@@ -105,24 +110,29 @@ instance Monad Schedule where
                      Schedule s2 -> s2 ctx{ scGen = gen1 }
         in  s1 ctx{ scPush = push, scGen = gen2 }
 
+instance MonadTrans Schedule where
+    lift job = Schedule $ \ctx -> job >>= scPush ctx
+
 -- | Just fires once, generating arbitrary job data.
 --
 -- Use combinators to define timing.
-generating :: Gen p -> Schedule p
+generating :: Gen p -> Schedule m p
 generating generator = do
     Schedule $ \ScheduleContext{..} ->
         let (seed, _) = next scGen
         in  scPush $ unGen generator (mkQCGen seed) 30
 
 -- | Just fires once, using provided job data.
-simple :: p -> Schedule p
+simple :: p -> Schedule m p
 simple = generating . pure
 
 -- | Just fires once, for jobs without any data.
-execute :: Schedule ()
+execute :: Schedule m ()
 execute = simple ()
 
-periodicCounting :: Maybe Word -> Microsecond -> Schedule p -> Schedule p
+periodicCounting
+    :: MonadSchedule m
+    => Maybe Word -> Microsecond -> Schedule m p -> Schedule m p
 periodicCounting mnum period (Schedule schedule) =
     Schedule $ \ctx@ScheduleContext{..} ->
         let loop (Just 0) _ = return ()
@@ -137,15 +147,21 @@ periodicCounting mnum period (Schedule schedule) =
         in  fork_ $ loop mnum scGen
 
 -- | Execute with given period.
-periodic :: Microsecond -> Schedule p -> Schedule p
+periodic
+    :: MonadSchedule m
+    => Microsecond -> Schedule m p -> Schedule m p
 periodic = periodicCounting Nothing
 
 -- | Execute given number of times with specified delay.
-repeating :: Word -> Microsecond -> Schedule p -> Schedule p
+repeating
+    :: MonadSchedule m
+    => Word -> Microsecond -> Schedule m p -> Schedule m p
 repeating = periodicCounting . Just
 
 -- | Stop starting jobs after given amount of time.
-limited :: Microsecond -> Schedule p -> Schedule p
+limited
+    :: MonadSchedule m
+    => Microsecond -> Schedule m p -> Schedule m p
 limited duration (Schedule schedule) =
     Schedule $ \ctx -> do
         fork_ $ do
@@ -154,6 +170,8 @@ limited duration (Schedule schedule) =
         schedule ctx
 
 -- | Postpone execution.
-delayed :: Microsecond -> Schedule p -> Schedule p
+delayed
+    :: MonadSchedule m
+    => Microsecond -> Schedule m p -> Schedule m p
 delayed duration (Schedule schedule) =
     Schedule $ invoke (after duration) . schedule
