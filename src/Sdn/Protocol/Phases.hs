@@ -11,10 +11,10 @@ import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra
-import           Sdn.ProposalStrategy
 import           Sdn.Protocol.Context
 import           Sdn.Protocol.Messages
 import           Sdn.Protocol.Processes
+import           Sdn.Schedule
 
 -- * Commons
 
@@ -50,10 +50,10 @@ gatherCStructFromAllQuorums members votes =
 
 propose
     :: (MonadPhase m, HasContext ProposerState m)
-    => GenSeed -> ProposalStrategy Policy -> m ()
-propose seed strategy = do
-    -- start producing policies according to given proposal strategy
-    execStrategy seed strategy $ \policy -> do
+    => GenSeed -> Schedule Policy -> m ()
+propose seed schedule = do
+    -- start producing policies according to given proposal schedule
+    runSchedule seed schedule $ \policy -> do
         logInfo $ sformat ("Proposing policy: "%build) policy
         -- remember them (for testing purposes)
         withProcessState $

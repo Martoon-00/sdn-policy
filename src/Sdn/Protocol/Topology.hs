@@ -9,8 +9,8 @@ import           Control.Monad.Catch      (catchAll)
 import           Control.Monad.Reader     (withReaderT)
 import           Control.TimeWarp.Logging (WithNamedLogger, modifyLoggerName)
 import           Control.TimeWarp.Rpc     (Method (..), MonadRpc, serve)
-import           Control.TimeWarp.Timed   (Microsecond, MonadTimed, for, fork_, interval,
-                                           ms, sec, till, virtualTime, wait, work)
+import           Control.TimeWarp.Timed   (Microsecond, MonadTimed, for, fork_, hour,
+                                           interval, ms, till, virtualTime, wait, work)
 import           Data.Default             (Default (..))
 import           Formatting               (build, sformat, shown, (%))
 import           Test.QuickCheck          (arbitrary)
@@ -18,17 +18,17 @@ import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra
-import           Sdn.ProposalStrategy
 import           Sdn.Protocol.Context
 import           Sdn.Protocol.Phases
 import           Sdn.Protocol.Processes
+import           Sdn.Schedule
 
 -- | Contains all info to build network which serves consensus algorithm.
 data TopologySettings = TopologySettings
     { topologyMembers          :: Members
-    , topologyProposalStrategy :: ProposalStrategy Policy
-    , topologyProposalSeed     :: GenSeed
-    , topologyBallotDuration   :: Microsecond
+    , topologyProposalSchedule :: Schedule Policy
+    , topologySeed             :: GenSeed
+    , topologyBallotsSchedule  :: Schedule ()
     , topologyLifetime         :: Microsecond
     }
 
@@ -37,11 +37,10 @@ instance Default TopologySettings where
     def =
         TopologySettings
         { topologyMembers = def
-        , topologyProposalStrategy =
-              generating (GoodPolicy <$> arbitrary)
-        , topologyProposalSeed = RandomSeed
-        , topologyBallotDuration = interval 3 sec
-        , topologyLifetime = interval 2 sec
+        , topologyProposalSchedule = generating (GoodPolicy <$> arbitrary)
+        , topologyBallotsSchedule = execute
+        , topologySeed = RandomSeed
+        , topologyLifetime = interval 999 hour
         }
 
 -- | Provides info about topology in runtime.
@@ -97,18 +96,19 @@ type TopologyLauncher =
 -- | Launch Classic Paxos algorithm.
 launchClassicPaxos :: TopologyLauncher
 launchClassicPaxos TopologySettings{..} = runWithMembers topologyMembers $ do
+    let (proposalSeed, ballotSeed) = splitGenSeed topologySeed
 
     proposerState <- newProcess Proposer . work (for topologyLifetime) $ do
         -- wait for servers to bootstrap
         wait (for 10 ms)
-        let strategy = limited topologyLifetime topologyProposalStrategy
-        propose topologyProposalSeed strategy
+        let strategy = limited topologyLifetime topologyProposalSchedule
+        propose proposalSeed strategy
 
     leaderState <- newProcess Leader . work (for topologyLifetime) $ do
         work (for topologyLifetime) $ do
             -- wait for first proposal before start
             wait (for 20 ms)
-            forever $ phrase1a >> wait (for topologyBallotDuration)
+            runSchedule ballotSeed topologyBallotsSchedule $ \() -> phrase1a
 
         serve (processPort Leader)
             [ listener rememberProposal

@@ -21,8 +21,8 @@ import           Test.QuickCheck.Monadic  (monadicIO, stop)
 import           Test.QuickCheck.Property (failed, reason, succeeded)
 
 import           Sdn.Extra
-import qualified Sdn.ProposalStrategy     as PS
 import           Sdn.Protocol
+import qualified Sdn.Schedule             as S
 import           Test.Sdn.Properties
 import           Test.Sdn.Util
 
@@ -49,6 +49,7 @@ spec = describe "classic" $ do
               [ fails (eventually proposedPoliciesWereLearned)
               ]
         }
+
 
 data TestLaunchParams = TestLaunchParams
     { testLauncher   :: TopologyLauncher
@@ -77,7 +78,7 @@ testLaunch TestLaunchParams{..} =
                 split (mkStdGen seed)
             launch =
                 testLauncher
-                testSettings { topologyProposalSeed = PS.FixedSeed gen2 }
+                testSettings { topologySeed = S.FixedSeed gen2 }
             runEmulation =
                 runTimedT .
                 runPureRpc testDelays gen1 .

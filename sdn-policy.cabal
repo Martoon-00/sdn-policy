@@ -16,8 +16,8 @@ library
   hs-source-dirs:      src
   exposed-modules:     Sdn.Base
                        Sdn.Extra
-                       Sdn.ProposalStrategy
                        Sdn.Protocol
+                       Sdn.Schedule
   other-modules:       Sdn.Base.CStruct
                        Sdn.Base.Error
                        Sdn.Base.Policy
@@ -83,6 +83,7 @@ executable demo
                      , data-default
                      , sdn-policy
                      , time-warp
+                     , QuickCheck
                      , universum
   default-language:    Haskell2010
   default-extensions:  FlexibleContexts
