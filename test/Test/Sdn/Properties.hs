@@ -12,6 +12,8 @@ import           Sdn.Protocol
 import           Test.Sdn.Util
 
 
+-- * Property primitives
+
 proposedPoliciesWereLearned :: PropertyChecker
 proposedPoliciesWereLearned AllStates{..} = do
     let proposed's = _proposerProposedPolicies proposerState
@@ -45,6 +47,20 @@ learnersAgree AllStates{..} = do
     forM_ ls $ \l' ->
         when (l /= l') $ Left "learners disagree"
 
+numberOfLearnedPolicies :: Integral i => (i -> Bool) -> PropertyChecker
+numberOfLearnedPolicies cmp AllStates{..} = do
+    let learned's = _learnerLearned <$> learnersStates
+    forM_ (zip [1..] learned's) $ \(learnerId, learned) -> do
+        let ok = cmp $ fromIntegral (length learned)
+        unless ok $ failProp learnerId learned
+  where
+    failProp (li :: Int) l =
+        throwError $
+        sformat ("Unexpected number of learned policies for learner "%build
+                %", only "%build%" are present:"%build) li (length l) l
+
+
+-- * Properties groups
 
 basicProperties :: forall m. MonadIO m => [ProtocolProperty m]
 basicProperties =

@@ -16,10 +16,11 @@ import           Data.Default
 import           System.Random            (mkStdGen, split)
 import           Test.Hspec               (Spec, describe)
 import           Test.Hspec.QuickCheck    (prop)
-import           Test.QuickCheck          (Property, forAll, property)
+import           Test.QuickCheck          (Property, Small (..), arbitrary, forAll, oneof)
 import           Test.QuickCheck.Monadic  (monadicIO, stop)
 import           Test.QuickCheck.Property (failed, reason, succeeded)
 
+import           Sdn.Base
 import           Sdn.Extra
 import           Sdn.Protocol
 import qualified Sdn.Schedule             as S
@@ -50,6 +51,26 @@ spec = describe "classic" $ do
               ]
         }
 
+    prop "good and bad policies" $
+        -- TODO: optimize algorithm and get rid of 'Small'
+        \(Small (n :: Word)) ->
+
+        testLaunch def
+        { testSettings = def
+            { topologyProposalSchedule =
+                S.times n $
+                S.generate . oneof $
+                    [ GoodPolicy <$> arbitrary
+                    , BadPolicy <$> arbitrary
+                    ]
+            }
+        , testProperties =
+             [ invariant learnedPoliciesWereProposed
+             , eventually learnersAgree
+             ]
+        }
+
+
 
 data TestLaunchParams = TestLaunchParams
     { testLauncher   :: TopologyLauncher
@@ -68,7 +89,7 @@ instance Default TestLaunchParams where
         , testDelays = D.steady
           -- ^ no message delays
         , testProperties = basicProperties
-          -- ^ set of reasonable properties for any good consensus launch
+                           -- ^ set of reasonable properties for any good consensus launch
         }
 
 testLaunch :: TestLaunchParams -> Property
@@ -76,6 +97,7 @@ testLaunch TestLaunchParams{..} =
     forAll arbitraryRandom $ \seed -> do
         let (gen1, gen2) =
                 split (mkStdGen seed)
+            launch :: MonadTopology m => m (TopologyMonitor m)
             launch =
                 testLauncher
                 testSettings { topologySeed = S.FixedSeed gen2 }
@@ -83,21 +105,24 @@ testLaunch TestLaunchParams{..} =
                 runTimedT .
                 runPureRpc testDelays gen1 .
                 usingLoggerName mempty
+            failProp err = do
+                lift . runEmulation . runNoErrorReporting . setLoggerName mempty $
+                    awaitTermination =<< launch
+                stop failed{ reason = toString err }
 
-        ioToProperty $ do
+        monadicIO $ do
             -- launch silently
-            outcome <- runEmulation $ do
+            (errors, outcome) <- lift . runEmulation . runErrorReporting $ do
                 monitor <- setDropLoggerName launch
                 protocolProperties monitor testProperties
-            -- if failed - relaunch with logs and then return error
-            case outcome of
-                Right () -> pure $ property succeeded
-                Left err -> do
-                    runEmulation . setLoggerName mempty $
-                        awaitTermination =<< launch
-                    return $ property failed{ reason = toString err }
 
-  where
-    ioToProperty :: IO Property -> Property
-    ioToProperty propM = monadicIO $ stop =<< lift propM
+            -- check errors log
+            unless (null errors) $
+                failProp $
+                    "Protocol errors:\n" <>
+                    mconcat (intersperse "\n" errors)
 
+            -- check properties
+            whenLeft outcome failProp
+
+            stop succeeded

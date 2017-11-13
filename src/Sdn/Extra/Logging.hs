@@ -1,14 +1,34 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DefaultSignatures          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 -- | Configure logging for network.
 
-module Sdn.Extra.Logging where
+module Sdn.Extra.Logging
+    ( MonadLog
+    , loggerNameT
+    , withColor
+    , setDropLoggerName
+    , logInfo
+    , logError
+
+    , MonadReporting
+    , ErrorReporting (..)
+    , runErrorReporting
+    , NoErrorReporting (..)
+    , reportError
+    ) where
 
 import           Control.Concurrent             (forkIO)
 import qualified Control.Concurrent.STM.TBMChan as TBM
 import           Control.Lens                   (Iso', iso)
-import           Control.TimeWarp.Logging       (LoggerName (..), WithNamedLogger (..))
-import           Control.TimeWarp.Timed         (Microsecond, MonadTimed (..))
+import           Control.Monad.Reader           (mapReaderT)
+import           Control.TimeWarp.Logging       (LoggerName (..), LoggerNameBox (..),
+                                                 WithNamedLogger (..))
+import           Control.TimeWarp.Rpc           (MonadRpc)
+import           Control.TimeWarp.Timed         (Microsecond, MonadTimed (..), ThreadId)
 import           Data.Time.Units                (toMicroseconds)
 import           Formatting                     (left, right, sformat, (%))
 import           GHC.IO.Unsafe                  (unsafePerformIO)
@@ -36,9 +56,11 @@ loggingFormatter (LogEntry name (toMicroseconds -> time) msg) =
     , pretty name
     , inGray "]"
     , " "
-    , inGray "["
-    , timeText
-    , inGray "]"
+    , inGray $ mconcat
+        [ "["
+        , timeText
+        , "]"
+        ]
     , " "
     , msg
     ]
@@ -80,5 +102,58 @@ logInfo msg = do
     unless (isDropName name) $
         atomically $ TBM.writeTBMChan logBuffer entry
 
-logError :: MonadLog m => Text -> m ()
-logError = logInfo . (withColor ANSI.Dull ANSI.Red "Error: " <> )
+
+class Monad m => MonadReporting m where
+    reportError :: Text -> m ()
+    default reportError
+        :: (MonadTrans t, Monad n, MonadReporting n, t n ~ m)
+        => Text -> m ()
+    reportError = lift . reportError
+
+instance MonadReporting m => MonadReporting (ReaderT __ m) where
+instance MonadReporting m => MonadReporting (LoggerNameBox m) where
+
+newtype ErrorReporting m a = ErrorReporting
+    { getErrorReporting :: ReaderT (TVar [Text]) m a
+    } deriving ( Functor, Applicative, Monad, MonadIO, MonadTrans
+               , MonadThrow, MonadCatch
+               , MonadState __, MonadTimed, MonadRpc, WithNamedLogger)
+
+type instance ThreadId (ErrorReporting m) = ThreadId m
+
+instance MonadReader r m => MonadReader r (ErrorReporting m) where
+    reader = lift . reader
+    ask = lift ask
+    local modifier = ErrorReporting . mapReaderT (local modifier) . getErrorReporting
+
+runErrorReporting :: MonadIO m => ErrorReporting m a -> m ([Text], a)
+runErrorReporting (ErrorReporting action) = do
+    var <- newTVarIO mempty
+    res <- runReaderT action var
+    errs <- readTVarIO var
+    return (reverse errs, res)
+
+instance MonadIO m => MonadReporting (ErrorReporting m) where
+    reportError err = ErrorReporting $ do
+        var <- ask
+        atomically $ modifyTVar' var (err :)
+
+newtype NoErrorReporting m a = NoErrorReporting
+    { runNoErrorReporting :: m a
+    } deriving ( Functor, Applicative, Monad, MonadIO
+               , MonadThrow, MonadCatch
+               , MonadState __, MonadTimed, MonadRpc, WithNamedLogger)
+
+instance MonadTrans NoErrorReporting where
+    lift = NoErrorReporting
+
+type instance ThreadId (NoErrorReporting m) = ThreadId m
+
+instance Monad m => MonadReporting (NoErrorReporting m) where
+    reportError _ = pass
+
+logError :: (MonadLog m, MonadReporting m) => Text -> m ()
+logError msg = do
+    logInfo $ withColor ANSI.Dull ANSI.Red "Error: " <> msg
+    reportError msg
+

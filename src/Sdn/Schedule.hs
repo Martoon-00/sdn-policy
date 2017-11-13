@@ -13,13 +13,14 @@ module Sdn.Schedule
     , splitGenSeed
 
     -- * schedules
-    , generating
-    , simple
+    , generate
+    , give
     , execute
 
     -- * schedule combinators
     , periodic
     , repeating
+    , times
     , limited
     , delayed
     ) where
@@ -103,7 +104,7 @@ instance Applicative (Schedule m) where
     (<*>) = ap
 
 instance Monad (Schedule m) where
-    return = simple
+    return = give
     Schedule s1 >>= f = Schedule $ \ctx ->
         let (gen1, gen2) = split (scGen ctx)
             push p = case f p of
@@ -116,19 +117,19 @@ instance MonadTrans Schedule where
 -- | Just fires once, generating arbitrary job data.
 --
 -- Use combinators to define timing.
-generating :: Gen p -> Schedule m p
-generating generator = do
+generate :: Gen p -> Schedule m p
+generate generator = do
     Schedule $ \ScheduleContext{..} ->
         let (seed, _) = next scGen
         in  scPush $ unGen generator (mkQCGen seed) 30
 
 -- | Just fires once, using provided job data.
-simple :: p -> Schedule m p
-simple = generating . pure
+give :: p -> Schedule m p
+give = generate . pure
 
 -- | Just fires once, for jobs without any data.
 execute :: Schedule m ()
-execute = simple ()
+execute = give ()
 
 periodicCounting
     :: MonadSchedule m
@@ -146,7 +147,7 @@ periodicCounting mnum period (Schedule schedule) =
                     loop mrem' gen2
         in  fork_ $ loop mnum scGen
 
--- | Execute with given period.
+-- | Execute with given period indefinetely.
 periodic
     :: MonadSchedule m
     => Microsecond -> Schedule m p -> Schedule m p
@@ -157,6 +158,10 @@ repeating
     :: MonadSchedule m
     => Word -> Microsecond -> Schedule m p -> Schedule m p
 repeating = periodicCounting . Just
+
+-- | Perform schedule several times at once.
+times :: MonadSchedule m => Word -> Schedule m p -> Schedule m p
+times k = repeating k 0
 
 -- | Stop starting jobs after given amount of time.
 limited

@@ -39,7 +39,7 @@ instance Default TopologySettings where
     def =
         TopologySettings
         { topologyMembers = def
-        , topologyProposalSchedule = generating (GoodPolicy <$> arbitrary)
+        , topologyProposalSchedule = generate (GoodPolicy <$> arbitrary)
         , topologyBallotsSchedule = execute
         , topologySeed = RandomSeed
         , topologyLifetime = interval 999 hour
@@ -74,6 +74,7 @@ newProcess process action = do
 listener
     :: ( MonadCatch m
        , MonadLog m
+       , MonadReporting m
        , Message msg
        , Buildable msg
        )
@@ -88,6 +89,7 @@ type MonadTopology m =
     ( MonadIO m
     , MonadCatch m
     , WithNamedLogger m
+    , MonadReporting m
     , MonadTimed m
     , MonadRpc m
     )
