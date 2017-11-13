@@ -1,9 +1,11 @@
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE TemplateHaskell        #-}
 
 -- | Interface for commands and cstructs.
 
 module Sdn.Base.CStruct where
 
+import           Control.Lens        (makePrisms)
 import           Data.Default        (Default (..))
 import           Data.MessagePack    (MessagePack)
 import qualified Data.Text.Buildable
@@ -35,6 +37,8 @@ data Acceptance cmd
     = Accepted cmd
     | Rejected cmd
     deriving (Eq, Ord, Show, Generic)
+
+makePrisms ''Acceptance
 
 -- | Command rejection doesn't conflict with any other command.
 instance Conflict a a => Conflict (Acceptance a) (Acceptance a) where

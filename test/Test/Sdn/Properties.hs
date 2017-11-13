@@ -1,7 +1,10 @@
+{-# LANGUAGE Rank2Types #-}
+
 -- | Various useful properties in our protocol.
 
 module Test.Sdn.Properties where
 
+import           Control.Lens              (Prism', has)
 import           Control.Monad.Error.Class (throwError)
 import qualified Data.Set                  as S
 import           Formatting                (build, sformat, (%))
@@ -47,17 +50,20 @@ learnersAgree AllStates{..} = do
     forM_ ls $ \l' ->
         when (l /= l') $ Left "learners disagree"
 
-numberOfLearnedPolicies :: Integral i => (i -> Bool) -> PropertyChecker
-numberOfLearnedPolicies cmp AllStates{..} = do
+numberOfLearnedPolicies :: (Prism' (Acceptance Policy) a)
+                        -> (Word -> Bool)
+                        -> PropertyChecker
+numberOfLearnedPolicies predicate cmp AllStates{..} = do
     let learned's = _learnerLearned <$> learnersStates
     forM_ (zip [1..] learned's) $ \(learnerId, learned) -> do
-        let ok = cmp $ fromIntegral (length learned)
+        let fit = filter (has predicate) $ toList learned
+            ok = cmp $ fromIntegral (length fit)
         unless ok $ failProp learnerId learned
   where
     failProp (li :: Int) l =
         throwError $
         sformat ("Unexpected number of learned policies for learner "%build
-                %", only "%build%" are present:"%build) li (length l) l
+                %", but "%build%" are present:"%build) li (length l) l
 
 
 -- * Properties groups

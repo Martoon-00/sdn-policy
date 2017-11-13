@@ -123,6 +123,7 @@ test-suite sdn-policy-test
                      , MonadRandom 
                      , monad-control
                      , mtl
+                     , lens
                      , sdn-policy
                      , stm
                      , time-warp

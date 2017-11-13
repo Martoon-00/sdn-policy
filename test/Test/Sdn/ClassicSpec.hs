@@ -16,7 +16,8 @@ import           Data.Default
 import           System.Random            (mkStdGen, split)
 import           Test.Hspec               (Spec, describe)
 import           Test.Hspec.QuickCheck    (prop)
-import           Test.QuickCheck          (Property, Small (..), arbitrary, forAll, oneof)
+import           Test.QuickCheck          (Positive (..), Property, Small (..), arbitrary,
+                                           forAll, oneof)
 import           Test.QuickCheck.Monadic  (monadicIO, stop)
 import           Test.QuickCheck.Property (failed, reason, succeeded)
 
@@ -69,6 +70,23 @@ spec = describe "classic" $ do
              , eventually learnersAgree
              ]
         }
+
+    prop "all conflicting policies" $
+        \(Positive (Small (n :: Word))) ->
+
+        testLaunch def
+        { testSettings = def
+            { topologyProposalSchedule =
+                S.times n $
+                S.generate (BadPolicy <$> arbitrary)
+            }
+        , testProperties =
+             [ invariant learnedPoliciesWereProposed
+             , eventually learnersAgree
+             , eventually $ numberOfLearnedPolicies _Accepted (== 1)
+             ]
+        }
+
 
 
 
