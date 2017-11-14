@@ -14,7 +14,6 @@ import           Sdn.Extra
 import           Sdn.Protocol.Context
 import           Sdn.Protocol.Messages
 import           Sdn.Protocol.Processes
-import           Sdn.Schedule
 
 -- * Commons
 
@@ -44,25 +43,23 @@ gatherCStructFromAllQuorums members votes =
   where
     errorContradictory gamma =
         throwM . ProtocolError $
-        sformat ("Got contradictory Gamma: "%buildList) gamma
+        sformat ("Got contradictory Gamma: "%buildList "\n  ,") gamma
 
 -- * Phases
 
 propose
-    :: (MonadPhase m, HasContext ProposerState m)
-    => GenSeed -> Schedule m Policy -> m ()
-propose seed schedule = do
-    -- start producing policies according to given proposal schedule
-    runSchedule seed schedule $ \policy -> do
-        logInfo $ sformat ("Proposing policy: "%build) policy
-        -- remember them (for testing purposes)
-        withProcessState $
-            proposerProposedPolicies <>= one policy
-        -- and send those policies to leader
-        submit (processAddress Leader) (ProposalMsg policy)
+    :: (MonadPhase m, HasContext Proposer m)
+    => Policy -> m ()
+propose policy = do
+    logInfo $ sformat ("Proposing policy: "%build) policy
+    -- remember policy (for testing purposes)
+    withProcessState $
+        proposerProposedPolicies <>= one policy
+    -- and send it policies to leader
+    submit (processAddress Leader) (ProposalMsg policy)
 
 rememberProposal
-    :: (MonadPhase m, HasContext LeaderState m)
+    :: (MonadPhase m, HasContext Leader m)
     => ProposalMsg -> m ()
 rememberProposal (ProposalMsg policy) = do
     -- atomically modify process'es state
@@ -71,7 +68,7 @@ rememberProposal (ProposalMsg policy) = do
         leaderPendingPolicies %= (policy :)
 
 phrase1a
-    :: (MonadPhase m, HasContext LeaderState m)
+    :: (MonadPhase m, HasContext Leader m)
     => m ()
 phrase1a = do
     logInfo "Starting new ballot"
@@ -85,7 +82,7 @@ phrase1a = do
     broadcastTo (processesAddresses Acceptor) msg
 
 phase1b
-    :: (MonadPhase m, HasContext AcceptorState m)
+    :: (MonadPhase m, HasContext Acceptor m)
     => Phase1aMsg -> m ()
 phase1b (Phase1aMsg ballotId) = do
     msg <- withProcessState $ do
@@ -100,7 +97,7 @@ phase1b (Phase1aMsg ballotId) = do
     submit (processAddress Leader) msg
 
 phase2a
-    :: (MonadPhase m, HasContext LeaderState m)
+    :: (MonadPhase m, HasContext Leader m)
     => Phase1bMsg -> m ()
 phase2a (Phase1bMsg accId ballotId cstruct) = do
     members <- ctxMembers
@@ -128,7 +125,7 @@ phase2a (Phase1bMsg accId ballotId cstruct) = do
         broadcastTo (processesAddresses Acceptor)
 
 phase2b
-    :: (MonadPhase m, HasContext AcceptorState m)
+    :: (MonadPhase m, HasContext Acceptor m)
     => Phase2aMsg -> m ()
 phase2b (Phase2aMsg ballotId cstruct) = do
     maybeMsg <- withProcessState $ do
@@ -153,38 +150,36 @@ phase2b (Phase2aMsg ballotId cstruct) = do
         broadcastTo (processesAddresses Learner)
 
 learn
-    :: (MonadPhase m, HasContext LearnerState m)
+    :: (MonadPhase m, HasContext Learner m)
     => Phase2bMsg -> m ()
 learn (Phase2bMsg accId cstruct) = do
     members <- ctxMembers
 
     learned <- withProcessState $ do
         do  -- rewrite cstruct kept for this acceptor
-            prevCStruct <- learnerVotes . at accId . non mempty <<.= cstruct
 
-            -- sanity check
-            unless (cstruct `extends` prevCStruct) $
-                errorBadCStruct prevCStruct cstruct
+            -- we should check here that new cstruct extends previous one.
+            -- but the contrary is not an error, because of not-FIFO channels
+            learnerVotes . at accId . non mempty %= replaceExtending cstruct
 
-        do  -- update total learned cstruct
+            -- update total learned cstruct
             votes <- use learnerVotes
             newLearned <- gatherCStructFromAllQuorums members votes
             prevLearned <- learnerLearned <<.= newLearned
 
             -- sanity check
             unless (newLearned `extends` prevLearned) $
-                errorBadLearnedCStruct prevLearned prevLearned
+                errorBadLearnedCStruct prevLearned newLearned
 
             -- report if the interesting happened
             pure $ guard (newLearned /= prevLearned) $> newLearned
 
     whenJust learned reportNewLearnedCStruct
   where
-    errorBadCStruct prev new =
-        throwM . ProtocolError $
-        sformat ("New cstruct doesn't extend current one:\n"%
-                 "\t"%build%"\n\t->\n\t"%build)
-                prev new
+    replaceExtending cur new
+        | new `extends` cur = new
+        | otherwise         = cur
+
     errorBadLearnedCStruct prev new =
         throwM . ProtocolError $
         sformat ("Newly learned cstruct doesn't extend previous one:\n"%

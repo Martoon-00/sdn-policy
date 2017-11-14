@@ -87,6 +87,8 @@ runSchedule_ :: MonadSchedule m
 runSchedule_ seed schedule = runSchedule seed schedule $ \() -> pass
 
 -- | Allows to execute schedules in parallel.
+-- I prefered to have this logic in 'Monoid' rather than
+-- in 'Alternative', because it's more convenient to use.
 instance MonadTimed m => Monoid (Schedule m p) where
     mempty = Schedule $ \_ -> pass
     Schedule strategy1 `mappend` Schedule strategy2 =
@@ -111,8 +113,12 @@ instance Monad (Schedule m) where
                      Schedule s2 -> s2 ctx{ scGen = gen1 }
         in  s1 ctx{ scPush = push, scGen = gen2 }
 
+instance MonadIO m => MonadIO (Schedule m) where
+    liftIO = lift . liftIO
+
 instance MonadTrans Schedule where
     lift job = Schedule $ \ctx -> job >>= scPush ctx
+
 
 -- | Just fires once, generating arbitrary job data.
 --

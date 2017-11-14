@@ -63,7 +63,7 @@ type PolicyEntry = Acceptance Policy
 type Configuration = S.Set PolicyEntry
 
 instance Buildable Configuration where
-    build = bprint buildList . toList
+    build = bprint (buildList ", ") . toList
 
 instance MessagePack Configuration where
     toObject = toObject . S.toList

@@ -5,12 +5,16 @@
 
 module Sdn.Base.Quorum where
 
-import           Control.Lens   (At (..), Index, IxValue, Ixed (..), Wrapped (..), iso)
-import           Data.List      (subsequences)
-import qualified Data.Map       as M
+import           Control.Lens        (At (..), Index, IxValue, Ixed (..), Wrapped (..),
+                                      iso)
+import           Data.List           (subsequences)
+import qualified Data.Map            as M
+import qualified Data.Text.Buildable
+import           Formatting          (bprint)
 import           Universum
 
 import           Sdn.Base.Types
+import           Sdn.Extra.Util
 
 -- | For each acceptor - something proposed by him.
 newtype Votes a = Votes (M.Map AcceptorId a)
@@ -28,6 +32,9 @@ instance Ixed (Votes a) where
 
 instance At (Votes a) where
     at index = _Wrapped' . at index
+
+instance Buildable a => Buildable (Votes a) where
+    build (Votes v) = bprint (buildList ", ") $ toList v
 
 -- | All functions which work with 'Votes' can also be applied to
 -- set of acceptors.

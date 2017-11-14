@@ -24,7 +24,8 @@ proposedPoliciesWereLearned AllStates{..} = do
 
     forM_ proposed's $ \p ->
         forM_ (zip [1..] learned's) $ \(learnerId, learned) ->
-            unless (learned `extends` liftCommand p) $ failProp p learnerId
+            unless (learned `contains` p) $
+               failProp p learnerId
   where
     failProp p (li :: Int) =
         throwError $
@@ -33,7 +34,7 @@ proposedPoliciesWereLearned AllStates{..} = do
 learnedPoliciesWereProposed :: PropertyChecker
 learnedPoliciesWereProposed AllStates{..} = do
     let proposed's = _proposerProposedPolicies proposerState
-    let validOutcomes = S.fromList $ [Accepted, Rejected] <*> toList proposed's
+    let validOutcomes = S.fromList $ [Accepted, Rejected] <*> proposed's
     let learned's = _learnerLearned <$> learnersStates
     forM_ (zip [1..] learned's) $ \(learnerId, learned) ->
         forM_ learned $ \l ->

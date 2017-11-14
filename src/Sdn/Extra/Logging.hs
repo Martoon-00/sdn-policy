@@ -30,7 +30,7 @@ import           Control.TimeWarp.Logging       (LoggerName (..), LoggerNameBox 
 import           Control.TimeWarp.Rpc           (MonadRpc)
 import           Control.TimeWarp.Timed         (Microsecond, MonadTimed (..), ThreadId)
 import           Data.Time.Units                (toMicroseconds)
-import           Formatting                     (left, right, sformat, (%))
+import           Formatting                     (left, sformat, (%))
 import           GHC.IO.Unsafe                  (unsafePerformIO)
 import qualified System.Console.ANSI            as ANSI
 import           Universum
@@ -48,6 +48,7 @@ withColor intensity color text =
     ]
 
 data LogEntry = LogEntry LoggerName Microsecond Text
+    deriving (Show)
 
 loggingFormatter :: LogEntry -> Text
 loggingFormatter (LogEntry name (toMicroseconds -> time) msg) =
@@ -69,7 +70,7 @@ loggingFormatter (LogEntry name (toMicroseconds -> time) msg) =
     timeText =
         let seconds = time `div` 1000000
             centiseconds = time `div` 10000 `mod` 100
-        in sformat (left 3 '0'%":"%right 2 '0') seconds centiseconds
+        in sformat (left 3 '0'%":"%left 2 '0') seconds centiseconds
 
 logBuffer :: TBM.TBMChan LogEntry
 logBuffer = unsafePerformIO $ do
@@ -155,5 +156,6 @@ instance Monad m => MonadReporting (NoErrorReporting m) where
 logError :: (MonadLog m, MonadReporting m) => Text -> m ()
 logError msg = do
     logInfo $ withColor ANSI.Dull ANSI.Red "Error: " <> msg
-    reportError msg
+    loggerName <- getLoggerName
+    reportError (pretty loggerName <> ": " <> msg)
 

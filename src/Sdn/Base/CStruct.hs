@@ -75,10 +75,17 @@ class (SuperConflict cmd cstruct, Default cstruct) =>
     extends :: cstruct -> cstruct -> Bool
 
 -- | Construct cstruct from single command.
-liftCommand :: Command (Acceptance cmd) cstruct => cmd -> cstruct
+liftCommand
+    :: Command (Acceptance cmd) cstruct
+    => Acceptance cmd -> cstruct
 liftCommand cmd =
     fromMaybe (error "Can't make up cstruct from single command") $
-    addCommand (Accepted cmd) def
+    addCommand cmd def
+
+contains :: Command (Acceptance cmd) cstruct => cstruct -> cmd -> Bool
+contains cstruct cmd =
+    any (\acc -> cstruct `extends` liftCommand (acc cmd))
+    [Accepted, Rejected]
 
 -- | Utility function, which unsures that arguments being combined does not
 -- conflict.

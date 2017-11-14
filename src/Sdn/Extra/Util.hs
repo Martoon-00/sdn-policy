@@ -17,6 +17,7 @@ import           Control.TimeWarp.Rpc   (MonadRpc (..), NetworkAddress, RpcReque
                                          mkRequest)
 import qualified Control.TimeWarp.Rpc   as Rpc
 import           Control.TimeWarp.Timed (MonadTimed (..), fork_)
+import           Data.Text.Lazy.Builder (Builder)
 import           Language.Haskell.TH    (Dec, Name, Q)
 
 -- | Declare instance for one-way message.
@@ -31,9 +32,12 @@ submit
     => NetworkAddress -> msg -> m ()
 submit = fork_ ... Rpc.submit
 
-buildList :: Buildable a => Format r ([a] -> r)
-buildList =
-    later $ \values ->
-    mconcat $
-        one "[" <> (intersperse ", " $ bprint build <$> values) <> one "]"
-
+buildList
+    :: (Container l, Buildable (Element l))
+    => Builder -> Format r (l -> r)
+buildList delim =
+    later $ \(toList -> values) ->
+    if null values
+    then "[]"
+    else mconcat $
+         one "[ " <> (intersperse delim $ bprint build <$> values) <> one " ]"

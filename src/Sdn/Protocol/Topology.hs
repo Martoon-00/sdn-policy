@@ -5,7 +5,7 @@
 
 module Sdn.Protocol.Topology where
 
-import           Control.Monad.Catch      (catchAll)
+import           Control.Monad.Catch      (Handler (..), catches)
 import           Control.Monad.Reader     (withReaderT)
 import           Control.TimeWarp.Logging (WithNamedLogger, modifyLoggerName)
 import           Control.TimeWarp.Rpc     (Method (..), MonadRpc, serve)
@@ -81,9 +81,12 @@ listener
     => (msg -> m ()) -> Method m
 listener endpoint = Method $ \msg -> do
     logInfo $ sformat ("Incoming message: "%build) msg
-    endpoint msg `catchAll` handler
+    endpoint msg `catches` handlers
   where
-    handler = logError . sformat shown
+    handlers =
+        [ Handler @_ @_ @ProtocolError $ logError . sformat build
+        , Handler @_ @_ @SomeException $ logError . sformat ("Strange error: "%shown)
+        ]
 
 type MonadTopology m =
     ( MonadIO m
@@ -105,8 +108,9 @@ launchClassicPaxos TopologySettings{..} = runWithMembers topologyMembers $ do
     proposerState <- newProcess Proposer . work (for topologyLifetime) $ do
         -- wait for servers to bootstrap
         wait (for 10 ms)
-        let strategy = limited topologyLifetime topologyProposalSchedule
-        propose proposalSeed strategy
+        runSchedule_ proposalSeed $ do
+            policy <- limited topologyLifetime topologyProposalSchedule
+            lift $ propose policy
 
     leaderState <- newProcess Leader . work (for topologyLifetime) $ do
         work (for topologyLifetime) $ do

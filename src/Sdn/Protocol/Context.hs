@@ -10,7 +10,9 @@ import           Control.Lens           (makeLenses)
 import           Control.TimeWarp.Rpc   (MonadRpc, NetworkAddress)
 import           Control.TimeWarp.Timed (MonadTimed)
 import           Data.Default           (Default (def))
-import qualified Data.Set               as S
+import qualified Data.Map               as M
+import qualified Data.Text.Buildable
+import           Formatting             (bprint, build, (%))
 import           Universum
 
 import           Sdn.Base
@@ -23,12 +25,6 @@ data ProcessContext s = ProcessContext
     { pcState   :: TVar s   -- ^ Process'es mutable state
     , pcMembers :: Members  -- ^ Info about all participats of consensus
     }
-
--- | Constraint for having context with specified mutable state.
-type HasContext s m =
-    ( MonadIO m
-    , MonadReader (ProcessContext s) m
-    )
 
 -- | Atomically modify state stored by process.
 -- If exception is thrown in the process, no changes apply.
@@ -51,11 +47,17 @@ ctxMembers = pcMembers <$> ask
 -- ** Proposer
 
 data ProposerState = ProposerState
-    { _proposerProposedPolicies :: S.Set Policy
+    { _proposerProposedPolicies :: [Policy]
       -- ^ Policies ever proposed (for testing purposes)
     }
 
 makeLenses ''ProposerState
+
+instance Buildable ProposerState where
+    build ProposerState{..} =
+        bprint
+            ("\n    proposed policies:\n    "%buildList "\n    , ")
+            _proposerProposedPolicies
 
 instance Default ProposerState where
     def = ProposerState mempty
@@ -73,6 +75,17 @@ data LeaderState = LeaderState
     }
 
 makeLenses ''LeaderState
+
+instance Buildable LeaderState where
+    build LeaderState{..} =
+        bprint
+            ("\n    current ballod id: "%build%
+             "\n    pending policies: "%buildList "\n    , "%
+             "\n    votes: "%buildList "\n    , ")
+            _leaderBallotId
+            _leaderPendingPolicies
+            (M.toList _leaderVotes <&> \(id, v) ->
+                 bprint (build%": "%build) id v)
 
 -- | Initial state of the leader.
 instance Default LeaderState where
@@ -93,6 +106,16 @@ data AcceptorState = AcceptorState
 
 makeLenses ''AcceptorState
 
+instance Buildable AcceptorState where
+    build AcceptorState{..} =
+        bprint
+            ("\n    my id: "%build%
+             "\n    last known ballot id: "%build%
+             "\n    cstruct: "%build)
+            _acceptorId
+            _acceptorBallotId
+            _acceptorCStruct
+
 -- | Initial state of acceptor.
 defAcceptorState :: AcceptorId -> AcceptorState
 defAcceptorState id = AcceptorState id (BallotId (-1)) mempty
@@ -109,6 +132,14 @@ data LearnerState = LearnerState
 
 makeLenses ''LearnerState
 
+instance Buildable LearnerState where
+    build LearnerState{..} =
+        bprint
+            ("\n    heard: "%build%
+             "\n    learned: "%build)
+            _learnerVotes
+            _learnerLearned
+
 -- | Initial state of the learner.
 instance Default LearnerState where
     def = LearnerState mempty mempty
@@ -121,6 +152,18 @@ data AllStates = AllStates
     , acceptorsStates :: [AcceptorState]
     , learnersStates  :: [LearnerState]
     }
+
+instance Buildable AllStates where
+    build AllStates{..} =
+        bprint
+            (  "\n  Proposer state: "%build%
+             "\n\n  Leader state: "%build%
+             "\n\n  Acceptors states: "%buildList "\n  , "%
+             "\n\n  Learners states: "%buildList "\n  , ")
+            proposerState
+            leaderState
+            acceptorsStates
+            learnersStates
 
 -- | Send a message to given participants.
 broadcastTo

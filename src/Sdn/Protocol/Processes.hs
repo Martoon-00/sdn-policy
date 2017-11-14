@@ -42,6 +42,12 @@ class Process p where
         => p -> ProcessState p
     initProcessState _ = def
 
+-- | Constraint for having context with specified mutable state.
+type HasContext s m =
+    ( MonadIO m
+    , MonadReader (ProcessContext (ProcessState s)) m
+    )
+
 -- | Provide context for given process.
 inProcessCtx
     :: forall p m a.
