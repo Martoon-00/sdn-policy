@@ -41,6 +41,8 @@ import qualified System.Console.ANSI            as ANSI
 import           Universum                      hiding (pass)
 
 
+-- * Util
+
 loggerNameT :: Iso' LoggerName Text
 loggerNameT = iso pretty (fromString . toString)
 
@@ -77,16 +79,6 @@ loggingFormatter (LogEntry name (toMicroseconds -> time) msg) =
             centiseconds = time `div` 10000 `mod` 100
         in sformat (left 3 '0'%":"%left 2 '0') seconds centiseconds
 
-logBuffer :: TBM.TBMChan LogEntry
-logBuffer = unsafePerformIO $ do
-    chan <- TBM.newTBMChanIO 100
-    _ <- forkIO . void . runMaybeT . forever $ do
-        entry <- MaybeT . atomically $ TBM.readTBMChan chan
-        lift . putText $ loggingFormatter entry
-
-    return chan
-{-# NOINLINE logBuffer #-}
-
 dropName :: LoggerName
 dropName = "drop"
 
@@ -98,6 +90,8 @@ isDropName (LoggerName name) =
 setDropLoggerName :: WithNamedLogger m => m a -> m a
 setDropLoggerName = modifyLoggerName (dropName <> )
 
+-- * Logging
+
 class Monad m => MonadLog m where
     logInfo :: Text -> m ()
     default logInfo
@@ -107,6 +101,16 @@ class Monad m => MonadLog m where
 
 instance MonadLog m => MonadLog (ReaderT r m)
 
+logBuffer :: TBM.TBMChan LogEntry
+logBuffer = unsafePerformIO $ do
+    chan <- TBM.newTBMChanIO 100
+    _ <- forkIO . void . runMaybeT . forever $ do
+        entry <- MaybeT . atomically $ TBM.readTBMChan chan
+        lift . putText $ loggingFormatter entry
+
+    return chan
+{-# NOINLINE logBuffer #-}
+
 instance With [MonadIO, MonadTimed] m => MonadLog (LoggerNameBox m) where
     logInfo msg = do
         time <- virtualTime
@@ -115,32 +119,7 @@ instance With [MonadIO, MonadTimed] m => MonadLog (LoggerNameBox m) where
         unless (isDropName name) $
             atomically $ TBM.writeTBMChan logBuffer entry
 
-data LogAndError = LogAndError
-    { _logsPart :: [Text]
-    , _errsPart :: [Text]
-    }
-
-instance Monoid LogAndError where
-    mempty = LogAndError [] []
-    LogAndError l1 e1 `mappend` LogAndError l2 e2 =
-        LogAndError (l1 <> l2) (e1 <> e2)
-
-newtype PureLog m a = PureLog (WriterT LogAndError m a)
-    deriving ( Functor, Applicative, Monad, MonadIO, MonadTrans
-             , MonadThrow, MonadCatch, MonadState __, MonadReader __)
-
-launchPureLog
-    :: (Monad m, MonadLog n, MonadReporting n)
-    => (forall x. m (x, a) -> n (x, b)) -> PureLog m a -> n b
-launchPureLog hoist' (PureLog action) = do
-    (logs, res) <- hoist' $ swap <$> runWriterT action
-    mapM_ logInfo (_logsPart logs)
-    mapM_ reportError (_errsPart logs)
-    return res
-
-instance Monad m => MonadLog (PureLog m) where
-    logInfo msg = PureLog $ tell mempty{ _logsPart = one msg }
-
+-- * Error reporting
 
 class Monad m => MonadReporting m where
     reportError :: Text -> m ()
@@ -151,6 +130,8 @@ class Monad m => MonadReporting m where
 
 instance MonadReporting m => MonadReporting (ReaderT __ m) where
 instance MonadReporting m => MonadReporting (LoggerNameBox m) where
+
+-- ** Error reporting enabled
 
 newtype ErrorReporting m a = ErrorReporting
     { getErrorReporting :: ReaderT (TVar [Text]) m a
@@ -181,6 +162,8 @@ instance (MonadIO m, WithNamedLogger m) =>
             let msg = pretty logName <> ": " <> err
             atomically $ modifyTVar' var (msg :)
 
+-- ** Error reporting disabled
+
 newtype NoErrorReporting m a = NoErrorReporting
     { runNoErrorReporting :: m a
     } deriving ( Functor, Applicative, Monad, MonadIO
@@ -202,4 +185,32 @@ logError :: (MonadLog m, MonadReporting m) => Text -> m ()
 logError msg = do
     logInfo $ withColor ANSI.Dull ANSI.Red "Error: " <> msg
     reportError msg
+
+-- * Pure logging & error reporting
+
+data LogAndError = LogAndError
+    { _logsPart :: [Text]
+    , _errsPart :: [Text]
+    }
+
+instance Monoid LogAndError where
+    mempty = LogAndError [] []
+    LogAndError l1 e1 `mappend` LogAndError l2 e2 =
+        LogAndError (l1 <> l2) (e1 <> e2)
+
+newtype PureLog m a = PureLog (WriterT LogAndError m a)
+    deriving ( Functor, Applicative, Monad, MonadIO, MonadTrans
+             , MonadThrow, MonadCatch, MonadState __, MonadReader __)
+
+launchPureLog
+    :: (Monad m, MonadLog n, MonadReporting n)
+    => (forall x. m (x, a) -> n (x, b)) -> PureLog m a -> n b
+launchPureLog hoist' (PureLog action) = do
+    (logs, res) <- hoist' $ swap <$> runWriterT action
+    mapM_ logInfo (_logsPart logs)
+    mapM_ reportError (_errsPart logs)
+    return res
+
+instance Monad m => MonadLog (PureLog m) where
+    logInfo msg = PureLog $ tell mempty{ _logsPart = one msg }
 

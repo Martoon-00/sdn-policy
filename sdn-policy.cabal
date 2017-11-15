@@ -111,9 +111,14 @@ test-suite sdn-policy-test
   hs-source-dirs:      test
   main-is:             Test.hs
   other-modules:       Spec
+
                        Test.Sdn.ClassicSpec
+
+                       Test.Sdn.Launcher
+
                        Test.Sdn.Properties
-                       Test.Sdn.Util
+                       Test.Sdn.Properties.Protocol
+                       Test.Sdn.Properties.Util
   build-depends:       base
                      , async
                      , containers

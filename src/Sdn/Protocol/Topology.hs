@@ -84,8 +84,8 @@ listener endpoint = Method $ \msg -> do
     endpoint msg `catches` handlers
   where
     handlers =
-        [ Handler @_ @_ @ProtocolError $ logError . sformat build
-        , Handler @_ @_ @SomeException $ logError . sformat ("Strange error: "%shown)
+        [ Handler $ logError . sformat (build @ProtocolError)
+        , Handler $ logError . sformat ("Strange error: "%shown @SomeException)
         ]
 
 type MonadTopology m =

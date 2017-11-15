@@ -48,7 +48,7 @@ instance Conflict a a => Conflict (Acceptance a) (Acceptance a) where
 instance Buildable p => Buildable (Acceptance p) where
     build = \case
         Accepted p -> "+ " <> bprint build p
-        Rejected p -> "x " <> bprint build p
+        Rejected p -> "xx " <> bprint build p
 
 instance MessagePack p => MessagePack (Acceptance p)
 
@@ -82,6 +82,7 @@ liftCommand cmd =
     fromMaybe (error "Can't make up cstruct from single command") $
     addCommand cmd def
 
+-- | Whether sctruct contains command, accepted or rejected.
 contains :: Command (Acceptance cmd) cstruct => cstruct -> cmd -> Bool
 contains cstruct cmd =
     any (\acc -> cstruct `extends` liftCommand (acc cmd))

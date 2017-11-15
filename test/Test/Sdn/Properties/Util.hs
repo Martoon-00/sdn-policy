@@ -1,6 +1,6 @@
 -- | Helpers in properties creation.
 
-module Test.Sdn.Util where
+module Test.Sdn.Properties.Util where
 
 import           Universum
 

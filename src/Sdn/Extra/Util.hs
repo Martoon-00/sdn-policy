@@ -32,6 +32,7 @@ submit
     => NetworkAddress -> msg -> m ()
 submit = fork_ ... Rpc.submit
 
+-- | Builder for list.
 buildList
     :: (Container l, Buildable (Element l))
     => Builder -> Format r (l -> r)
@@ -42,6 +43,7 @@ buildList delim =
     else mconcat $
          one "[ " <> (intersperse delim $ bprint build <$> values) <> one " ]"
 
+-- | Extended modifier for 'TVar'.
 modifyTVarS :: TVar s -> StateT s STM a -> STM a
 modifyTVarS var modifier = do
     st <- readTVar var
