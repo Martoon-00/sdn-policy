@@ -1,5 +1,7 @@
 # SDN policies concurrent composition
 
+[![Build Status](https://travis-ci.org/Martoon-00/sdn-policy.svg?branch=master)](https://travis-ci.org/Martoon-00/sdn-policy)
+
 ## Overview
 
 This project is prototype for algorithm of concurrent policies composition.
