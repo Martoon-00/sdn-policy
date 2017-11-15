@@ -41,3 +41,10 @@ buildList delim =
     then "[]"
     else mconcat $
          one "[ " <> (intersperse delim $ bprint build <$> values) <> one " ]"
+
+modifyTVarS :: TVar s -> StateT s STM a -> STM a
+modifyTVarS var modifier = do
+    st <- readTVar var
+    (res, st') <- runStateT modifier st
+    writeTVar var st'
+    return res

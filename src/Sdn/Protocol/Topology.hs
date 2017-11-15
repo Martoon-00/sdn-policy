@@ -92,6 +92,7 @@ type MonadTopology m =
     ( MonadIO m
     , MonadCatch m
     , WithNamedLogger m
+    , MonadLog m
     , MonadReporting m
     , MonadTimed m
     , MonadRpc m

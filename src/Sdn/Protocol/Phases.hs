@@ -24,6 +24,7 @@ type MonadPhase m =
     , MonadTimed m
     , MonadRpc m
     , MonadLog m
+    , MonadReporting m
     )
 
 -- | Evaluate cstruct with all those policies, which are present
@@ -64,8 +65,9 @@ rememberProposal
 rememberProposal (ProposalMsg policy) = do
     -- atomically modify process'es state
     withProcessState $ do
-        -- add policy to pending policies
-        leaderPendingPolicies %= (policy :)
+        -- add policy to pending policies for next ballot
+        bal <- (+1) <$> use leaderBallotId
+        leaderPendingPolicies . at bal . non mempty %= (policy :)
 
 phrase1a
     :: (MonadPhase m, HasContext Leader m)
@@ -111,10 +113,13 @@ phase2a (Phase1bMsg accId ballotId cstruct) = do
         -- if some quorums appeared, recalculate Gamma and apply pending policies
         if isQuorum members newVotes
         then do
+            when (isMinQuorum members newVotes) $
+                logInfo $ "Got 1b from quorum of acceptors at " <> pretty ballotId
+
             -- recalculate Gamma and its combination
             combined <- gatherCStructFromAllQuorums members newVotes
             -- pull and reset pending policies
-            policies <- leaderPendingPolicies <<.= []
+            policies <- use $ leaderPendingPolicies . at ballotId . non mempty
             -- apply policies
             let combined' = foldr acceptOrRejectCommand combined policies
             pure $ Just (Phase2aMsg ballotId combined')
@@ -143,7 +148,8 @@ phase2b (Phase2aMsg ballotId cstruct) = do
            -- form message
            accId <- use acceptorId
            pure $ Just (Phase2bMsg accId cstruct)
-        else
+        else do
+           logInfo "Received cstruct was rejected"
            pure Nothing
 
     whenJust maybeMsg $

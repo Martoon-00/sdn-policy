@@ -12,7 +12,8 @@ import           Control.TimeWarp.Timed (MonadTimed)
 import           Data.Default           (Default (def))
 import qualified Data.Map               as M
 import qualified Data.Text.Buildable
-import           Formatting             (bprint, build, (%))
+import           Data.Text.Lazy.Builder (Builder)
+import           Formatting             (Format, bprint, build, (%))
 import           Universum
 
 import           Sdn.Base
@@ -29,15 +30,15 @@ data ProcessContext s = ProcessContext
 -- | Atomically modify state stored by process.
 -- If exception is thrown in the process, no changes apply.
 withProcessState
-    :: (MonadIO m, MonadReader (ProcessContext s) m)
-    => StateT s STM a -> m a
+    :: ( MonadIO m
+       , MonadLog m
+       , MonadReporting m
+       , MonadReader (ProcessContext s) m
+       )
+    => PureLog (StateT s STM) a -> m a
 withProcessState modifier = do
     var <- pcState <$> ask
-    liftIO . atomically $ do
-        st <- readTVar var
-        (res, st') <- runStateT modifier st
-        writeTVar var st'
-        return res
+    launchPureLog (atomically . modifyTVarS var) modifier
 
 -- | Get 'Members' stored in context.
 ctxMembers :: MonadReader (ProcessContext s) m => m Members
@@ -68,8 +69,8 @@ instance Default ProposerState where
 data LeaderState = LeaderState
     { _leaderBallotId        :: BallotId
       -- ^ Number of current ballot
-    , _leaderPendingPolicies :: [Policy]
-      -- ^ Proposed policies which were not replicated among acceptors yet
+    , _leaderPendingPolicies :: Map BallotId [Policy]
+      -- ^ Policies proposed upon each ballot
     , _leaderVotes           :: Map BallotId (Votes Configuration)
       -- ^ CStructs received in 2b messages
     }
@@ -83,9 +84,12 @@ instance Buildable LeaderState where
              "\n    pending policies: "%buildList "\n    , "%
              "\n    votes: "%buildList "\n    , ")
             _leaderBallotId
-            _leaderPendingPolicies
-            (M.toList _leaderVotes <&> \(id, v) ->
-                 bprint (build%": "%build) id v)
+            (buildBallotMap _leaderPendingPolicies (buildList ", "))
+            (buildBallotMap _leaderVotes build)
+      where
+        buildBallotMap :: Map BallotId a -> Format Builder (a -> Builder) -> [Builder]
+        buildBallotMap m how =
+            M.toList m <&> \(id, v) -> bprint (build%": "%how) id v
 
 -- | Initial state of the leader.
 instance Default LeaderState where
