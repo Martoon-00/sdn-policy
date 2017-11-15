@@ -64,8 +64,8 @@ spec = do
 
             testLaunch def
             { testSettings = def
-                { topologyProposalSchedule =
-                    S.times n $
+                { topologyProposalSchedule = do
+                    S.times n
                     S.generate . oneof $
                         [ GoodPolicy <$> arbitrary
                         , BadPolicy <$> arbitrary
@@ -78,8 +78,8 @@ spec = do
 
             testLaunch def
             { testSettings = def
-                { topologyProposalSchedule =
-                    S.times n $
+                { topologyProposalSchedule = do
+                    S.times n
                     S.generate (BadPolicy <$> arbitrary)
                 }
             , testProperties =
@@ -94,7 +94,7 @@ spec = do
             testLaunch def
             { testDelays = D.uniform (0, 1 :: Second)
             , testSettings = def
-                { topologyBallotsSchedule = S.delayed (interval 2 sec) S.execute
+                { topologyBallotsSchedule = S.delayed (interval 2 sec)
                 }
             }
 
@@ -109,14 +109,13 @@ spec = do
 
             testLaunch def
             { testSettings = def
-                { topologyProposalSchedule =
-                    S.repeating proposalsNum (interval 1 sec) $
+                { topologyProposalSchedule = do
+                    S.repeating proposalsNum (interval 1 sec)
                     S.generate (GoodPolicy <$> arbitrary)
                 , topologyBallotsSchedule = mconcat
                     [ S.repeating
                         (proposalsNum `div` balDelay)
                         (interval (fromIntegral balDelay) sec)
-                        S.execute
                     , finalBallot
                     ]
                 }
@@ -124,9 +123,9 @@ spec = do
             }
 
   where
-    -- one final ballot for all proposals which weren't in made in time
+    -- one final ballot for all proposals which weren't made in time
     finalBallot :: MonadTopology m => S.Schedule m ()
-    finalBallot = S.delayed (interval 1 hour) S.execute
+    finalBallot = S.delayed (interval 1 hour)
 
 data TestLaunchParams = TestLaunchParams
     { testLauncher   :: TopologyLauncher

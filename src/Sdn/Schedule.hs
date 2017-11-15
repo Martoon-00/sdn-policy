@@ -14,7 +14,6 @@ module Sdn.Schedule
 
     -- * schedules
     , generate
-    , give
     , execute
 
     -- * schedule combinators
@@ -106,7 +105,7 @@ instance Applicative (Schedule m) where
     (<*>) = ap
 
 instance Monad (Schedule m) where
-    return = give
+    return = generate . pure
     Schedule s1 >>= f = Schedule $ \ctx ->
         let (gen1, gen2) = split (scGen ctx)
             push p = case f p of
@@ -129,44 +128,47 @@ generate generator = do
         let (seed, _) = next scGen
         in  scPush $ unGen generator (mkQCGen seed) 30
 
--- | Just fires once, using provided job data.
-give :: p -> Schedule m p
-give = generate . pure
-
 -- | Just fires once, for jobs without any data.
+-- Synonym to @return ()@.
 execute :: Schedule m ()
-execute = give ()
+execute = pass
+
+checkCont :: MonadSchedule m => Schedule m ()
+checkCont =
+    Schedule $ \ScheduleContext{..} -> do
+        WhetherContinue further <- readTVarIO scCont
+        when further $ scPush ()
+
+checkingCont :: MonadSchedule m => Schedule m a -> Schedule m a
+checkingCont sch = sch <* checkCont
 
 periodicCounting
     :: MonadSchedule m
-    => Maybe Word -> Microsecond -> Schedule m p -> Schedule m p
-periodicCounting mnum period (Schedule schedule) =
-    Schedule $ \ctx@ScheduleContext{..} ->
+    => Maybe Word -> Microsecond -> Schedule m ()
+periodicCounting mnum period =
+    checkingCont . Schedule $ \ScheduleContext{..} ->
         let loop (Just 0) _ = return ()
             loop mrem gen = do
-                WhetherContinue further <- readTVarIO scCont
-                when further $ do
-                    let (gen1, gen2) = split gen
-                        mrem' = fmap pred mrem
-                    schedule ctx{ scGen = gen1 }
-                    wait (for period)
-                    loop mrem' gen2
+                let mrem' = fmap pred mrem
+                scPush ()
+                wait (for period)
+                loop mrem' gen
         in  fork_ $ loop mnum scGen
 
 -- | Execute with given period indefinetely.
 periodic
     :: MonadSchedule m
-    => Microsecond -> Schedule m p -> Schedule m p
+    => Microsecond -> Schedule m ()
 periodic = periodicCounting Nothing
 
 -- | Execute given number of times with specified delay.
 repeating
     :: MonadSchedule m
-    => Word -> Microsecond -> Schedule m p -> Schedule m p
+    => Word -> Microsecond -> Schedule m ()
 repeating = periodicCounting . Just
 
 -- | Perform schedule several times at once.
-times :: MonadSchedule m => Word -> Schedule m p -> Schedule m p
+times :: MonadSchedule m => Word -> Schedule m ()
 times k = repeating k 0
 
 -- | Stop starting jobs after given amount of time.
@@ -183,6 +185,7 @@ limited duration (Schedule schedule) =
 -- | Postpone execution.
 delayed
     :: MonadSchedule m
-    => Microsecond -> Schedule m p -> Schedule m p
-delayed duration (Schedule schedule) =
-    Schedule $ invoke (after duration) . schedule
+    => Microsecond -> Schedule m ()
+delayed duration =
+    checkingCont . Schedule $ \ScheduleContext{..} ->
+        invoke (after duration) $ scPush ()
