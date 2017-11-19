@@ -6,9 +6,7 @@ import           Universum
 
 import           Control.Concurrent.Async (async, wait)
 import qualified Control.Concurrent.STM   as STM
-import           Control.Monad.Random     (Random, evalRand, getRandom)
 import           Test.QuickCheck          (Property, property)
-import           Test.QuickCheck.Gen      (Gen (..))
 import           Test.QuickCheck.Property (failed, reason, succeeded)
 
 import           Sdn.Protocol
@@ -41,9 +39,6 @@ eitherToProp :: Either Text () -> Property
 eitherToProp = property . \case
     Left err -> failed { reason = toString err }
     Right () -> succeeded
-
-arbitraryRandom :: Random a => Gen a
-arbitraryRandom = MkGen $ \gc _ -> evalRand getRandom gc
 
 -- | Property which always fails. Useful, when want to watch some test scenario.
 justFail :: Monad m => ProtocolProperty m

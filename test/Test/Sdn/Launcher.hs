@@ -17,6 +17,7 @@ import           Data.Default
 import           Formatting               (build, sformat, stext, (%))
 import           System.Random            (mkStdGen, split)
 import           Test.QuickCheck          (Blind (..), Property, forAll)
+import           Test.QuickCheck.Gen      (chooseAny)
 import           Test.QuickCheck.Monadic  (monadicIO, stop)
 import           Test.QuickCheck.Property (failed, reason, succeeded)
 
@@ -48,7 +49,7 @@ instance Default TestLaunchParams where
 
 testLaunch :: TestLaunchParams -> Property
 testLaunch TestLaunchParams{..} =
-    forAll (Blind <$> arbitraryRandom) $ \(Blind seed) -> do
+    forAll (Blind <$> chooseAny) $ \(Blind seed) -> do
         let (gen1, gen2) =
                 split (mkStdGen seed)
             launch :: MonadTopology m => m (TopologyMonitor m)
