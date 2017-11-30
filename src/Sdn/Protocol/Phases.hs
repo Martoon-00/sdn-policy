@@ -49,7 +49,7 @@ gatherCStructFromAllQuorums members votes =
 -- * Phases
 
 propose
-    :: (MonadPhase m, HasContext Proposer m)
+    :: (MonadPhase m, HasContextOf Proposer m)
     => Policy -> m ()
 propose policy = do
     logInfo $ sformat ("Proposing policy: "%build) policy
@@ -60,7 +60,7 @@ propose policy = do
     submit (processAddress Leader) (ProposalMsg policy)
 
 rememberProposal
-    :: (MonadPhase m, HasContext Leader m)
+    :: (MonadPhase m, HasContextOf Leader m)
     => ProposalMsg -> m ()
 rememberProposal (ProposalMsg policy) = do
     -- atomically modify process'es state
@@ -70,7 +70,7 @@ rememberProposal (ProposalMsg policy) = do
         leaderPendingPolicies . at bal . non mempty %= (policy :)
 
 phrase1a
-    :: (MonadPhase m, HasContext Leader m)
+    :: (MonadPhase m, HasContextOf Leader m)
     => m ()
 phrase1a = do
     logInfo "Starting new ballot"
@@ -84,7 +84,7 @@ phrase1a = do
     broadcastTo (processesAddresses Acceptor) msg
 
 phase1b
-    :: (MonadPhase m, HasContext Acceptor m)
+    :: (MonadPhase m, HasContextOf Acceptor m)
     => Phase1aMsg -> m ()
 phase1b (Phase1aMsg ballotId) = do
     msg <- withProcessState $ do
@@ -99,7 +99,7 @@ phase1b (Phase1aMsg ballotId) = do
     submit (processAddress Leader) msg
 
 phase2a
-    :: (MonadPhase m, HasContext Leader m)
+    :: (MonadPhase m, HasContextOf Leader m)
     => Phase1bMsg -> m ()
 phase2a (Phase1bMsg accId ballotId cstruct) = do
     members <- ctxMembers
@@ -130,7 +130,7 @@ phase2a (Phase1bMsg accId ballotId cstruct) = do
         broadcastTo (processesAddresses Acceptor)
 
 phase2b
-    :: (MonadPhase m, HasContext Acceptor m)
+    :: (MonadPhase m, HasContextOf Acceptor m)
     => Phase2aMsg -> m ()
 phase2b (Phase2aMsg ballotId cstruct) = do
     maybeMsg <- withProcessState $ do
@@ -156,7 +156,7 @@ phase2b (Phase2aMsg ballotId cstruct) = do
         broadcastTo (processesAddresses Learner)
 
 learn
-    :: (MonadPhase m, HasContext Learner m)
+    :: (MonadPhase m, HasContextOf Learner m)
     => Phase2bMsg -> m ()
 learn (Phase2bMsg accId cstruct) = do
     members <- ctxMembers

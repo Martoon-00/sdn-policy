@@ -45,8 +45,11 @@ class Process p where
 -- | Constraint for having context with specified mutable state.
 type HasContext s m =
     ( MonadIO m
-    , MonadReader (ProcessContext (ProcessState s)) m
+    , MonadReader (ProcessContext s) m
     )
+
+-- | Constraint for having context of specified type of process.
+type HasContextOf p m = HasContext (ProcessState p) m
 
 -- | Provide context for given process.
 inProcessCtx
