@@ -2,29 +2,29 @@
 
 -- | Test launcher of protocol.
 
-module Test.Sdn.Launcher
+module Test.Sdn.Overall.Launcher
     ( TestLaunchParams (..)
     , testLaunch
     ) where
 
 import           Universum
 
-import           Control.TimeWarp.Logging (setLoggerName, usingLoggerName)
-import           Control.TimeWarp.Rpc     (runPureRpc)
-import qualified Control.TimeWarp.Rpc     as D
-import           Control.TimeWarp.Timed   (runTimedT)
+import           Control.TimeWarp.Logging    (setLoggerName, usingLoggerName)
+import           Control.TimeWarp.Rpc        (runPureRpc)
+import qualified Control.TimeWarp.Rpc        as D
+import           Control.TimeWarp.Timed      (runTimedT)
 import           Data.Default
-import           Formatting               (build, sformat, stext, (%))
-import           System.Random            (mkStdGen, split)
-import           Test.QuickCheck          (Blind (..), Property, forAll)
-import           Test.QuickCheck.Gen      (chooseAny)
-import           Test.QuickCheck.Monadic  (monadicIO, stop)
-import           Test.QuickCheck.Property (failed, reason, succeeded)
+import           Formatting                  (build, sformat, stext, (%))
+import           System.Random               (mkStdGen, split)
+import           Test.QuickCheck             (Blind (..), Property, forAll)
+import           Test.QuickCheck.Gen         (chooseAny)
+import           Test.QuickCheck.Monadic     (monadicIO, stop)
+import           Test.QuickCheck.Property    (failed, reason, succeeded)
 
 import           Sdn.Extra
 import           Sdn.Protocol
-import qualified Sdn.Schedule             as S
-import           Test.Sdn.Properties
+import qualified Sdn.Schedule                as S
+import           Test.Sdn.Overall.Properties
 
 
 data TestLaunchParams = TestLaunchParams

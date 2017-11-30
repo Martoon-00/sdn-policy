@@ -2,7 +2,7 @@
 
 -- | Tests for various quorum families used.
 
-module Test.Sdn.QuorumSpec
+module Test.Sdn.Basic.QuorumSpec
     ( spec
     ) where
 
@@ -25,7 +25,7 @@ spec = do
             checkQuorum @FastMajorityQuorum 7 6
             checkQuorum @FastMajorityQuorum 8 7
             checkQuorum @FastMajorityQuorum 24 19
-            checkQuorum @FastMajorityQuorum 25 20
+            checkQuorum @FastMajorityQuorum 25 19
 
 checkQuorum :: forall qf. QuorumFamily qf => Int -> Int -> SpecWith ()
 checkQuorum acceptors threashold =

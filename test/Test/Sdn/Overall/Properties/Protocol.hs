@@ -2,17 +2,17 @@
 
 -- | Various useful properties for the protocol.
 
-module Test.Sdn.Properties.Protocol where
+module Test.Sdn.Overall.Properties.Protocol where
 
-import           Control.Lens              (Prism', has)
-import           Control.Monad.Error.Class (throwError)
-import qualified Data.Set                  as S
-import           Formatting                (build, sformat, (%))
+import           Control.Lens                     (Prism', has)
+import           Control.Monad.Error.Class        (throwError)
+import qualified Data.Set                         as S
+import           Formatting                       (build, sformat, (%))
 import           Universum
 
 import           Sdn.Base
 import           Sdn.Protocol
-import           Test.Sdn.Properties.Util
+import           Test.Sdn.Overall.Properties.Util
 
 
 -- * Property primitives

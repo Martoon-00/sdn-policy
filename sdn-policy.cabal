@@ -113,14 +113,13 @@ test-suite sdn-policy-test
   main-is:             Test.hs
   other-modules:       Spec
 
-                       Test.Sdn.ClassicSpec
-                       Test.Sdn.QuorumSpec
+                       Test.Sdn.Basic.QuorumSpec
 
-                       Test.Sdn.Launcher
-
-                       Test.Sdn.Properties
-                       Test.Sdn.Properties.Protocol
-                       Test.Sdn.Properties.Util
+                       Test.Sdn.Overall.ClassicSpec
+                       Test.Sdn.Overall.Launcher
+                       Test.Sdn.Overall.Properties
+                       Test.Sdn.Overall.Properties.Protocol
+                       Test.Sdn.Overall.Properties.Util
   build-depends:       base
                      , async
                      , containers

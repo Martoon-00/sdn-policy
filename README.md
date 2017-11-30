@@ -45,8 +45,8 @@ Executing `./launch-demo.sh` performs 1 consensus ballot with 1 proposed policy.
 
 Tests consist of several scenarious run and checked on various properties.
 
-* [Protocol](./test/Test/Sdn/Properties/Protocol.hs) module - contains list of properties
-* [ClassicSpec](./test/Test/Sdn/ClassicSpec.hs) module - contains test scenarious.
+* [Protocol](./test/Test/Sdn/Overall/Properties/Protocol.hs) module - contains list of properties
+* [ClassicSpec](./test/Test/Sdn/Overall/ClassicSpec.hs) module - contains test scenarious.
 
 Basic property examples:
 

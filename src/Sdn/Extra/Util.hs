@@ -10,6 +10,7 @@
 
 module Sdn.Extra.Util where
 
+import           Control.Lens           (iso)
 import           Formatting             (Format, bprint, build, later)
 import           Universum
 
@@ -18,6 +19,7 @@ import           Control.TimeWarp.Rpc   (MonadRpc (..), NetworkAddress, RpcReque
 import qualified Control.TimeWarp.Rpc   as Rpc
 import           Control.TimeWarp.Timed (MonadTimed (..), fork_)
 import           Data.Text.Lazy.Builder (Builder)
+import qualified GHC.Exts               as Exts
 import           Language.Haskell.TH    (Dec, Name, Q)
 
 -- | Declare instance for one-way message.
@@ -50,3 +52,7 @@ modifyTVarS var modifier = do
     (res, st') <- runStateT modifier st
     writeTVar var st'
     return res
+
+-- | Lens which looks inside the list-like structure
+listL :: Exts.IsList l => Lens' l [Exts.Item l]
+listL = iso Exts.toList Exts.fromList

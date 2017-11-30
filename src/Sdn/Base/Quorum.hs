@@ -66,8 +66,11 @@ class QuorumFamily f where
     -- | Check whether votes belong to a quorum of acceptors.
     isQuorum :: Members -> Votes f a -> Bool
 
-    -- | Check whether votes belogs to a minimum for inclusion quorum.
-    isMinQuorum :: Members -> Votes f a -> Bool
+-- | Check whether votes belogs to a minimum for inclusion quorum.
+isMinQuorum :: QuorumFamily f => Members -> Votes f a -> Bool
+isMinQuorum members votes =
+    let subVotes = votes & _Wrapped' . listL %~ drop 1
+    in  isQuorum members votes && not (isQuorum members subVotes)
 
 -- | Simple majority quorum.
 data MajorityQuorum frac
@@ -76,10 +79,6 @@ instance Reifies frac Rational => QuorumFamily (MajorityQuorum frac) where
     isQuorum Members{..} votes =
         let frac = reflect @frac Proxy
         in  fromIntegral (length votes) > fromIntegral acceptorsNum * frac
-
-    isMinQuorum Members{..} votes =
-        let frac = reflect @frac Proxy
-        in  ceiling (fromIntegral (acceptorsNum + 1) * frac) == length votes
 
 data OneHalf
 instance Reifies OneHalf Rational where

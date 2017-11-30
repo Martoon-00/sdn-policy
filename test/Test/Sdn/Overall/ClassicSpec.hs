@@ -1,24 +1,24 @@
 -- | Tests for classic paxos.
 
-module Test.Sdn.ClassicSpec
+module Test.Sdn.Overall.ClassicSpec
     ( spec
     ) where
 
 import           Universum
 
-import qualified Control.TimeWarp.Rpc   as D
-import           Control.TimeWarp.Timed (Millisecond, Second, hour, interval, sec)
+import qualified Control.TimeWarp.Rpc        as D
+import           Control.TimeWarp.Timed      (Millisecond, Second, hour, interval, sec)
 import           Data.Default
-import           Test.Hspec             (Spec, describe)
-import           Test.Hspec.QuickCheck  (prop)
-import           Test.QuickCheck        (Positive (..), Small (..), arbitrary, oneof,
-                                         (==>))
+import           Test.Hspec                  (Spec, describe)
+import           Test.Hspec.QuickCheck       (prop)
+import           Test.QuickCheck             (Positive (..), Small (..), arbitrary, oneof,
+                                              (==>))
 
 import           Sdn.Base
 import           Sdn.Protocol
-import qualified Sdn.Schedule           as S
-import           Test.Sdn.Launcher
-import           Test.Sdn.Properties
+import qualified Sdn.Schedule                as S
+import           Test.Sdn.Overall.Launcher
+import           Test.Sdn.Overall.Properties
 
 spec :: Spec
 spec = do
