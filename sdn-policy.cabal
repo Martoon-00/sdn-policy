@@ -43,6 +43,7 @@ library
                      , lens
                      , msgpack
                      , mtl
+                     , reflection
                      , stm
                      , stm-chans
                      , template-haskell
@@ -113,6 +114,7 @@ test-suite sdn-policy-test
   other-modules:       Spec
 
                        Test.Sdn.ClassicSpec
+                       Test.Sdn.QuorumSpec
 
                        Test.Sdn.Launcher
 
@@ -125,6 +127,7 @@ test-suite sdn-policy-test
                      , data-default
                      , formatting
                      , hspec
+                     , hspec-core
                      , MonadRandom 
                      , monad-control
                      , mtl

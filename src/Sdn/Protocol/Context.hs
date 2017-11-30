@@ -1,3 +1,4 @@
+{-# LANGUAGE Rank2Types      #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies    #-}
 
@@ -71,7 +72,7 @@ data LeaderState = LeaderState
       -- ^ Number of current ballot
     , _leaderPendingPolicies :: Map BallotId [Policy]
       -- ^ Policies proposed upon each ballot
-    , _leaderVotes           :: Map BallotId (Votes Configuration)
+    , _leaderVotes           :: Map BallotId (Votes ClassicMajorityQuorum Configuration)
       -- ^ CStructs received in 2b messages
     }
 
@@ -128,7 +129,7 @@ defAcceptorState id = AcceptorState id (BallotId (-1)) mempty
 
 -- * State kept by learner.
 data LearnerState = LearnerState
-    { _learnerVotes   :: Votes Configuration
+    { _learnerVotes   :: Votes ClassicMajorityQuorum Configuration
       -- ^ CStructs received from acceptors so far
     , _learnerLearned :: Configuration
       -- ^ Eventually learned cstruct, result of consensus

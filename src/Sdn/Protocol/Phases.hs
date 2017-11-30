@@ -34,8 +34,13 @@ type MonadPhase m =
 -- in abstract way and literally sorts out all the minimal-on-inclusion quorums
 -- to evaluate cstruct.
 gatherCStructFromAllQuorums
-    :: (MonadThrow m, Command policy cstruct, Buildable cstruct, Show cstruct)
-    => Members -> Votes cstruct -> m cstruct
+    :: ( MonadThrow m
+       , Command policy cstruct
+       , Buildable cstruct
+       , Show cstruct
+       , QuorumFamily f
+       )
+    => Members -> Votes f cstruct -> m cstruct
 gatherCStructFromAllQuorums members votes =
     let quorumsVotes = allMinQuorums members votes
         gamma = map (foldr1 lub . toList) quorumsVotes

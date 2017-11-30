@@ -1,5 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE Rank2Types                 #-}
 {-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 -- | Quorum-related stuff
 
@@ -9,53 +11,95 @@ import           Control.Lens        (At (..), Index, IxValue, Ixed (..), Wrappe
                                       iso)
 import           Data.List           (subsequences)
 import qualified Data.Map            as M
+import           Data.Reflection     (Reifies (..))
 import qualified Data.Text.Buildable
 import           Formatting          (bprint)
-import           Universum
+import           GHC.Exts            (IsList (..))
+import           Test.QuickCheck     (Arbitrary (..), sublistOf)
+import           Universum           hiding (toList)
+import qualified Universum           as U
 
 import           Sdn.Base.Types
 import           Sdn.Extra.Util
 
 -- | For each acceptor - something proposed by him.
-newtype Votes a = Votes (M.Map AcceptorId a)
-    deriving (Eq, Ord, Show, Monoid, Container)
+-- Phantom type @f@ stands for used quorum family, and decides whether given
+-- number of votes forms quorum.
+newtype Votes f a = Votes (M.Map AcceptorId a)
+    deriving (Eq, Ord, Show, Monoid, Container, NontrivialContainer)
 
-instance Wrapped (Votes a) where
-    type Unwrapped (Votes a) = M.Map AcceptorId a
+instance Wrapped (Votes t a) where
+    type Unwrapped (Votes t a) = M.Map AcceptorId a
     _Wrapped' = iso (\(Votes v) -> v) Votes
 
-type instance Index (Votes a) = AcceptorId
-type instance IxValue (Votes a) = a
+instance IsList (Votes f a) where
+    type Item (Votes f a) = (AcceptorId, a)
+    toList (Votes v) = toList v
+    fromList = Votes . fromList
 
-instance Ixed (Votes a) where
+type instance Index (Votes t a) = AcceptorId
+type instance IxValue (Votes t a) = a
+
+instance Ixed (Votes t a) where
     ix index = _Wrapped' . ix index
 
-instance At (Votes a) where
+instance At (Votes t a) where
     at index = _Wrapped' . at index
 
-instance Buildable a => Buildable (Votes a) where
-    build (Votes v) = bprint (buildList ", ") $ toList v
+instance Buildable a => Buildable (Votes t a) where
+    build (Votes v) = bprint (buildList ", ") $ U.toList v
 
 -- | All functions which work with 'Votes' can also be applied to
 -- set of acceptors.
-type AcceptorsSet = Votes ()
+type AcceptorsSet f = Votes f ()
 
--- | Check whether votes belong to a quorum of acceptors.
--- Here and further we assume that simple majority quorum is used.
-isQuorum :: Members -> Votes a -> Bool
-isQuorum Members{..} (Votes votes) = M.size votes * 2 > acceptorsNum
+instance Arbitrary (AcceptorsSet f) where
+    arbitrary =
+        arbitrary >>= \n ->
+            fmap fromList $ sublistOf $ map (, ()) $ map AcceptorId [1 .. n]
 
--- | Check whether votes belogs to a minimum for inclusion quorum.
-isMinQuorum :: Members -> Votes a -> Bool
-isMinQuorum Members{..} (Votes votes) =
-    (acceptorsNum + 1) `div` 2 == M.size votes
+-- | Sometimes we don't care about used quorum family.
+data UnknownQuorum
+
+-- | Describes quorum family.
+class QuorumFamily f where
+    -- | Check whether votes belong to a quorum of acceptors.
+    isQuorum :: Members -> Votes f a -> Bool
+
+    -- | Check whether votes belogs to a minimum for inclusion quorum.
+    isMinQuorum :: Members -> Votes f a -> Bool
+
+-- | Simple majority quorum.
+data MajorityQuorum frac
+
+instance Reifies frac Rational => QuorumFamily (MajorityQuorum frac) where
+    isQuorum Members{..} votes =
+        let frac = reflect @frac Proxy
+        in  fromIntegral (length votes) > fromIntegral acceptorsNum * frac
+
+    isMinQuorum Members{..} votes =
+        let frac = reflect @frac Proxy
+        in  ceiling (fromIntegral (acceptorsNum + 1) * frac) == length votes
+
+data OneHalf
+instance Reifies OneHalf Rational where
+    reflect _ = 1/2
+
+data ThreeQuarters
+instance Reifies ThreeQuarters Rational where
+    reflect _ = 3/4
+
+type ClassicMajorityQuorum = MajorityQuorum OneHalf
+type FastMajorityQuorum = MajorityQuorum ThreeQuarters
 
 -- | Take all possible minimum for inclusion quorums.
-allMinQuorums :: Members -> Votes a -> [Votes a]
+allMinQuorums
+    :: QuorumFamily f
+    => Members -> Votes f a -> [Votes f a]
 allMinQuorums members (Votes votes) =
     filter (isMinQuorum members) $
     map (Votes . M.fromList) $ subsequences $ M.toList votes
 
 -- | Add vote to votes.
-addVote :: AcceptorId -> a -> Votes a -> Votes a
+addVote :: AcceptorId -> a -> Votes f a -> Votes f a
 addVote aid a (Votes m) = Votes $ M.insert aid a m
