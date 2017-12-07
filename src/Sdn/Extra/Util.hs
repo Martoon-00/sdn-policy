@@ -11,6 +11,7 @@
 module Sdn.Extra.Util where
 
 import           Control.Lens           (iso)
+import           Data.MessagePack       (MessagePack)
 import           Formatting             (Format, bprint, build, later)
 import           Universum
 
@@ -20,11 +21,14 @@ import qualified Control.TimeWarp.Rpc   as Rpc
 import           Control.TimeWarp.Timed (MonadTimed (..), fork_)
 import           Data.Text.Lazy.Builder (Builder)
 import qualified GHC.Exts               as Exts
-import           Language.Haskell.TH    (Dec, Name, Q)
+import           Language.Haskell.TH    (Dec, Name, Q, Type (ConT))
 
 -- | Declare instance for one-way message.
 declareMessage :: Name -> Q [Dec]
-declareMessage msgType = mkRequest msgType ''()
+declareMessage msgType = do
+    dec1 <- [d| instance MessagePack $(pure $ ConT msgType) |]
+    dec2 <- mkRequest msgType ''()
+    return $ dec1 <> dec2
 
 type Message msg = (RpcRequest msg, Response msg ~ ())
 

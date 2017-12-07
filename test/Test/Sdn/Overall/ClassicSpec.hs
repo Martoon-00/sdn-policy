@@ -9,10 +9,17 @@ import           Universum
 import qualified Control.TimeWarp.Rpc        as D
 import           Control.TimeWarp.Timed      (Millisecond, Second, hour, interval, sec)
 import           Data.Default
+<<<<<<< Updated upstream:test/Test/Sdn/Overall/ClassicSpec.hs
 import           Test.Hspec                  (Spec, describe)
 import           Test.Hspec.QuickCheck       (prop)
 import           Test.QuickCheck             (Positive (..), Small (..), arbitrary, oneof,
                                               (==>))
+=======
+import           Test.Hspec             (Spec, describe, pending)
+import           Test.Hspec.QuickCheck  (prop)
+import           Test.QuickCheck        (Positive (..), Small (..), arbitrary, oneof,
+                                         (==>))
+>>>>>>> Stashed changes:test/Test/Sdn/ClassicSpec.hs
 
 import           Sdn.Base
 import           Sdn.Protocol
@@ -87,6 +94,9 @@ spec = do
                 { topologyBallotsSchedule = S.delayed (interval 2 sec)
                 }
             }
+
+        prop "temporaly no quorum of acceptors is accessible" $
+            pending
 
 
     -- bunch of complex scenarious involving introduction of many policies

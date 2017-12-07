@@ -12,12 +12,14 @@ import           Control.Lens             (from)
 import           Control.TimeWarp.Logging (LoggerName)
 import           Control.TimeWarp.Rpc     (NetworkAddress, Port, localhost)
 import           Data.Default             (Default (..))
+import qualified Data.Tagged              as Tag
 import qualified System.Console.ANSI      as ANSI
 import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra
 import           Sdn.Protocol.Context
+import           Sdn.Protocol.Versions
 
 -- | Unique features of each process.
 class Process p where
@@ -35,11 +37,11 @@ class Process p where
     processesNumber :: HasMembers => Int
 
     -- | Initial state of the process.
-    initProcessState :: p -> ProcessState p
+    initProcessState :: ProtocolVersion pv => Proxy pv -> p -> ProcessState p
     default initProcessState
         :: Default (ProcessState p)
-        => p -> ProcessState p
-    initProcessState _ = def
+        => Proxy pv -> p -> ProcessState p
+    initProcessState _ _ = def
 
 -- | Constraint for having context with specified mutable state.
 type HasContext s m =
@@ -52,13 +54,14 @@ type HasContextOf p m = HasContext (ProcessState p) m
 
 -- | Provide context for given process.
 inProcessCtx
-    :: forall p m a.
-       (MonadIO m, Process p)
-    => p
+    :: forall pv p m a.
+       (MonadIO m, Process p, ProtocolVersion pv)
+    => Proxy pv
+    -> p
     -> ReaderT (ProcessContext (ProcessState p)) m a
     -> m a
-inProcessCtx participant action = do
-    var <- liftIO $ newTVarIO (initProcessState participant)
+inProcessCtx pv participant action = do
+    var <- liftIO $ newTVarIO (initProcessState pv participant)
     runReaderT action (ProcessContext var)
 
 -- | Port binded to given process.
@@ -85,6 +88,14 @@ processesAddresses
 processesAddresses maker =
     map processAddress $ processesOf maker
 
+-- | Same as 'processesAddresses', but for single process, for compiance.
+processAddresses
+    :: forall p.
+       Process p
+    => p -> Members -> [NetworkAddress]
+processAddresses p _ = one (processAddress p)
+
+
 -- * Instances of the processes
 
 data Proposer = Proposer
@@ -109,6 +120,7 @@ instance Process Leader where
             & loggerNameT %~ withColor ANSI.Vivid ANSI.Magenta
     processAddress Leader = (localhost, 5000)
     processesNumber = 1
+    initProcessState pv Leader = Tag.proxy def pv
 
 
 data Acceptor = Acceptor AcceptorId
@@ -121,7 +133,7 @@ instance Process Acceptor where
             & loggerNameT %~ withColor ANSI.Vivid ANSI.Yellow
     processAddress (Acceptor id) = (localhost, 6000 + fromIntegral id)
     processesNumber = acceptorsNum getMembers
-    initProcessState (Acceptor id) = defAcceptorState id
+    initProcessState _ (Acceptor id) = defAcceptorState id
 
 
 data Learner = Learner Int

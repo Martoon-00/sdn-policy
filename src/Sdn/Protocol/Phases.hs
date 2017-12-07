@@ -27,10 +27,10 @@ type MonadPhase m =
     , HasMembers
     )
 
--- | Evaluate cstruct with all those policies, which are present
+-- | Evaluate cstruct with all those policiesToApply, which are present
 -- in votes from all acceptors of some quorum.
 --
--- NOTE: This is _very_ inneficient for now, because it treats policies
+-- NOTE: This is _very_ inneficient for now, because it treats policiesToApply
 -- in abstract way and literally sorts out all the minimal-on-inclusion quorums
 -- to evaluate cstruct.
 combinateOrThrow
@@ -45,7 +45,7 @@ combinateOrThrow
 combinateOrThrow votes =
     either (throwM . ProtocolError) pure $ combination votes
 
--- * Phases
+-- * Phases of Classic Paxos
 
 propose
     :: (MonadPhase m, HasContextOf Proposer m)
@@ -55,7 +55,7 @@ propose policy = do
     -- remember policy (for testing purposes)
     withProcessState $
         proposerProposedPolicies <>= one policy
-    -- and send it policies to leader
+    -- and send it policiesToApply to leader
     submit (processAddress Leader) (ProposalMsg policy)
 
 rememberProposal
@@ -64,8 +64,8 @@ rememberProposal
 rememberProposal (ProposalMsg policy) = do
     -- atomically modify process'es state
     withProcessState $ do
-        -- add policy to pending policies for next ballot
-        bal <- (+1) <$> use leaderBallotId
+        -- add policy to pending policiesToApply for next ballot
+        bal <- nextFreshBallotId <$> use leaderBallotId
         leaderPendingPolicies . at bal . non mempty %= (policy :)
 
 phrase1a
@@ -107,18 +107,18 @@ phase2a (Phase1bMsg accId ballotId cstruct) = do
         newVotes <-
             leaderVotes . at ballotId . non mempty <%= addVote accId cstruct
 
-        -- if some quorums appeared, recalculate Gamma and apply pending policies
+        -- if some quorums appeared, recalculate Gamma and apply pending policiesToApply
         if isQuorum newVotes
         then do
             when (isMinQuorum newVotes) $
                 logInfo $ "Got 1b from quorum of acceptors at " <> pretty ballotId
 
             -- recalculate Gamma and its combination
-            combined <- combinateOrThrow newVotes
-            -- pull and reset pending policies
-            policies <- use $ leaderPendingPolicies . at ballotId . non mempty
-            -- apply policies
-            let combined' = foldr acceptOrRejectCommand combined policies
+            combined <- gatherCStructFromAllQuorums newVotes
+            -- pull and reset pending policiesToApply
+            policiesToApply <- use $ leaderPendingPolicies . at ballotId . non mempty
+            -- apply policiesToApply
+            let combined' = foldr acceptOrRejectCommand combined policiesToApply
             pure $ Just (Phase2aMsg ballotId combined')
         else pure Nothing
 
@@ -189,3 +189,67 @@ learn (Phase2bMsg accId cstruct) = do
     reportNewLearnedCStruct new =
         logInfo $
         sformat ("New learned cstruct: "%build) new
+
+-- * Phases of Fast Paxos
+
+proposeFast
+    :: (MonadPhase m, HasContextOf Proposer m)
+    => Policy -> m ()
+proposeFast policy = do
+    logInfo $ sformat ("Proposing policy (fast): "%build) policy
+    withProcessState $
+        proposerProposedPolicies <>= one policy
+    broadcastTo (processAddresses Leader <> processesAddresses Acceptor)
+                (ProposalFastMsg policy)
+
+acceptorRememberFastProposal
+    :: (MonadPhase m, HasContextOf Acceptor m)
+    => ProposalFastMsg -> m ()
+acceptorRememberFastProposal (ProposalFastMsg policy) =
+    withProcessState $ do
+        ballotId <- use acceptorBallotId
+        acceptorPendingPolicies . at ballotId . non mempty <>= one policy
+
+-- TODO: very bad \^/
+leaderRememberFastProposal
+    :: (MonadPhase m, HasContextOf Leader m)
+    => ProposalFastMsg -> m ()
+leaderRememberFastProposal (ProposalFastMsg policy) =
+    withProcessState $ do
+        ballotId <- use leaderBallotId
+        leaderPendingPoliciesFast . at ballotId . non mempty <>= one policy
+
+initFastBallot
+    :: (MonadPhase m, HasContextOf Leader m)
+    => m ()
+initFastBallot = do
+    logInfo "Starting new fast ballot"
+
+    msg <- withProcessState $ do
+        leaderBallotId += 1
+        InitFastBallotMsg <$> use leaderBallotId
+
+    broadcastTo (processesAddresses Acceptor) msg
+
+phase2bFast
+    :: (MonadPhase m, HasContextOf Acceptor m)
+    => InitFastBallotMsg -> m ()
+phase2bFast (InitFastBallotMsg ballotId) = do
+    msg <- withProcessState $ do
+         cstruct <- use acceptorCStruct
+         policiesToApply <- use $ acceptorPendingPolicies . at ballotId . non mempty
+         let cstruct' = foldr acceptOrRejectCommand cstruct policiesToApply
+
+         accId <- use acceptorId
+         pure $ Phase2bMsg accId cstruct'
+
+    broadcastTo (processAddresses Leader <> processesAddresses Learner) msg
+
+detectConflicts
+    :: (MonadPhase m, HasContextOf Leader m)
+    => Phase2bMsg -> m ()
+detectConflicts (Phase2bMsg accId cstruct) = do
+    undefined
+
+
+

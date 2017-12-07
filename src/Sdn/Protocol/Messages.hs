@@ -5,7 +5,6 @@
 
 module Sdn.Protocol.Messages where
 
-import           Data.MessagePack    (MessagePack)
 import qualified Data.Text.Buildable
 import           Formatting          (bprint, build, (%))
 import           Universum
@@ -13,13 +12,14 @@ import           Universum
 import           Sdn.Base
 import           Sdn.Extra
 
+-- * Classic
+
 newtype ProposalMsg = ProposalMsg Policy
     deriving (Generic)
 
 instance Buildable ProposalMsg where
     build (ProposalMsg p) = bprint ("Proposal message "%build) p
 
-instance MessagePack ProposalMsg
 declareMessage ''ProposalMsg
 
 
@@ -29,7 +29,6 @@ data Phase1aMsg = Phase1aMsg BallotId
 instance Buildable Phase1aMsg where
     build (Phase1aMsg b) = bprint ("Phase 1a message "%build) b
 
-instance MessagePack Phase1aMsg
 declareMessage ''Phase1aMsg
 
 
@@ -40,7 +39,6 @@ instance Buildable Phase1bMsg where
     build (Phase1bMsg (AcceptorId a) b c) =
         bprint ("Phase 1b message from acceptor #"%build%" "%build%" "%build) a b c
 
-instance MessagePack Phase1bMsg
 declareMessage ''Phase1bMsg
 
 
@@ -51,7 +49,6 @@ instance Buildable Phase2aMsg where
     build (Phase2aMsg b c) =
         bprint ("Phase 2a message "%build%" "%build) b c
 
-instance MessagePack Phase2aMsg
 declareMessage ''Phase2aMsg
 
 
@@ -62,5 +59,25 @@ instance Buildable Phase2bMsg where
     build (Phase2bMsg (AcceptorId a) c) =
         bprint ("Phase 2b message from acceptor #"%build%" "%build) a c
 
-instance MessagePack Phase2bMsg
 declareMessage ''Phase2bMsg
+
+-- * Fast
+
+newtype ProposalFastMsg = ProposalFastMsg Policy
+    deriving (Generic)
+
+instance Buildable ProposalFastMsg where
+    build (ProposalFastMsg p) = bprint ("Fast proposal message "%build) p
+
+declareMessage ''ProposalFastMsg
+
+
+newtype InitFastBallotMsg = InitFastBallotMsg BallotId
+    deriving (Generic)
+
+instance Buildable InitFastBallotMsg where
+    build (InitFastBallotMsg b) = bprint ("Fast ballot "%build%" initiation") b
+
+declareMessage ''InitFastBallotMsg
+
+

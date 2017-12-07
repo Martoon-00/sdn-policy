@@ -7,8 +7,7 @@
 
 module Sdn.Base.Quorum where
 
-import           Control.Lens        (At (..), Index, IxValue, Ixed (..), Wrapped (..),
-                                      iso)
+import           Control.Lens        (At (..), Index, IxValue, Ixed (..), Wrapped (..))
 import           Data.List           (subsequences)
 import qualified Data.Map            as M
 import           Data.Reflection     (Reifies (..))
@@ -27,11 +26,9 @@ import           Sdn.Extra.Util
 -- Phantom type @f@ stands for used quorum family, and decides whether given
 -- number of votes forms quorum.
 newtype Votes f a = Votes (M.Map AcceptorId a)
-    deriving (Eq, Ord, Show, Monoid, Functor, Container, NontrivialContainer)
+    deriving (Eq, Ord, Show, Monoid, Functor, Container, NontrivialContainer, Generic)
 
-instance Wrapped (Votes t a) where
-    type Unwrapped (Votes t a) = M.Map AcceptorId a
-    _Wrapped' = iso (\(Votes v) -> v) Votes
+instance Wrapped (Votes t a)
 
 instance IsList (Votes f a) where
     type Item (Votes f a) = (AcceptorId, a)
