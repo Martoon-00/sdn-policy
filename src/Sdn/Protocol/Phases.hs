@@ -2,7 +2,7 @@
 
 module Sdn.Protocol.Phases where
 
-import           Control.Lens           (at, non, (%=), (+=), (.=), (<%=), (<<.=), (<>=))
+import           Control.Lens           (at, non, (%=), (.=), (<%=), (<<.=), (<>=))
 import           Control.TimeWarp.Rpc   (MonadRpc)
 import           Control.TimeWarp.Timed (MonadTimed (..))
 import           Formatting             (build, sformat, (%))
@@ -48,7 +48,7 @@ combinateOrThrow votes =
 -- * Phases of Classic Paxos
 
 propose
-    :: (MonadPhase m, HasContextOf Proposer m)
+    :: (MonadPhase m, HasContextOf Proposer pv m)
     => Policy -> m ()
 propose policy = do
     logInfo $ sformat ("Proposing policy: "%build) policy
@@ -59,7 +59,7 @@ propose policy = do
     submit (processAddress Leader) (ProposalMsg policy)
 
 rememberProposal
-    :: (MonadPhase m, HasContextOf Leader m)
+    :: (MonadPhase m, HasContextOf Leader pv m)
     => ProposalMsg -> m ()
 rememberProposal (ProposalMsg policy) = do
     -- atomically modify process'es state
@@ -69,24 +69,26 @@ rememberProposal (ProposalMsg policy) = do
         leaderPendingPolicies . at bal . non mempty %= (policy :)
 
 phrase1a
-    :: (MonadPhase m, HasContextOf Leader m)
+    :: forall pv m.
+       (MonadPhase m, HasContextOf Leader pv m)
     => m ()
 phrase1a = do
     logInfo "Starting new ballot"
 
-    msg <- withProcessState $ do
+    msg :: Phase1aMsg pv <- withProcessState $ do
         -- increment ballot id
-        leaderBallotId += 1
+        leaderBallotId %= nextFreshBallotId
         -- make up an "1a" message
         Phase1aMsg <$> use leaderBallotId
 
     broadcastTo (processesAddresses Acceptor) msg
 
 phase1b
-    :: (MonadPhase m, HasContextOf Acceptor m)
-    => Phase1aMsg -> m ()
+    :: forall pv m.
+       (MonadPhase m, HasContextOf Acceptor pv m)
+    => Phase1aMsg pv -> m ()
 phase1b (Phase1aMsg ballotId) = do
-    msg <- withProcessState $ do
+    msg :: Phase1bMsg pv <- withProcessState $ do
         -- promise not to accept messages of lesser ballot numbers
         -- make stored ballot id not lesser than @ballotId@
         acceptorBallotId %= max ballotId
@@ -98,8 +100,9 @@ phase1b (Phase1aMsg ballotId) = do
     submit (processAddress Leader) msg
 
 phase2a
-    :: (MonadPhase m, HasContextOf Leader m)
-    => Phase1bMsg -> m ()
+    :: forall pv m.
+       (MonadPhase m, HasContextOf Leader pv m)
+    => Phase1bMsg pv -> m ()
 phase2a (Phase1bMsg accId ballotId cstruct) = do
     maybeMsg <- withProcessState $ do
         -- add received vote to set of votes stored locally for this ballot,
@@ -114,12 +117,12 @@ phase2a (Phase1bMsg accId ballotId cstruct) = do
                 logInfo $ "Got 1b from quorum of acceptors at " <> pretty ballotId
 
             -- recalculate Gamma and its combination
-            combined <- gatherCStructFromAllQuorums newVotes
+            combined <- combinateOrThrow newVotes
             -- pull and reset pending policiesToApply
             policiesToApply <- use $ leaderPendingPolicies . at ballotId . non mempty
             -- apply policiesToApply
             let combined' = foldr acceptOrRejectCommand combined policiesToApply
-            pure $ Just (Phase2aMsg ballotId combined')
+            pure $ Just (Phase2aMsg @pv ballotId combined')
         else pure Nothing
 
     -- when got a message to submit - broadcast it
@@ -127,8 +130,8 @@ phase2a (Phase1bMsg accId ballotId cstruct) = do
         broadcastTo (processesAddresses Acceptor)
 
 phase2b
-    :: (MonadPhase m, HasContextOf Acceptor m)
-    => Phase2aMsg -> m ()
+    :: (MonadPhase m, HasContextOf Acceptor pv m)
+    => Phase2aMsg pv -> m ()
 phase2b (Phase2aMsg ballotId cstruct) = do
     maybeMsg <- withProcessState $ do
         localBallotId <- use acceptorBallotId
@@ -153,7 +156,7 @@ phase2b (Phase2aMsg ballotId cstruct) = do
         broadcastTo (processesAddresses Learner)
 
 learn
-    :: (MonadPhase m, HasContextOf Learner m)
+    :: (MonadPhase m, HasContextOf Learner pv m)
     => Phase2bMsg -> m ()
 learn (Phase2bMsg accId cstruct) = do
     learned <- withProcessState $ do
@@ -193,7 +196,7 @@ learn (Phase2bMsg accId cstruct) = do
 -- * Phases of Fast Paxos
 
 proposeFast
-    :: (MonadPhase m, HasContextOf Proposer m)
+    :: (MonadPhase m, HasContextOf Proposer pv m)
     => Policy -> m ()
 proposeFast policy = do
     logInfo $ sformat ("Proposing policy (fast): "%build) policy
@@ -203,7 +206,7 @@ proposeFast policy = do
                 (ProposalFastMsg policy)
 
 acceptorRememberFastProposal
-    :: (MonadPhase m, HasContextOf Acceptor m)
+    :: (MonadPhase m, HasContextOf Acceptor pv m)
     => ProposalFastMsg -> m ()
 acceptorRememberFastProposal (ProposalFastMsg policy) =
     withProcessState $ do
@@ -212,7 +215,7 @@ acceptorRememberFastProposal (ProposalFastMsg policy) =
 
 -- TODO: very bad \^/
 leaderRememberFastProposal
-    :: (MonadPhase m, HasContextOf Leader m)
+    :: (MonadPhase m, HasContextOf Leader pv m)
     => ProposalFastMsg -> m ()
 leaderRememberFastProposal (ProposalFastMsg policy) =
     withProcessState $ do
@@ -220,20 +223,21 @@ leaderRememberFastProposal (ProposalFastMsg policy) =
         leaderPendingPoliciesFast . at ballotId . non mempty <>= one policy
 
 initFastBallot
-    :: (MonadPhase m, HasContextOf Leader m)
+    :: forall pv m.
+       (MonadPhase m, HasContextOf Leader pv m)
     => m ()
 initFastBallot = do
     logInfo "Starting new fast ballot"
 
-    msg <- withProcessState $ do
-        leaderBallotId += 1
+    msg :: InitFastBallotMsg pv <- withProcessState $ do
+        leaderBallotId %= nextFreshBallotId
         InitFastBallotMsg <$> use leaderBallotId
 
     broadcastTo (processesAddresses Acceptor) msg
 
 phase2bFast
-    :: (MonadPhase m, HasContextOf Acceptor m)
-    => InitFastBallotMsg -> m ()
+    :: (MonadPhase m, HasContextOf Acceptor pv m)
+    => InitFastBallotMsg pv -> m ()
 phase2bFast (InitFastBallotMsg ballotId) = do
     msg <- withProcessState $ do
          cstruct <- use acceptorCStruct
@@ -246,7 +250,7 @@ phase2bFast (InitFastBallotMsg ballotId) = do
     broadcastTo (processAddresses Leader <> processesAddresses Learner) msg
 
 detectConflicts
-    :: (MonadPhase m, HasContextOf Leader m)
+    :: (MonadPhase m, HasContextOf Leader pv m)
     => Phase2bMsg -> m ()
 detectConflicts (Phase2bMsg accId cstruct) = do
     undefined

@@ -12,7 +12,6 @@ import           Control.Lens             (from)
 import           Control.TimeWarp.Logging (LoggerName)
 import           Control.TimeWarp.Rpc     (NetworkAddress, Port, localhost)
 import           Data.Default             (Default (..))
-import qualified Data.Tagged              as Tag
 import qualified System.Console.ANSI      as ANSI
 import           Universum
 
@@ -24,7 +23,7 @@ import           Sdn.Protocol.Versions
 -- | Unique features of each process.
 class Process p where
     -- | State kept by the process
-    type ProcessState p :: *
+    type ProcessState p :: * -> *
 
     -- | Name of the process, used in logging.
     processName :: p -> LoggerName
@@ -37,11 +36,11 @@ class Process p where
     processesNumber :: HasMembers => Int
 
     -- | Initial state of the process.
-    initProcessState :: ProtocolVersion pv => Proxy pv -> p -> ProcessState p
+    initProcessState :: ProtocolVersion pv => p -> ProcessState p pv
     default initProcessState
-        :: Default (ProcessState p)
-        => Proxy pv -> p -> ProcessState p
-    initProcessState _ _ = def
+        :: Default (ProcessState p pv)
+        => p -> ProcessState p pv
+    initProcessState _ = def
 
 -- | Constraint for having context with specified mutable state.
 type HasContext s m =
@@ -50,18 +49,18 @@ type HasContext s m =
     )
 
 -- | Constraint for having context of specified type of process.
-type HasContextOf p m = HasContext (ProcessState p) m
+type HasContextOf p pv m = (HasContext (ProcessState p pv) m, ProtocolVersion pv)
 
 -- | Provide context for given process.
 inProcessCtx
-    :: forall pv p m a.
+    :: forall p pv m a.
        (MonadIO m, Process p, ProtocolVersion pv)
     => Proxy pv
     -> p
-    -> ReaderT (ProcessContext (ProcessState p)) m a
+    -> ReaderT (ProcessContext (ProcessState p pv)) m a
     -> m a
-inProcessCtx pv participant action = do
-    var <- liftIO $ newTVarIO (initProcessState pv participant)
+inProcessCtx _ participant action = do
+    var <- liftIO $ newTVarIO (initProcessState participant)
     runReaderT action (ProcessContext var)
 
 -- | Port binded to given process.
@@ -92,8 +91,8 @@ processesAddresses maker =
 processAddresses
     :: forall p.
        Process p
-    => p -> Members -> [NetworkAddress]
-processAddresses p _ = one (processAddress p)
+    => p -> [NetworkAddress]
+processAddresses p = one (processAddress p)
 
 
 -- * Instances of the processes
@@ -120,7 +119,7 @@ instance Process Leader where
             & loggerNameT %~ withColor ANSI.Vivid ANSI.Magenta
     processAddress Leader = (localhost, 5000)
     processesNumber = 1
-    initProcessState pv Leader = Tag.proxy def pv
+    initProcessState Leader = def
 
 
 data Acceptor = Acceptor AcceptorId
@@ -133,7 +132,7 @@ instance Process Acceptor where
             & loggerNameT %~ withColor ANSI.Vivid ANSI.Yellow
     processAddress (Acceptor id) = (localhost, 6000 + fromIntegral id)
     processesNumber = acceptorsNum getMembers
-    initProcessState _ (Acceptor id) = defAcceptorState id
+    initProcessState (Acceptor id) = defAcceptorState id
 
 
 data Learner = Learner Int

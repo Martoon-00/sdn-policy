@@ -27,14 +27,14 @@ import qualified Sdn.Schedule                as S
 import           Test.Sdn.Overall.Properties
 
 
-data TestLaunchParams = TestLaunchParams
-    { testLauncher   :: TopologyLauncher
+data TestLaunchParams pv = TestLaunchParams
+    { testLauncher   :: TopologyLauncher pv
     , testSettings   :: TopologySettings
     , testDelays     :: D.Delays
-    , testProperties :: forall m. MonadIO m => [ProtocolProperty m]
+    , testProperties :: forall m. MonadIO m => [ProtocolProperty pv m]
     }
 
-instance Default TestLaunchParams where
+instance Default (TestLaunchParams Classic) where
     def = TestLaunchParams
         { testLauncher = launchClassicPaxos
           -- ^ use Classic Paxos protocol
@@ -47,15 +47,17 @@ instance Default TestLaunchParams where
           -- ^ set of reasonable properties for any good consensus launch
         }
 
-testLaunch :: TestLaunchParams -> Property
+testLaunch
+    :: forall pv.
+       ProtocolVersion pv
+    => TestLaunchParams pv -> Property
 testLaunch TestLaunchParams{..} =
     forAll (Blind <$> chooseAny) $ \(Blind seed) -> do
         let (gen1, gen2) =
                 split (mkStdGen seed)
-            launch :: MonadTopology m => m (TopologyMonitor m)
+            launch :: MonadTopology m => m (TopologyMonitor pv m)
             launch =
-                testLauncher
-                testSettings { topologySeed = S.FixedSeed gen2 }
+                testLauncher testSettings{ topologySeed = S.FixedSeed gen2 }
             runEmulation =
                 runTimedT .
                 runPureRpc testDelays gen1 .

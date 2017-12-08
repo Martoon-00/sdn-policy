@@ -12,7 +12,6 @@ import           Control.TimeWarp.Rpc   (MonadRpc, NetworkAddress)
 import           Control.TimeWarp.Timed (MonadTimed)
 import           Data.Default           (Default (def))
 import qualified Data.Map               as M
-import           Data.Tagged            (Tagged (..))
 import qualified Data.Text.Buildable
 import           Data.Text.Lazy.Builder (Builder)
 import           Formatting             (Format, bprint, build, (%))
@@ -45,20 +44,20 @@ withProcessState modifier = do
 -- * Per-process contexts
 -- ** Proposer
 
-data ProposerState = ProposerState
+data ProposerState pv = ProposerState
     { _proposerProposedPolicies :: [Policy]
       -- ^ Policies ever proposed (for testing purposes)
     }
 
 makeLenses ''ProposerState
 
-instance Buildable ProposerState where
+instance Buildable (ProposerState pv) where
     build ProposerState{..} =
         bprint
             ("\n    proposed policies:\n    "%buildList "\n    , ")
             _proposerProposedPolicies
 
-instance Default ProposerState where
+instance Default (ProposerState pv) where
     def = ProposerState mempty
 
 -- ** Leader
@@ -79,7 +78,7 @@ data LeaderState pv = LeaderState
 
 makeLenses ''LeaderState
 
-instance Buildable (LeaderState pv) where
+instance ProtocolVersion pv => Buildable (LeaderState pv) where
     build LeaderState{..} =
         bprint
             ("\n    current ballod id: "%build%
@@ -95,9 +94,10 @@ instance Buildable (LeaderState pv) where
 
 -- | Initial state of the leader.
 instance ProtocolVersion pv => Default (LeaderState pv) where
-    def = Tagged $ LeaderState balId mempty mempty mempty mempty
+    def = LeaderState balId mempty mempty mempty mempty
       where
-        balId = startBallotId @pv
+        balId :: ProtocolVersion pv => BallotId pv
+        balId = startBallotId
 
 -- ** Acceptor
 
@@ -115,7 +115,7 @@ data AcceptorState pv = AcceptorState
 
 makeLenses ''AcceptorState
 
-instance Buildable (AcceptorState pv) where
+instance ProtocolVersion pv => Buildable (AcceptorState pv) where
     build AcceptorState{..} =
         bprint
             ("\n    my id: "%build%
@@ -126,16 +126,16 @@ instance Buildable (AcceptorState pv) where
             _acceptorCStruct
 
 -- | Initial state of acceptor.
-defAcceptorState :: AcceptorId -> (AcceptorState pv)
+defAcceptorState :: ProtocolVersion pv => AcceptorId -> (AcceptorState pv)
 defAcceptorState id = AcceptorState id balId mempty mempty
   where
     -- didn't give promise about any ballot
-    balId = ClassicBallotId (-1)
+    balId = prestartBallotId
 
 -- ** Learner
 
 -- * State kept by learner.
-data LearnerState = LearnerState
+data LearnerState pv = LearnerState
     { _learnerVotes   :: Votes ClassicMajorityQuorum Configuration
       -- ^ CStructs received from acceptors so far
     , _learnerLearned :: Configuration
@@ -144,7 +144,7 @@ data LearnerState = LearnerState
 
 makeLenses ''LearnerState
 
-instance Buildable LearnerState where
+instance Buildable (LearnerState pv) where
     build LearnerState{..} =
         bprint
             ("\n    heard: "%build%
@@ -153,19 +153,19 @@ instance Buildable LearnerState where
             _learnerLearned
 
 -- | Initial state of the learner.
-instance Default LearnerState where
+instance Default (LearnerState pv) where
     def = LearnerState mempty mempty
 
 -- * Misc
 
 data AllStates pv = AllStates
-    { proposerState   :: ProposerState
+    { proposerState   :: ProposerState pv
     , leaderState     :: (LeaderState pv)
     , acceptorsStates :: [AcceptorState pv]
-    , learnersStates  :: [LearnerState]
+    , learnersStates  :: [LearnerState pv]
     }
 
-instance Buildable (AllStates pv) where
+instance ProtocolVersion pv => Buildable (AllStates pv) where
     build AllStates{..} =
         bprint
             (  "\n  Proposer state: "%build%

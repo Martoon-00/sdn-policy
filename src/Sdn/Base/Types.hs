@@ -9,6 +9,7 @@ import           Data.Default        (Default (..))
 import           Data.MessagePack    (MessagePack)
 import qualified Data.Text.Buildable
 import           Formatting          (bprint, build, (%))
+import           Test.QuickCheck     (Arbitrary (..), oneof)
 import           Universum
 
 -- | Raw ballot number.
@@ -22,6 +23,9 @@ instance Buildable BallotCounter where
 
 instance Default BallotCounter where
     def = BallotCounter 0
+
+instance Arbitrary BallotCounter where
+    arbitrary = BallotCounter <$> arbitrary
 
 -- | Allows arithmetic on ballots.
 -- Implementations of methods below should be sensible.
@@ -49,6 +53,9 @@ instance NumBallot ClassicBallotId where
 instance Buildable ClassicBallotId where
     build = bprint ("classic "%build)
 
+instance Arbitrary ClassicBallotId where
+    arbitrary = ClassicBallotId <$> arbitrary
+
 -- | Ballot id used in Fast Paxos.
 data FastBallotId
     = FastBallotId BallotCounter
@@ -63,6 +70,8 @@ instance Buildable FastBallotId where
         FastBallotId c -> bprint ("fast "%build) c
         RecoveryBallotId c -> bprint ("recovery "%build) c
 
+instance MessagePack FastBallotId
+
 instance NumBallot FastBallotId where
     flatBallotId = iso toFlat fromFlat
       where
@@ -73,6 +82,12 @@ instance NumBallot FastBallotId where
             if even @Int $ round (2 * c)
             then FastBallotId (round c)
             else RecoveryBallotId (floor c)
+
+instance Arbitrary FastBallotId where
+    arbitrary = oneof
+        [ FastBallotId <$> arbitrary
+        , RecoveryBallotId <$> arbitrary
+        ]
 
 
 -- | Identifier of acceptor.

@@ -17,7 +17,7 @@ import           Test.Sdn.Overall.Properties.Util
 
 -- * Property primitives
 
-proposedPoliciesWereLearned :: PropertyChecker
+proposedPoliciesWereLearned :: PropertyChecker pv
 proposedPoliciesWereLearned AllStates{..} = do
     let proposed's = _proposerProposedPolicies proposerState
     let learned's = _learnerLearned <$> learnersStates
@@ -31,7 +31,7 @@ proposedPoliciesWereLearned AllStates{..} = do
         throwError $
         sformat ("Proposed "%build%" wasn't leart by learner "%build) p li
 
-learnedPoliciesWereProposed :: PropertyChecker
+learnedPoliciesWereProposed :: PropertyChecker pv
 learnedPoliciesWereProposed AllStates{..} = do
     let proposed's = _proposerProposedPolicies proposerState
     let validOutcomes = S.fromList $ [Accepted, Rejected] <*> proposed's
@@ -44,7 +44,7 @@ learnedPoliciesWereProposed AllStates{..} = do
         throwError $
         sformat ("Learned "%build%" by "%build%" was never proposed") p li
 
-learnersAgree :: PropertyChecker
+learnersAgree :: PropertyChecker pv
 learnersAgree AllStates{..} = do
     let learned = _learnerLearned <$> learnersStates
     l :| ls <- maybe (Left "No learners") Right $ nonEmpty learned
@@ -53,7 +53,7 @@ learnersAgree AllStates{..} = do
 
 numberOfLearnedPolicies :: (Prism' (Acceptance Policy) a)
                         -> (Word -> Bool)
-                        -> PropertyChecker
+                        -> PropertyChecker pv
 numberOfLearnedPolicies predicate cmp AllStates{..} = do
     let learned's = _learnerLearned <$> learnersStates
     forM_ (zip [1..] learned's) $ \(learnerId, learned) -> do
@@ -69,7 +69,7 @@ numberOfLearnedPolicies predicate cmp AllStates{..} = do
 
 -- * Properties groups
 
-basicProperties :: forall m. MonadIO m => [ProtocolProperty m]
+basicProperties :: MonadIO m => [ProtocolProperty pv m]
 basicProperties =
     [ eventually proposedPoliciesWereLearned
     , invariant learnedPoliciesWereProposed

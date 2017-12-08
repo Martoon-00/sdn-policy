@@ -1,5 +1,6 @@
-{-# LANGUAGE Rank2Types   #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE Rank2Types          #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 -- | Make up network layout
 
@@ -20,6 +21,7 @@ import           Sdn.Extra
 import           Sdn.Protocol.Context
 import           Sdn.Protocol.Phases
 import           Sdn.Protocol.Processes
+import           Sdn.Protocol.Versions
 import           Sdn.Schedule
 
 type TopologySchedule p = forall m. MonadTopology m => Schedule m p
@@ -45,20 +47,26 @@ instance Default TopologySettings where
         }
 
 -- | Provides info about topology in runtime.
-data TopologyMonitor m = TopologyMonitor
+data TopologyMonitor pv m = TopologyMonitor
     { -- | Returns when all active processes in the topology finish
       awaitTermination :: m ()
       -- | Fetch states of all processes in topology
-    , readAllStates    :: STM AllStates
+    , readAllStates    :: STM (AllStates pv)
     }
 
 
 -- | Create single newProcess.
 newProcess
-    :: (MonadIO m, MonadTimed m, WithNamedLogger m, Process p)
+    :: forall p pv m.
+       ( MonadIO m
+       , MonadTimed m
+       , WithNamedLogger m
+       , Process p
+       , ProtocolVersion pv
+       )
     => p
-    -> ReaderT (ProcessContext (ProcessState p)) m ()
-    -> m (STM (ProcessState p))
+    -> ReaderT (ProcessContext (ProcessState p pv)) m ()
+    -> m (STM (ProcessState p pv))
 newProcess process action = do
     stateBox <- liftIO $ newTVarIO (initProcessState process)
     fork_ $
@@ -95,11 +103,11 @@ type MonadTopology m =
     , MonadRpc m
     )
 
-type TopologyLauncher =
-    forall m. MonadTopology m => TopologySettings -> m (TopologyMonitor m)
+type TopologyLauncher pv =
+    forall m. MonadTopology m => TopologySettings -> m (TopologyMonitor pv m)
 
 -- | Launch Classic Paxos algorithm.
-launchClassicPaxos :: TopologyLauncher
+launchClassicPaxos :: TopologyLauncher Classic
 launchClassicPaxos TopologySettings{..} = withMembers topologyMembers $ do
     let (proposalSeed, ballotSeed) = splitGenSeed topologySeed
 

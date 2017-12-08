@@ -1,16 +1,18 @@
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TypeFamilies    #-}
+{-# LANGUAGE TemplateHaskell      #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- | Messages different processes send to each other
 
 module Sdn.Protocol.Messages where
 
 import qualified Data.Text.Buildable
-import           Formatting          (bprint, build, (%))
+import           Formatting            (bprint, build, (%))
 import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra
+import           Sdn.Protocol.Versions
 
 -- * Classic
 
@@ -23,33 +25,33 @@ instance Buildable ProposalMsg where
 declareMessage ''ProposalMsg
 
 
-data Phase1aMsg = Phase1aMsg BallotId
+data Phase1aMsg pv = Phase1aMsg (BallotId pv)
     deriving (Generic)
 
-instance Buildable Phase1aMsg where
+instance ProtocolVersion pv => Buildable (Phase1aMsg pv) where
     build (Phase1aMsg b) = bprint ("Phase 1a message "%build) b
 
-declareMessage ''Phase1aMsg
+declareMessagePV ''Phase1aMsg
 
 
-data Phase1bMsg = Phase1bMsg AcceptorId BallotId Configuration
+data Phase1bMsg pv = Phase1bMsg AcceptorId (BallotId pv) Configuration
     deriving (Generic)
 
-instance Buildable Phase1bMsg where
+instance ProtocolVersion pv => Buildable (Phase1bMsg pv) where
     build (Phase1bMsg (AcceptorId a) b c) =
         bprint ("Phase 1b message from acceptor #"%build%" "%build%" "%build) a b c
 
-declareMessage ''Phase1bMsg
+declareMessagePV ''Phase1bMsg
 
 
-data Phase2aMsg = Phase2aMsg BallotId Configuration
+data Phase2aMsg pv = Phase2aMsg (BallotId pv) Configuration
     deriving (Generic)
 
-instance Buildable Phase2aMsg where
+instance ProtocolVersion pv => Buildable (Phase2aMsg pv) where
     build (Phase2aMsg b c) =
         bprint ("Phase 2a message "%build%" "%build) b c
 
-declareMessage ''Phase2aMsg
+declareMessagePV ''Phase2aMsg
 
 
 data Phase2bMsg = Phase2bMsg AcceptorId Configuration
@@ -72,12 +74,12 @@ instance Buildable ProposalFastMsg where
 declareMessage ''ProposalFastMsg
 
 
-newtype InitFastBallotMsg = InitFastBallotMsg BallotId
+newtype InitFastBallotMsg pv = InitFastBallotMsg (BallotId pv)
     deriving (Generic)
 
-instance Buildable InitFastBallotMsg where
+instance ProtocolVersion pv => Buildable (InitFastBallotMsg pv) where
     build (InitFastBallotMsg b) = bprint ("Fast ballot "%build%" initiation") b
 
-declareMessage ''InitFastBallotMsg
+declareMessagePV ''InitFastBallotMsg
 
 

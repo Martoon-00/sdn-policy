@@ -48,7 +48,6 @@ library
                      , reflection
                      , stm
                      , stm-chans
-                     , tagged
                      , template-haskell
                      , text
                      , text-format

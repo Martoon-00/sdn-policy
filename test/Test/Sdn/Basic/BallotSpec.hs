@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE DataKinds           #-}
 
 -- | Tests for various quorum families used.
 
@@ -6,35 +7,29 @@ module Test.Sdn.Basic.BallotSpec
     ( spec
     ) where
 
-import           Test.Hspec            (Spec, describe, shouldBe)
+import           Test.Hspec            (Spec, describe)
 import           Test.Hspec.Core.Spec  (SpecWith)
 import           Test.Hspec.QuickCheck (prop)
+import           Test.QuickCheck       (Arbitrary, (===))
 import           Universum
 
 import           Sdn.Base
+import           Sdn.Protocol
 
 spec :: Spec
 spec = do
-    describe "simple majority quorum" $ do
-        describe "classic majority" $ do
-            checkQuorum @ClassicMajorityQuorum 6 4
-            checkQuorum @ClassicMajorityQuorum 7 4
-            checkQuorum @ClassicMajorityQuorum 8 5
+    describe "NumBallot instance" $ do
+        describe "classic" $ do
+            checkNumBallot @Classic
 
-        describe "classic majority" $ do
-            checkQuorum @FastMajorityQuorum 7 6
-            checkQuorum @FastMajorityQuorum 8 7
-            checkQuorum @FastMajorityQuorum 24 19
-            checkQuorum @FastMajorityQuorum 25 19
+        describe "fast" $ do
+            checkNumBallot @Fast
 
-checkQuorum :: forall qf. QuorumFamily qf => Int -> Int -> SpecWith ()
-checkQuorum acceptors threashold =
-    describe (show threashold <> "/" <> show acceptors) $ do
-        prop "isQuorum" $ \votes ->
-            let members = Members { acceptorsNum = acceptors, learnersNum = 1 }
-            in  isQuorum @qf @() members votes `shouldBe` (length votes >= threashold)
-
-        prop "isMinQuorum" $ \votes ->
-            let members = Members { acceptorsNum = acceptors, learnersNum = 1 }
-            in  isMinQuorum @qf @() members votes `shouldBe` (length votes == threashold)
+checkNumBallot
+    :: forall pv.
+       (ProtocolVersion pv, With [Show, Arbitrary] (BallotId pv))
+    => SpecWith ()
+checkNumBallot =
+    prop "here and there" $ \(ballotId :: BallotId pv) ->
+         (ballotId & flatBallotId %~ identity) === ballotId
 

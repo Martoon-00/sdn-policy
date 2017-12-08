@@ -1,46 +1,37 @@
-{-# LANGUAGE AllowAmbiguousTypes        #-}
-{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE FunctionalDependencies     #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE Rank2Types                 #-}
+{-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TypeFamilies               #-}
 
 -- | Different versions of protocol.
 
 module Sdn.Protocol.Versions where
 
-import           Data.Default   (def)
+import           Control.TimeWarp.Rpc (RpcRequest (..))
+import           Data.MessagePack     (MessagePack (..))
+import           Language.Haskell.TH  as TH
 import           Universum
 
 import           Sdn.Base.Types
 
--- | Tag for classic version of protocol.
-data Classic
--- | Tag for fast version of protocol with classic version used for recovery.
-data Fast
-
-
--- | Methods which depend on used version protocol.
-class (Buildable (BallotId pv), NumBallot (BallotId pv)) =>
+class ( NumBallot (BallotId pv)
+      , Ord (BallotId pv)
+      , Buildable (BallotId pv)
+      , MessagePack (BallotId pv)
+      ) =>
       ProtocolVersion pv where
     type BallotId pv :: *
 
-    startBallotId :: BallotId pv
-    nextFreshBallotId :: BallotId pv -> BallotId pv
-
+-- | Tag for classic version of protocol.
+data Classic
 instance ProtocolVersion Classic where
     type BallotId Classic = ClassicBallotId
 
-    startBallotId = ClassicBallotId def
-    nextFreshBallotId = (+1)
-
+-- | Tag for fast version of protocol with classic version used for recovery.
+data Fast
 instance ProtocolVersion Fast where
     type BallotId Fast = FastBallotId
 
-    startBallotId = FastBallotId def
-    nextFreshBallotId = \case
-        FastBallotId c -> FastBallotId (c + 1)
-        RecoveryBallotId c -> FastBallotId (c + 1)
 
 -- | Carrying protocol version of monad.
 class Monad m => MonadProtocolVersion pv m | m -> pv where
@@ -54,6 +45,20 @@ newtype ProtocolVersionT pv m a = ProtocolVersionT
 instance MonadTrans (ProtocolVersionT pv) where
     lift = ProtocolVersionT
 
-instance (Monad m, ProtocolVersion pv) =>
+instance (Monad m) =>
          MonadProtocolVersion pv (ProtocolVersionT pv m) where
     getProtocolVersion = pure Proxy
+
+
+-- | Template-haskell fun to reduce boilerplate.
+declareMessagePV :: TH.Name -> TH.Q [TH.Dec]
+declareMessagePV msgName = do
+    let msgType = pure $ ConT msgName
+    let msgStr = show @_ @String msgName
+    [d| instance ProtocolVersion pv => MessagePack ($msgType pv)
+        instance ProtocolVersion pv => RpcRequest ($msgType pv) where
+            type Response ($msgType pv) = ()
+            type ExpectedError ($msgType pv) = Void
+            methodName _ = msgStr
+      |]
+

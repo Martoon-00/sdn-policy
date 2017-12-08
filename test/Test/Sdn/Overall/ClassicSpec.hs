@@ -9,17 +9,10 @@ import           Universum
 import qualified Control.TimeWarp.Rpc        as D
 import           Control.TimeWarp.Timed      (Millisecond, Second, hour, interval, sec)
 import           Data.Default
-<<<<<<< Updated upstream:test/Test/Sdn/Overall/ClassicSpec.hs
-import           Test.Hspec                  (Spec, describe)
+import           Test.Hspec                  (Spec, describe, pending)
 import           Test.Hspec.QuickCheck       (prop)
 import           Test.QuickCheck             (Positive (..), Small (..), arbitrary, oneof,
                                               (==>))
-=======
-import           Test.Hspec             (Spec, describe, pending)
-import           Test.Hspec.QuickCheck  (prop)
-import           Test.QuickCheck        (Positive (..), Small (..), arbitrary, oneof,
-                                         (==>))
->>>>>>> Stashed changes:test/Test/Sdn/ClassicSpec.hs
 
 import           Sdn.Base
 import           Sdn.Protocol
@@ -36,17 +29,17 @@ spec = do
         prop "simple" $
             -- launch with default test settings
             -- see @instance Default TestLaunchParams@ below for their definition
-            testLaunch def
+            testLaunch @Classic def
 
         prop "acceptor unavailable" $
-            testLaunch def
+            testLaunch @Classic def
             { testDelays =
                 D.forAddress (processAddress (Acceptor 1))
                     D.blackout
             }
 
         prop "too many acceptors unavailable" $
-            testLaunch def
+            testLaunch @Classic def
             { testDelays =
                 D.forAddressesList (processAddress . Acceptor <$> [1, 2])
                     D.blackout
@@ -59,7 +52,7 @@ spec = do
             -- TODO: optimize algorithm and get rid of 'Small'
             \(Small (n :: Word)) ->
 
-            testLaunch def
+            testLaunch @Classic def
             { testSettings = def
                 { topologyProposalSchedule = do
                     S.times n
@@ -73,7 +66,7 @@ spec = do
         prop "all conflicting policies" $
             \(Positive (Small n)) ->
 
-            testLaunch def
+            testLaunch @Classic def
             { testSettings = def
                 { topologyProposalSchedule = do
                     S.times n
@@ -88,7 +81,7 @@ spec = do
 
 
         prop "delays" $
-            testLaunch def
+            testLaunch @Classic def
             { testDelays = D.uniform (0, 1 :: Second)
             , testSettings = def
                 { topologyBallotsSchedule = S.delayed (interval 2 sec)
@@ -107,7 +100,7 @@ spec = do
        \(Positive (Small balDelay)) ->
        proposalsNum > balDelay ==>
 
-            testLaunch def
+            testLaunch @Classic def
             { testSettings = def
                 { topologyProposalSchedule = do
                     S.repeating proposalsNum (interval 1 sec)

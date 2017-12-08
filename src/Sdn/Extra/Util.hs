@@ -12,7 +12,8 @@ module Sdn.Extra.Util where
 
 import           Control.Lens           (iso)
 import           Data.MessagePack       (MessagePack)
-import           Formatting             (Format, bprint, build, later)
+import           Formatting             (Format, bprint, build, formatToString, later,
+                                         shown, (%))
 import           Universum
 
 import           Control.TimeWarp.Rpc   (MonadRpc (..), NetworkAddress, RpcRequest (..),
@@ -21,14 +22,24 @@ import qualified Control.TimeWarp.Rpc   as Rpc
 import           Control.TimeWarp.Timed (MonadTimed (..), fork_)
 import           Data.Text.Lazy.Builder (Builder)
 import qualified GHC.Exts               as Exts
-import           Language.Haskell.TH    (Dec, Name, Q, Type (ConT))
+import qualified Language.Haskell.TH    as TH
 
 -- | Declare instance for one-way message.
-declareMessage :: Name -> Q [Dec]
+declareMessage :: TH.Name -> TH.Q [TH.Dec]
 declareMessage msgType = do
-    dec1 <- [d| instance MessagePack $(pure $ ConT msgType) |]
+    dec1 <- [d| instance MessagePack $getFullType |]
     dec2 <- mkRequest msgType ''()
-    return $ dec1 <> dec2
+    return $ dec2 <> dec1
+  where
+    getFullType = do
+        (name, vars) <- TH.reify msgType >>= \case
+            TH.TyConI (TH.NewtypeD _ nname typeVars _ _ _) -> pure (nname, typeVars)
+            TH.TyConI (TH.DataD _ dname typeVars _ _ _) -> pure (dname, typeVars)
+            TH.TyConI (TH.TySynD tname typeVars _) -> pure (tname, typeVars)
+            _ -> fail $ formatToString ("Type "%shown%" not found") msgType
+        typeArgs <- replicateM (length vars) $ TH.VarT <$> TH.newName "a"
+        pure $ foldl TH.AppT (TH.ConT name) typeArgs
+
 
 type Message msg = (RpcRequest msg, Response msg ~ ())
 
