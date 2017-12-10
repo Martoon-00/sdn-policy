@@ -6,7 +6,6 @@
 module Sdn.Protocol.Topology where
 
 import           Control.Monad.Catch      (Handler (..), catches)
-import           Control.Monad.Reader     (withReaderT)
 import           Control.TimeWarp.Logging (WithNamedLogger, modifyLoggerName)
 import           Control.TimeWarp.Rpc     (Method (..), MonadRpc, serve)
 import           Control.TimeWarp.Timed   (Microsecond, MonadTimed, for, fork_, hour,
@@ -53,19 +52,17 @@ data TopologyMonitor m = TopologyMonitor
     , readAllStates    :: STM AllStates
     }
 
-runWithMembers :: Monad m => Members -> ReaderT Members m a -> m a
-runWithMembers = flip runReaderT
 
 -- | Create single newProcess.
 newProcess
     :: (MonadIO m, MonadTimed m, WithNamedLogger m, Process p)
     => p
     -> ReaderT (ProcessContext (ProcessState p)) m ()
-    -> ReaderT Members m (STM (ProcessState p))
+    -> m (STM (ProcessState p))
 newProcess process action = do
     stateBox <- liftIO $ newTVarIO (initProcessState process)
     fork_ $
-        withReaderT (ProcessContext stateBox) $
+        flip runReaderT (ProcessContext stateBox) $
         modifyLoggerName (<> processName process) $
         action
     return $ readTVar stateBox
@@ -103,7 +100,7 @@ type TopologyLauncher =
 
 -- | Launch Classic Paxos algorithm.
 launchClassicPaxos :: TopologyLauncher
-launchClassicPaxos TopologySettings{..} = runWithMembers topologyMembers $ do
+launchClassicPaxos TopologySettings{..} = withMembers topologyMembers $ do
     let (proposalSeed, ballotSeed) = splitGenSeed topologySeed
 
     proposerState <- newProcess Proposer . work (for topologyLifetime) $ do
@@ -124,14 +121,14 @@ launchClassicPaxos TopologySettings{..} = runWithMembers topologyMembers $ do
             , listener phase2a
             ]
 
-    acceptorsStates <- forM (processesOf Acceptor topologyMembers) $
+    acceptorsStates <- forM (processesOf Acceptor) $
         \process -> newProcess process . work (for topologyLifetime) $ do
             serve (processPort process)
                 [ listener phase1b
                 , listener phase2b
                 ]
 
-    learnersStates <- forM (processesOf Learner topologyMembers) $
+    learnersStates <- forM (processesOf Learner) $
         \process -> newProcess process . work (for topologyLifetime) $ do
             serve (processPort process)
                 [ listener learn
@@ -148,3 +145,4 @@ launchClassicPaxos TopologySettings{..} = runWithMembers topologyMembers $ do
     let awaitTermination = wait (till 100 ms (curTime + topologyLifetime))
 
     return TopologyMonitor{..}
+{-# NOINLINE launchClassicPaxos #-}

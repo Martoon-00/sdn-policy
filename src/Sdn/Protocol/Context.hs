@@ -25,7 +25,6 @@ import           Sdn.Extra
 -- | Context kept by single process.
 data ProcessContext s = ProcessContext
     { pcState   :: TVar s   -- ^ Process'es mutable state
-    , pcMembers :: Members  -- ^ Info about all participats of consensus
     }
 
 -- | Atomically modify state stored by process.
@@ -40,10 +39,6 @@ withProcessState
 withProcessState modifier = do
     var <- pcState <$> ask
     launchPureLog (atomically . modifyTVarS var) modifier
-
--- | Get 'Members' stored in context.
-ctxMembers :: MonadReader (ProcessContext s) m => m Members
-ctxMembers = pcMembers <$> ask
 
 -- * Per-process contexts
 -- ** Proposer
@@ -177,9 +172,9 @@ broadcastTo
        , MonadRpc m
        , MonadReader (ProcessContext s) m
        , Message msg
+       , HasMembers
        )
-    => (Members -> [NetworkAddress]) -> msg -> m ()
+    => [NetworkAddress] -> msg -> m ()
 broadcastTo getAddresses msg = do
-    members <- pcMembers <$> ask
-    let addresses = getAddresses members
+    let addresses = getAddresses
     forM_ addresses $ \addr -> submit addr msg

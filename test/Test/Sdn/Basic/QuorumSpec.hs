@@ -28,13 +28,14 @@ spec = do
             checkQuorum @FastMajorityQuorum 25 19
 
 checkQuorum :: forall qf. QuorumFamily qf => Int -> Int -> SpecWith ()
-checkQuorum acceptors threashold =
-    describe (show threashold <> "/" <> show acceptors) $ do
+checkQuorum acceptorsNum threashold =
+    withMembers Members{..} $
+    describe (show threashold <> "/" <> show acceptorsNum) $ do
         prop "isQuorum" $ \votes ->
-            let members = Members { acceptorsNum = acceptors, learnersNum = 1 }
-            in  isQuorum @qf @() members votes `shouldBe` (length votes >= threashold)
+            isQuorum @qf @() votes `shouldBe` (length votes >= threashold)
 
         prop "isMinQuorum" $ \votes ->
-            let members = Members { acceptorsNum = acceptors, learnersNum = 1 }
-            in  isMinQuorum @qf @() members votes `shouldBe` (length votes == threashold)
-
+            isMinQuorum @qf @() votes `shouldBe` (length votes == threashold)
+  where
+    learnersNum = 1
+{-# NOINLINE checkQuorum #-}

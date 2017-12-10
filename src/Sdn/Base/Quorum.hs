@@ -19,6 +19,7 @@ import           Test.QuickCheck     (Arbitrary (..), Gen, sublistOf)
 import           Universum           hiding (toList)
 import qualified Universum           as U
 
+import           Sdn.Base.Settings
 import           Sdn.Base.Types
 import           Sdn.Extra.Util
 
@@ -68,20 +69,21 @@ data UnknownQuorum
 -- | Describes quorum family.
 class QuorumFamily f where
     -- | Check whether votes belong to a quorum of acceptors.
-    isQuorum :: Members -> Votes f a -> Bool
+    isQuorum :: HasMembers => Votes f a -> Bool
 
 -- | Check whether votes belogs to a minimum for inclusion quorum.
-isMinQuorum :: QuorumFamily f => Members -> Votes f a -> Bool
-isMinQuorum members votes =
+isMinQuorum :: (HasMembers, QuorumFamily f) => Votes f a -> Bool
+isMinQuorum votes =
     let subVotes = votes & _Wrapped' . listL %~ drop 1
-    in  isQuorum members votes && not (isQuorum members subVotes)
+    in  isQuorum votes && not (isQuorum subVotes)
 
 -- | Simple majority quorum.
 data MajorityQuorum frac
 
 instance Reifies frac Rational => QuorumFamily (MajorityQuorum frac) where
-    isQuorum Members{..} votes =
+    isQuorum votes =
         let frac = reflect @frac Proxy
+            Members{..} = getMembers
         in  fromIntegral (length votes) > fromIntegral acceptorsNum * frac
 
 data OneHalf
@@ -97,10 +99,10 @@ type FastMajorityQuorum = MajorityQuorum ThreeQuarters
 
 -- | Take all possible minimum for inclusion quorums.
 allMinQuorums
-    :: QuorumFamily f
-    => Members -> Votes f a -> [Votes f a]
-allMinQuorums members (Votes votes) =
-    filter (isMinQuorum members) $
+    :: (HasMembers, QuorumFamily f)
+     => Votes f a -> [Votes f a]
+allMinQuorums (Votes votes) =
+    filter isMinQuorum $
     map (Votes . M.fromList) $ subsequences $ M.toList votes
 
 -- | Add vote to votes.

@@ -103,7 +103,7 @@ instance Command Configuration PolicyEntry where
 
     -- for each policy check, whether there is a quorum containing
     -- its acceptance or rejection
-    combination members (votes :: Votes qf Configuration) =
+    combination (votes :: Votes qf Configuration) =
         let allPolicies =
                 toList $ fold $ S.fromList . fmap acceptanceCmd . toList <$> votes
             combPolicies = flip mapMaybe allPolicies $ \policy ->
@@ -114,7 +114,7 @@ instance Command Configuration PolicyEntry where
          tryAcceptance acc policy =
              let containsPolicy = (`extends` liftCommand (acc policy))
                  containingVotes = votes & listL %~ filter (containsPolicy . snd)
-             in  guard (isQuorum @qf members containingVotes) $> acc policy
+             in  guard (isQuorum @qf containingVotes) $> acc policy
          sanityCheck x
              | contradictive x =
                   throwError $

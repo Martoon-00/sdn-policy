@@ -15,7 +15,7 @@ import           Test.QuickCheck      (Arbitrary (..), elements)
 import           Universum
 
 import           Sdn.Base.Quorum
-import           Sdn.Base.Types
+import           Sdn.Base.Settings
 import           Sdn.Extra.Util
 
 -- * Conflict
@@ -95,8 +95,8 @@ class (SuperConflict cmd cstruct, Default cstruct, Buildable cstruct) =>
     -- from all acceptors of some quorum.
     -- Fails if resulting cstruct is contradictory.
     combination
-        :: QuorumFamily qf
-        => Members -> Votes qf cstruct -> Either Text cstruct
+        :: (HasMembers, QuorumFamily qf)
+        => Votes qf cstruct -> Either Text cstruct
     combination = combinationDefault
 
 
@@ -131,10 +131,10 @@ acceptOrRejectCommand cmd cstruct =
 -- | This is straightforward and very inefficient implementation of
 -- 'combination'.
 combinationDefault
-    :: (Command cstruct cmd, QuorumFamily qf)
-    => Members -> Votes qf cstruct -> Either Text cstruct
-combinationDefault members votes =
-    let quorumsVotes = allMinQuorums members votes
+    :: (HasMembers, Command cstruct cmd, QuorumFamily qf)
+    => Votes qf cstruct -> Either Text cstruct
+combinationDefault votes =
+    let quorumsVotes = allMinQuorums votes
         gamma = map (foldr1 lub . toList) quorumsVotes
         combined = foldrM glb def gamma
     in  maybe (errorContradictory gamma) pure combined

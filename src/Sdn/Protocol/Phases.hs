@@ -24,6 +24,7 @@ type MonadPhase m =
     , MonadRpc m
     , MonadLog m
     , MonadReporting m
+    , HasMembers
     )
 
 -- | Evaluate cstruct with all those policies, which are present
@@ -37,11 +38,12 @@ combinateOrThrow
        , Command cstruct policy
        , Buildable cstruct
        , Show cstruct
+       , HasMembers
        , QuorumFamily f
        )
-    => Members -> Votes f cstruct -> m cstruct
-combinateOrThrow members votes =
-    either (throwM . ProtocolError) pure $ combination members votes
+    => Votes f cstruct -> m cstruct
+combinateOrThrow votes =
+    either (throwM . ProtocolError) pure $ combination votes
 
 -- * Phases
 
@@ -99,8 +101,6 @@ phase2a
     :: (MonadPhase m, HasContextOf Leader m)
     => Phase1bMsg -> m ()
 phase2a (Phase1bMsg accId ballotId cstruct) = do
-    members <- ctxMembers
-
     maybeMsg <- withProcessState $ do
         -- add received vote to set of votes stored locally for this ballot,
         -- initializing this set if doesn't exist yet
@@ -108,13 +108,13 @@ phase2a (Phase1bMsg accId ballotId cstruct) = do
             leaderVotes . at ballotId . non mempty <%= addVote accId cstruct
 
         -- if some quorums appeared, recalculate Gamma and apply pending policies
-        if isQuorum members newVotes
+        if isQuorum newVotes
         then do
-            when (isMinQuorum members newVotes) $
+            when (isMinQuorum newVotes) $
                 logInfo $ "Got 1b from quorum of acceptors at " <> pretty ballotId
 
             -- recalculate Gamma and its combination
-            combined <- combinateOrThrow members newVotes
+            combined <- combinateOrThrow newVotes
             -- pull and reset pending policies
             policies <- use $ leaderPendingPolicies . at ballotId . non mempty
             -- apply policies
@@ -156,8 +156,6 @@ learn
     :: (MonadPhase m, HasContextOf Learner m)
     => Phase2bMsg -> m ()
 learn (Phase2bMsg accId cstruct) = do
-    members <- ctxMembers
-
     learned <- withProcessState $ do
         do  -- rewrite cstruct kept for this acceptor
 
@@ -167,7 +165,7 @@ learn (Phase2bMsg accId cstruct) = do
 
             -- update total learned cstruct
             votes <- use learnerVotes
-            newLearned <- combinateOrThrow members votes
+            newLearned <- combinateOrThrow votes
             prevLearned <- learnerLearned <<.= newLearned
 
             -- sanity check
