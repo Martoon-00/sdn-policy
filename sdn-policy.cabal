@@ -113,6 +113,7 @@ test-suite sdn-policy-test
   main-is:             Test.hs
   other-modules:       Spec
 
+                       Test.Sdn.Basic.CStructSpec
                        Test.Sdn.Basic.QuorumSpec
 
                        Test.Sdn.Overall.ClassicSpec

@@ -5,16 +5,17 @@
 module Sdn.Base.Policy where
 
 
-import           Data.MessagePack    (MessagePack (..))
-import qualified Data.Set            as S
-import           Data.String         (IsString)
+import           Control.Monad.Except (throwError)
+import           Data.MessagePack     (MessagePack (..))
+import qualified Data.Set             as S
+import           Data.String          (IsString)
 import qualified Data.Text.Buildable
-import           Formatting          (bprint, build, sformat, (%))
-import           Test.QuickCheck     (Arbitrary (..), getNonNegative, scale)
+import           Formatting           (bprint, build, sformat, (%))
+import           Test.QuickCheck      (Arbitrary (..), getNonNegative, oneof, resize)
 import           Universum
 
-import           Sdn.Base.CStruct    (Acceptance (..), Command (..), Conflict (..),
-                                      checkingAgreement)
+import           Sdn.Base.CStruct
+import           Sdn.Base.Quorum
 import           Sdn.Extra.Util
 
 newtype PolicyName = PolicyName Text
@@ -22,7 +23,6 @@ newtype PolicyName = PolicyName Text
 
 instance Arbitrary PolicyName where
     arbitrary =
-        scale (* 10) $
         PolicyName . sformat ("policy #"%build @Int) . getNonNegative
             <$> arbitrary
 
@@ -52,6 +52,16 @@ instance Conflict Policy Policy where
     agrees BadPolicy{} _                           = False
     agrees _ BadPolicy{}                           = False
     agrees (MoodyPolicy id1 _) (MoodyPolicy id2 _) = id1 /= id2
+
+instance Arbitrary Policy where
+    arbitrary =
+        oneof
+        [ pure GoodPolicy
+        , pure BadPolicy
+        , MoodyPolicy <$> resize 5 arbitrary
+        ]
+        <*>
+        resize 5 arbitrary
 
 instance MessagePack Policy
 
@@ -85,8 +95,28 @@ instance Conflict Configuration Configuration where
     policies1 `conflicts` policies2 =
         any (conflicts policies1) policies2
 
-instance Command PolicyEntry Configuration where
+instance Command Configuration PolicyEntry where
     addCommand = checkingAgreement S.insert
     glb = checkingAgreement S.union
     lub = S.intersection
     extends = flip S.isSubsetOf
+
+    -- for each policy check, whether there is a quorum containing
+    -- its acceptance or rejection
+    combination members (votes :: Votes qf Configuration) =
+        let allPolicies =
+                toList $ fold $ S.fromList . fmap acceptanceCmd . toList <$> votes
+            combPolicies = flip mapMaybe allPolicies $ \policy ->
+                    tryAcceptance Accepted policy
+                <|> tryAcceptance Rejected policy
+        in  sanityCheck $ S.fromList combPolicies
+      where
+         tryAcceptance acc policy =
+             let containsPolicy = (`extends` liftCommand (acc policy))
+                 containingVotes = votes & listL %~ filter (containsPolicy . snd)
+             in  guard (isQuorum @qf members containingVotes) $> acc policy
+         sanityCheck x
+             | contradictive x =
+                  throwError $
+                  sformat ("Got contradictive cstruct in combination: "%build) x
+             | otherwise = pure x

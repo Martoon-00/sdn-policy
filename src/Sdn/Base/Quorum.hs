@@ -15,7 +15,7 @@ import           Data.Reflection     (Reifies (..))
 import qualified Data.Text.Buildable
 import           Formatting          (bprint)
 import           GHC.Exts            (IsList (..))
-import           Test.QuickCheck     (Arbitrary (..), sublistOf)
+import           Test.QuickCheck     (Arbitrary (..), Gen, sublistOf)
 import           Universum           hiding (toList)
 import qualified Universum           as U
 
@@ -26,7 +26,7 @@ import           Sdn.Extra.Util
 -- Phantom type @f@ stands for used quorum family, and decides whether given
 -- number of votes forms quorum.
 newtype Votes f a = Votes (M.Map AcceptorId a)
-    deriving (Eq, Ord, Show, Monoid, Container, NontrivialContainer)
+    deriving (Eq, Ord, Show, Monoid, Functor, Container, NontrivialContainer)
 
 instance Wrapped (Votes t a) where
     type Unwrapped (Votes t a) = M.Map AcceptorId a
@@ -53,10 +53,14 @@ instance Buildable a => Buildable (Votes t a) where
 -- set of acceptors.
 type AcceptorsSet f = Votes f ()
 
-instance Arbitrary (AcceptorsSet f) where
-    arbitrary =
-        arbitrary >>= \n ->
-            fmap fromList $ sublistOf $ map (, ()) $ map AcceptorId [1 .. n]
+genVotes :: Gen a -> Gen (Votes f a)
+genVotes genValue =
+    arbitrary >>= \n -> do
+        votes <- forM (map AcceptorId [1..n]) $ \accId -> (accId, ) <$> genValue
+        fmap fromList $ sublistOf votes
+
+instance Arbitrary a => Arbitrary (Votes f a) where
+    arbitrary = genVotes arbitrary
 
 -- | Sometimes we don't care about used quorum family.
 data UnknownQuorum

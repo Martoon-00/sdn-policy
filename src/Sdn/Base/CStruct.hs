@@ -5,12 +5,18 @@
 
 module Sdn.Base.CStruct where
 
-import           Control.Lens        (makePrisms)
-import           Data.Default        (Default (..))
-import           Data.MessagePack    (MessagePack)
+import           Control.Lens         (makePrisms)
+import           Control.Monad.Except (throwError)
+import           Data.Default         (Default (..))
+import           Data.MessagePack     (MessagePack)
 import qualified Data.Text.Buildable
-import           Formatting          (bprint, build)
+import           Formatting           (bprint, build, sformat, (%))
+import           Test.QuickCheck      (Arbitrary (..), elements)
 import           Universum
+
+import           Sdn.Base.Quorum
+import           Sdn.Base.Types
+import           Sdn.Extra.Util
 
 -- * Conflict
 
@@ -24,6 +30,9 @@ class Conflict a b where
     -- | The opposite to 'conflict'.
     agrees :: a -> b -> Bool
     agrees a b = not (conflicts a b)
+
+contradictive :: Conflict a a => a -> Bool
+contradictive = join conflicts
 
 type SuperConflict a b =
     ( Conflict a a
@@ -40,6 +49,11 @@ data Acceptance cmd
 
 makePrisms ''Acceptance
 
+acceptanceCmd :: Acceptance cmd -> cmd
+acceptanceCmd = \case
+    Accepted cmd -> cmd
+    Rejected cmd -> cmd
+
 -- | Command rejection doesn't conflict with any other command.
 instance Conflict a a => Conflict (Acceptance a) (Acceptance a) where
     Accepted cmd1 `conflicts` Accepted cmd2 = conflicts cmd1 cmd2
@@ -50,6 +64,9 @@ instance Buildable p => Buildable (Acceptance p) where
         Accepted p -> "+ " <> bprint build p
         Rejected p -> "xx " <> bprint build p
 
+instance Arbitrary a => Arbitrary (Acceptance a) where
+    arbitrary = elements [Accepted, Rejected] <*> arbitrary
+
 instance MessagePack p => MessagePack (Acceptance p)
 
 -- * Commands & cstructs
@@ -57,8 +74,8 @@ instance MessagePack p => MessagePack (Acceptance p)
 -- | Defines basic operations with commands and cstructs.
 -- Requires "conflict" relationship to be defined for them,
 -- and "bottom" cstruct to exist.
-class (SuperConflict cmd cstruct, Default cstruct) =>
-      Command cmd cstruct | cstruct -> cmd, cmd -> cstruct where
+class (SuperConflict cmd cstruct, Default cstruct, Buildable cstruct) =>
+      Command cstruct cmd | cstruct -> cmd, cmd -> cstruct where
 
     -- | Add command to CStruct, if no conflict arise.
     addCommand :: cmd -> cstruct -> Maybe cstruct
@@ -74,16 +91,25 @@ class (SuperConflict cmd cstruct, Default cstruct) =>
     -- | @extends c1 c2@ is true iff @glb c c2 = c1@ for some @c@.
     extends :: cstruct -> cstruct -> Bool
 
+    -- | Returns cstruct with all commands, which are present in votes
+    -- from all acceptors of some quorum.
+    -- Fails if resulting cstruct is contradictory.
+    combination
+        :: QuorumFamily qf
+        => Members -> Votes qf cstruct -> Either Text cstruct
+    combination = combinationDefault
+
+
 -- | Construct cstruct from single command.
 liftCommand
-    :: Command (Acceptance cmd) cstruct
+    :: Command cstruct (Acceptance cmd)
     => Acceptance cmd -> cstruct
 liftCommand cmd =
     fromMaybe (error "Can't make up cstruct from single command") $
     addCommand cmd def
 
 -- | Whether sctruct contains command, accepted or rejected.
-contains :: Command (Acceptance cmd) cstruct => cstruct -> cmd -> Bool
+contains :: Command cstruct (Acceptance cmd) => cstruct -> cmd -> Bool
 contains cstruct cmd =
     any (\acc -> cstruct `extends` liftCommand (acc cmd))
     [Accepted, Rejected]
@@ -95,9 +121,25 @@ checkingAgreement f a b = guard (agrees a b) $> f a b
 
 -- | Try to add command to cstruct; on fail add denial of that command.
 acceptOrRejectCommand
-    :: Command (Acceptance cmd) cstruct
+    :: Command cstruct (Acceptance cmd)
     => cmd -> cstruct -> cstruct
 acceptOrRejectCommand cmd cstruct =
     fromMaybe (error "failed to add command rejection") $
         addCommand (Accepted cmd) cstruct
     <|> addCommand (Rejected cmd) cstruct
+
+-- | This is straightforward and very inefficient implementation of
+-- 'combination'.
+combinationDefault
+    :: (Command cstruct cmd, QuorumFamily qf)
+    => Members -> Votes qf cstruct -> Either Text cstruct
+combinationDefault members votes =
+    let quorumsVotes = allMinQuorums members votes
+        gamma = map (foldr1 lub . toList) quorumsVotes
+        combined = foldrM glb def gamma
+    in  maybe (errorContradictory gamma) pure combined
+    where
+    errorContradictory gamma =
+        throwError $
+        sformat ("Got contradictory Gamma: "%buildList "\n  ,") gamma
+

@@ -5,7 +5,6 @@ module Sdn.Protocol.Phases where
 import           Control.Lens           (at, non, (%=), (+=), (.=), (<%=), (<<.=), (<>=))
 import           Control.TimeWarp.Rpc   (MonadRpc)
 import           Control.TimeWarp.Timed (MonadTimed (..))
-import           Data.Default           (def)
 import           Formatting             (build, sformat, (%))
 import           Universum
 
@@ -33,23 +32,16 @@ type MonadPhase m =
 -- NOTE: This is _very_ inneficient for now, because it treats policies
 -- in abstract way and literally sorts out all the minimal-on-inclusion quorums
 -- to evaluate cstruct.
-gatherCStructFromAllQuorums
+combinateOrThrow
     :: ( MonadThrow m
-       , Command policy cstruct
+       , Command cstruct policy
        , Buildable cstruct
        , Show cstruct
        , QuorumFamily f
        )
     => Members -> Votes f cstruct -> m cstruct
-gatherCStructFromAllQuorums members votes =
-    let quorumsVotes = allMinQuorums members votes
-        gamma = map (foldr1 lub . toList) quorumsVotes
-        combined = foldrM glb def gamma
-    in  maybe (errorContradictory gamma) pure combined
-  where
-    errorContradictory gamma =
-        throwM . ProtocolError $
-        sformat ("Got contradictory Gamma: "%buildList "\n  ,") gamma
+combinateOrThrow members votes =
+    either (throwM . ProtocolError) pure $ combination members votes
 
 -- * Phases
 
@@ -122,7 +114,7 @@ phase2a (Phase1bMsg accId ballotId cstruct) = do
                 logInfo $ "Got 1b from quorum of acceptors at " <> pretty ballotId
 
             -- recalculate Gamma and its combination
-            combined <- gatherCStructFromAllQuorums members newVotes
+            combined <- combinateOrThrow members newVotes
             -- pull and reset pending policies
             policies <- use $ leaderPendingPolicies . at ballotId . non mempty
             -- apply policies
@@ -175,7 +167,7 @@ learn (Phase2bMsg accId cstruct) = do
 
             -- update total learned cstruct
             votes <- use learnerVotes
-            newLearned <- gatherCStructFromAllQuorums members votes
+            newLearned <- combinateOrThrow members votes
             prevLearned <- learnerLearned <<.= newLearned
 
             -- sanity check
