@@ -13,6 +13,7 @@ import           Sdn.Extra
 import           Sdn.Protocol.Context
 import           Sdn.Protocol.Messages
 import           Sdn.Protocol.Processes
+import           Sdn.Protocol.Versions
 
 -- * Commons
 
@@ -29,10 +30,6 @@ type MonadPhase m =
 
 -- | Evaluate cstruct with all those policiesToApply, which are present
 -- in votes from all acceptors of some quorum.
---
--- NOTE: This is _very_ inneficient for now, because it treats policiesToApply
--- in abstract way and literally sorts out all the minimal-on-inclusion quorums
--- to evaluate cstruct.
 combinateOrThrow
     :: ( MonadThrow m
        , Command cstruct policy
@@ -55,7 +52,7 @@ propose policy = do
     -- remember policy (for testing purposes)
     withProcessState $
         proposerProposedPolicies <>= one policy
-    -- and send it policiesToApply to leader
+    -- and send it to leader
     submit (processAddress Leader) (ProposalMsg policy)
 
 rememberProposal
@@ -164,7 +161,7 @@ learn (Phase2bMsg accId cstruct) = do
 
             -- we should check here that new cstruct extends previous one.
             -- but the contrary is not an error, because of not-FIFO channels
-            learnerVotes . at accId . non mempty %= replaceExtending cstruct
+            learnerVotes . at accId . non mempty %= replaceIfExtends cstruct
 
             -- update total learned cstruct
             votes <- use learnerVotes
@@ -180,7 +177,7 @@ learn (Phase2bMsg accId cstruct) = do
 
     whenJust learned reportNewLearnedCStruct
   where
-    replaceExtending cur new
+    replaceIfExtends cur new
         | new `extends` cur = new
         | otherwise         = cur
 
@@ -196,7 +193,7 @@ learn (Phase2bMsg accId cstruct) = do
 -- * Phases of Fast Paxos
 
 proposeFast
-    :: (MonadPhase m, HasContextOf Proposer pv m)
+    :: (MonadPhase m, HasContextOf Proposer Fast m)
     => Policy -> m ()
 proposeFast policy = do
     logInfo $ sformat ("Proposing policy (fast): "%build) policy
@@ -206,7 +203,7 @@ proposeFast policy = do
                 (ProposalFastMsg policy)
 
 acceptorRememberFastProposal
-    :: (MonadPhase m, HasContextOf Acceptor pv m)
+    :: (MonadPhase m, HasContextOf Acceptor Fast m)
     => ProposalFastMsg -> m ()
 acceptorRememberFastProposal (ProposalFastMsg policy) =
     withProcessState $ do
@@ -215,7 +212,7 @@ acceptorRememberFastProposal (ProposalFastMsg policy) =
 
 -- TODO: very bad \^/
 leaderRememberFastProposal
-    :: (MonadPhase m, HasContextOf Leader pv m)
+    :: (MonadPhase m, HasContextOf Leader Fast m)
     => ProposalFastMsg -> m ()
 leaderRememberFastProposal (ProposalFastMsg policy) =
     withProcessState $ do
@@ -223,21 +220,20 @@ leaderRememberFastProposal (ProposalFastMsg policy) =
         leaderPendingPoliciesFast . at ballotId . non mempty <>= one policy
 
 initFastBallot
-    :: forall pv m.
-       (MonadPhase m, HasContextOf Leader pv m)
+    :: (MonadPhase m, HasContextOf Leader Fast m)
     => m ()
 initFastBallot = do
     logInfo "Starting new fast ballot"
 
-    msg :: InitFastBallotMsg pv <- withProcessState $ do
+    msg <- withProcessState $ do
         leaderBallotId %= nextFreshBallotId
         InitFastBallotMsg <$> use leaderBallotId
 
     broadcastTo (processesAddresses Acceptor) msg
 
 phase2bFast
-    :: (MonadPhase m, HasContextOf Acceptor pv m)
-    => InitFastBallotMsg pv -> m ()
+    :: (MonadPhase m, HasContextOf Acceptor Fast m)
+    => InitFastBallotMsg -> m ()
 phase2bFast (InitFastBallotMsg ballotId) = do
     msg <- withProcessState $ do
          cstruct <- use acceptorCStruct

@@ -74,12 +74,12 @@ instance Buildable ProposalFastMsg where
 declareMessage ''ProposalFastMsg
 
 
-newtype InitFastBallotMsg pv = InitFastBallotMsg (BallotId pv)
+newtype InitFastBallotMsg = InitFastBallotMsg (BallotId Fast)
     deriving (Generic)
 
-instance ProtocolVersion pv => Buildable (InitFastBallotMsg pv) where
+instance Buildable InitFastBallotMsg where
     build (InitFastBallotMsg b) = bprint ("Fast ballot "%build%" initiation") b
 
-declareMessagePV ''InitFastBallotMsg
+declareMessage ''InitFastBallotMsg
 
 
