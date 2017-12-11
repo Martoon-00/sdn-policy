@@ -31,8 +31,13 @@ class Conflict a b where
     agrees :: a -> b -> Bool
     agrees a b = not (conflicts a b)
 
+-- | Whether cstruct conflicts with itself.
 contradictive :: Conflict a a => a -> Bool
 contradictive = join conflicts
+
+-- | Opposite to `contradictive`.
+consistent :: Conflict a a => a -> Bool
+consistent = join agrees
 
 type SuperConflict a b =
     ( Conflict a a
@@ -55,9 +60,11 @@ acceptanceCmd = \case
     Rejected cmd -> cmd
 
 -- | Command rejection doesn't conflict with any other command.
-instance Conflict a a => Conflict (Acceptance a) (Acceptance a) where
+instance (Conflict a a, Eq a) => Conflict (Acceptance a) (Acceptance a) where
     Accepted cmd1 `conflicts` Accepted cmd2 = conflicts cmd1 cmd2
-    _ `conflicts` _ = False
+    Accepted cmd1 `conflicts` Rejected cmd2 = cmd1 /= cmd2
+    Rejected cmd1 `conflicts` Accepted cmd2 = cmd1 /= cmd2
+    Rejected _ `conflicts` Rejected _ = False
 
 instance Buildable p => Buildable (Acceptance p) where
     build = \case

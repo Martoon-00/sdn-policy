@@ -58,7 +58,7 @@ instance Arbitrary Policy where
         oneof
         [ pure GoodPolicy
         , pure BadPolicy
-        , MoodyPolicy <$> resize 5 arbitrary
+        , MoodyPolicy <$> resize 5 (getNonNegative <$> arbitrary)
         ]
         <*>
         resize 5 arbitrary
@@ -71,6 +71,11 @@ type PolicyEntry = Acceptance Policy
 -- | For our simplified model with abstract policies, cstruct is just set of
 -- policies.
 type Configuration = S.Set PolicyEntry
+
+mkConfig :: [PolicyEntry] -> Maybe (S.Set PolicyEntry)
+mkConfig policies =
+    let res = S.fromList policies
+    in  guard (consistent res) $> res
 
 instance Buildable Configuration where
     build = bprint (buildList ", ") . toList
@@ -104,19 +109,19 @@ instance Command Configuration PolicyEntry where
     -- for each policy check, whether there is a quorum containing
     -- its acceptance or rejection
     combination (votes :: Votes qf Configuration) =
-        let allPolicies =
+        let allInvolvedPolicies =
                 toList $ fold $ S.fromList . fmap acceptanceCmd . toList <$> votes
-            combPolicies = flip mapMaybe allPolicies $ \policy ->
+            combPolicies = flip mapMaybe allInvolvedPolicies $ \policy ->
                     tryAcceptance Accepted policy
                 <|> tryAcceptance Rejected policy
         in  sanityCheck $ S.fromList combPolicies
       where
          tryAcceptance acc policy =
              let containsPolicy = (`extends` liftCommand (acc policy))
-                 containingVotes = votes & listL %~ filter (containsPolicy . snd)
+                 containingVotes = filterVotes containsPolicy votes
              in  guard (isQuorum @qf containingVotes) $> acc policy
          sanityCheck x
              | contradictive x =
                   throwError $
-                  sformat ("Got contradictive cstruct in combination: "%build) x
+                  sformat ("combination: got contradictive cstruct: "%build) x
              | otherwise = pure x

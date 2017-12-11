@@ -16,6 +16,7 @@ import           Test.QuickCheck       (Property, arbitrary, forAll, listOf1, re
 import           Universum
 
 import           Sdn.Base
+import           Sdn.Extra
 
 spec :: Spec
 spec = do
@@ -39,11 +40,10 @@ spec = do
                     compareCombinations @FastMajorityQuorum
 
 compareCombinations :: forall qf. QuorumFamily qf => Members -> Property
-compareCombinations members@Members{..} = withMembers members $
+compareCombinations members = withMembers members $
     forAll (resize 5 $ listOf1 arbitrary) $
         \availablePolicies ->
-    forAll (resize acceptorsNum $ genVotes (S.fromList <$> sublistOf availablePolicies)) $
+    forAll (genVotes . genJust $ mkConfig <$> sublistOf availablePolicies) $
         \(votes :: Votes ClassicMajorityQuorum Configuration) ->
     combination votes === combinationDefault votes
-
 

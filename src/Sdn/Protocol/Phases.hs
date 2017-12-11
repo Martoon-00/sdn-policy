@@ -45,7 +45,7 @@ combinateOrThrow votes =
 -- * Phases of Classic Paxos
 
 propose
-    :: (MonadPhase m, HasContextOf Proposer pv m)
+    :: (MonadPhase m, HasContextOf Proposer Classic m)
     => Policy -> m ()
 propose policy = do
     logInfo $ sformat ("Proposing policy: "%build) policy
@@ -156,28 +156,27 @@ learn
     :: (MonadPhase m, HasContextOf Learner pv m)
     => Phase2bMsg -> m ()
 learn (Phase2bMsg accId cstruct) = do
-    learned <- withProcessState $ do
-        do  -- rewrite cstruct kept for this acceptor
+    withProcessState $ do
+        -- rewrite cstruct kept for this acceptor
 
-            -- we should check here that new cstruct extends previous one.
-            -- but the contrary is not an error, because of not-FIFO channels
-            learnerVotes . at accId . non mempty %= replaceIfExtends cstruct
+        -- we should check here that new cstruct extends previous one.
+        -- but the contrary is not an error, because of not-FIFO channels
+        learnerVotes . at accId . non mempty %= replaceIfExtends cstruct
 
-            -- update total learned cstruct
-            votes <- use learnerVotes
-            newLearned <- combinateOrThrow votes
-            prevLearned <- learnerLearned <<.= newLearned
+        -- update total learned cstruct
+        votes <- use learnerVotes
+        newLearned <- combinateOrThrow votes
+        prevLearned <- learnerLearned <<.= newLearned
 
-            -- sanity check
-            unless (newLearned `extends` prevLearned) $
-                errorBadLearnedCStruct prevLearned newLearned
+        -- sanity check
+        unless (newLearned `extends` prevLearned) $
+            errorBadLearnedCStruct prevLearned newLearned
 
-            -- report if the interesting happened
-            pure $ guard (newLearned /= prevLearned) $> newLearned
-
-    whenJust learned reportNewLearnedCStruct
+        -- report if the interesting happened
+        when (newLearned /= prevLearned) $
+            reportNewLearnedCStruct newLearned
   where
-    replaceIfExtends cur new
+    replaceIfExtends new cur
         | new `extends` cur = new
         | otherwise         = cur
 

@@ -7,7 +7,7 @@ module Sdn.Base.Settings where
 
 import           Data.Default    (Default (..))
 import           Data.Reflection
-import           Test.QuickCheck (Arbitrary (..), CoArbitrary (..), getPositive, resize)
+import           Test.QuickCheck (Arbitrary (..), getPositive)
 import           Universum
 
 -- | Information about number of consensus participants.
@@ -27,10 +27,6 @@ instance Arbitrary Members where
         Members
             <$> (getPositive <$> arbitrary)
             <*> (getPositive <$> arbitrary)
-
-instance CoArbitrary Members where
-    -- this is not very beautiful, but I'd hardly ever use more than one learner
-    coarbitrary Members{..} = resize acceptorsNum
 
 
 type HasMembers = Given Members

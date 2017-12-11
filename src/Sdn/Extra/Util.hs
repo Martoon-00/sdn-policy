@@ -11,18 +11,19 @@
 module Sdn.Extra.Util where
 
 import           Control.Lens           (iso)
-import           Data.MessagePack       (MessagePack)
-import           Formatting             (Format, bprint, build, formatToString, later,
-                                         shown, (%))
-import           Universum
-
 import           Control.TimeWarp.Rpc   (MonadRpc (..), NetworkAddress, RpcRequest (..),
                                          mkRequest)
 import qualified Control.TimeWarp.Rpc   as Rpc
 import           Control.TimeWarp.Timed (MonadTimed (..), fork_)
+import           Data.MessagePack       (MessagePack)
 import           Data.Text.Lazy.Builder (Builder)
+import           Formatting             (Format, bprint, build, formatToString, later,
+                                         shown, (%))
 import qualified GHC.Exts               as Exts
 import qualified Language.Haskell.TH    as TH
+import           Test.QuickCheck        (Gen, suchThat)
+import           Universum
+import           Unsafe                 (unsafeFromJust)
 
 -- | Declare instance for one-way message.
 declareMessage :: TH.Name -> TH.Q [TH.Dec]
@@ -71,3 +72,7 @@ modifyTVarS var modifier = do
 -- | Lens which looks inside the list-like structure
 listL :: Exts.IsList l => Lens' l [Exts.Item l]
 listL = iso Exts.toList Exts.fromList
+
+-- | Try generating until getting 'Just'.
+genJust :: Gen (Maybe a) -> Gen a
+genJust gen = unsafeFromJust <$> gen `suchThat` isJust

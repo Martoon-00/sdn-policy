@@ -14,7 +14,7 @@ import           Data.Reflection     (Reifies (..))
 import qualified Data.Text.Buildable
 import           Formatting          (bprint)
 import           GHC.Exts            (IsList (..))
-import           Test.QuickCheck     (Arbitrary (..), Gen, sublistOf)
+import           Test.QuickCheck     (Arbitrary (..), Gen, sublistOf, suchThat)
 import           Universum           hiding (toList)
 import qualified Universum           as U
 
@@ -51,17 +51,23 @@ instance Buildable a => Buildable (Votes t a) where
 -- set of acceptors.
 type AcceptorsSet f = Votes f ()
 
-genVotes :: Gen a -> Gen (Votes f a)
-genVotes genValue =
-    arbitrary >>= \n -> do
-        votes <- forM (map AcceptorId [1..n]) $ \accId -> (accId, ) <$> genValue
-        fmap fromList $ sublistOf votes
+-- | Generates arbitrary votes using given value generator.
+genVotes :: HasMembers => Gen a -> Gen (Votes f a)
+genVotes genValue = do
+    votes <- forM [1..acceptorsNum] $ \accId -> (AcceptorId accId, ) <$> genValue
+    fmap fromList $ sublistOf votes
+  where
+    Members{..} = getMembers
 
-instance Arbitrary a => Arbitrary (Votes f a) where
+instance (HasMembers, Arbitrary a) => Arbitrary (Votes f a) where
     arbitrary = genVotes arbitrary
 
 -- | Sometimes we don't care about used quorum family.
 data UnknownQuorum
+
+-- | Remains votes for values which comply the predicate.
+filterVotes :: (a -> Bool) -> Votes f a -> Votes f a
+filterVotes p = listL %~ filter (p . snd)
 
 -- | Describes quorum family.
 class QuorumFamily f where
@@ -73,6 +79,11 @@ isMinQuorum :: (HasMembers, QuorumFamily f) => Votes f a -> Bool
 isMinQuorum votes =
     let subVotes = votes & _Wrapped' . listL %~ drop 1
     in  isQuorum votes && not (isQuorum subVotes)
+
+class QuorumIntersectionFamily f where
+    -- | @isIntersectionWithQuorum v q@ returns whether exists quorum @r@
+    -- such that @v@ is subset of intersection of @q@ and @r@.
+    isIntersectionWithQuorum :: HasMembers => Votes f a -> Votes f b -> Bool
 
 -- | Simple majority quorum.
 data MajorityQuorum frac
