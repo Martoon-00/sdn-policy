@@ -78,3 +78,9 @@ listL = iso Exts.toList Exts.fromList
 -- | Try generating until getting 'Just'.
 genJust :: Gen (Maybe a) -> Gen a
 genJust gen = unsafeFromJust <$> gen `suchThat` isJust
+
+-- | Move from pure exception to monadic one.
+throwOnFail
+    :: (Exception e', MonadThrow m)
+    => (e -> e') -> Either e a -> m a
+throwOnFail mkException = either (throwM . mkException) pure

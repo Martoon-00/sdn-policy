@@ -16,7 +16,7 @@ main =
     -- initialize environment
     runMsgPackRpc . runNoErrorReporting . usingLoggerName mempty $
         -- execute consensus
-        launchClassicPaxos demoTopology >>= awaitTermination
+        launchFastPaxos demoTopology >>= awaitTermination
 
 -- | Simple example of network topology.
 demoTopology :: TopologySettings

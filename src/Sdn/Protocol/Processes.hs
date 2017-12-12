@@ -127,7 +127,7 @@ data Acceptor = Acceptor AcceptorId
 instance Process Acceptor where
     type ProcessState Acceptor = AcceptorState
 
-    processName (Acceptor id) =
+    processName (Acceptor (AcceptorId id)) =
         "acceptor" <> (pretty id ^. from loggerNameT)
             & loggerNameT %~ withColor ANSI.Vivid ANSI.Yellow
     processAddress (Acceptor id) = (localhost, 6000 + fromIntegral id)

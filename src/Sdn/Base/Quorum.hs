@@ -12,7 +12,6 @@ import           Control.Lens        (At (..), Index, Iso', IxValue, Ixed (..),
                                       Wrapped (..), mapMOf, traverseOf)
 import           Data.List           (subsequences)
 import qualified Data.Map            as M
-import qualified Data.Map            as M
 import           Data.Reflection     (Reifies (..))
 import qualified Data.Set            as S
 import qualified Data.Text.Buildable

@@ -91,6 +91,10 @@ spec = do
         prop "temporaly no quorum of acceptors is accessible" $
             pending
 
+        prop "highly interleaving ballots" $
+            -- this may be problematic with current implementation
+            -- because values from old ballots won't be leart
+            pending
 
     -- bunch of complex scenarious involving introduction of many policies
     describe "real life cases" $

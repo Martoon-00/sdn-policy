@@ -51,7 +51,7 @@ instance NumBallot ClassicBallotId where
     flatBallotId = _Wrapped' . _Wrapped' . iso fromIntegral round
 
 instance Buildable ClassicBallotId where
-    build = bprint ("classic "%build)
+    build (ClassicBallotId c) = bprint ("classic "%build) c
 
 instance Arbitrary ClassicBallotId where
     arbitrary = ClassicBallotId <$> arbitrary
@@ -92,5 +92,8 @@ instance Arbitrary FastBallotId where
 
 -- | Identifier of acceptor.
 newtype AcceptorId = AcceptorId Int
-    deriving (Eq, Ord, Show, Enum, Num, MessagePack, Real, Integral, Buildable)
+    deriving (Eq, Ord, Show, Enum, Num, MessagePack, Real, Integral)
+
+instance Buildable AcceptorId where
+    build (AcceptorId i) = bprint ("acceptor #"%build) i
 

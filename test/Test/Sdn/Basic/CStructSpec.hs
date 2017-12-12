@@ -50,13 +50,11 @@ spec = do
 
 type CombinationFun qf = Votes qf Configuration -> Either Text Configuration
 
-type CombinationFunsComparator qf
-     = (HasMembers => CombinationFun qf)
+compareCombinations
+    :: forall qf.
+       (HasMembers => CombinationFun qf)
     -> (HasMembers => CombinationFun qf)
     -> SpecWith ()
-
-compareCombinations
-    :: forall qf. CombinationFunsComparator qf
 compareCombinations combFun combFunDefault =
     prop "policy specific impl. vs straightforward impl." $
     forAll (resize 30 arbitrary) $ \members ->

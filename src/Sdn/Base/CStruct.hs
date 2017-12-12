@@ -158,6 +158,12 @@ mergeCStructs cstruct =
         sformat ("mergeCStructs: got contradictory Gamma: "%buildList "\n  ,")
             gamma
 
+-- | Takes first argument only if it is extension of second one.
+maxOrSecond :: Command cstruct cmd => cstruct -> cstruct -> cstruct
+maxOrSecond c1 c2
+    | c1 `extends` c2 = c1
+    | otherwise       = c2
+
 -- | This is straightforward and very inefficient implementation of
 -- 'combination'.
 combinationDefault

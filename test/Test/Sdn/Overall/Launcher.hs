@@ -28,7 +28,7 @@ import           Test.Sdn.Overall.Properties
 
 
 data TestLaunchParams pv = TestLaunchParams
-    { testLauncher   :: TopologyLauncher pv
+    { testLauncher   :: forall m. TopologyLauncher pv m
     , testSettings   :: TopologySettings
     , testDelays     :: D.Delays
     , testProperties :: forall m. MonadIO m => [ProtocolProperty pv m]

@@ -28,15 +28,21 @@ data ProcessContext s = ProcessContext
     { pcState   :: TVar s   -- ^ Process'es mutable state
     }
 
+-- | Envorinment for transaction modifying process state.
+type TransactionM s a = PureLog (StateT s STM) a
+
+-- | Constraints for transaction.
+type MonadTransaction s m =
+    ( MonadIO m
+    , MonadLog m
+    , MonadReporting m
+    , MonadReader (ProcessContext s) m
+    )
+
 -- | Atomically modify state stored by process.
 -- If exception is thrown in the process, no changes apply.
 withProcessState
-    :: ( MonadIO m
-       , MonadLog m
-       , MonadReporting m
-       , MonadReader (ProcessContext s) m
-       )
-    => PureLog (StateT s STM) a -> m a
+    :: MonadTransaction s m => TransactionM s a -> m a
 withProcessState modifier = do
     var <- pcState <$> ask
     launchPureLog (atomically . modifyTVarS var) modifier
@@ -94,10 +100,7 @@ instance ProtocolVersion pv => Buildable (LeaderState pv) where
 
 -- | Initial state of the leader.
 instance ProtocolVersion pv => Default (LeaderState pv) where
-    def = LeaderState balId mempty mempty mempty mempty
-      where
-        balId :: ProtocolVersion pv => BallotId pv
-        balId = startBallotId
+    def = LeaderState startBallotId mempty mempty mempty mempty
 
 -- ** Acceptor
 
@@ -127,18 +130,17 @@ instance ProtocolVersion pv => Buildable (AcceptorState pv) where
 
 -- | Initial state of acceptor.
 defAcceptorState :: ProtocolVersion pv => AcceptorId -> (AcceptorState pv)
-defAcceptorState id = AcceptorState id balId mempty mempty
-  where
-    -- didn't give promise about any ballot
-    balId = prestartBallotId
+defAcceptorState id = AcceptorState id startBallotId mempty mempty
 
 -- ** Learner
 
 -- * State kept by learner.
 data LearnerState pv = LearnerState
-    { _learnerVotes   :: Votes ClassicMajorityQuorum Configuration
-      -- ^ CStructs received from acceptors so far
-    , _learnerLearned :: Configuration
+    { _learnerVotes     :: Votes ClassicMajorityQuorum Configuration
+      -- ^ CStructs received from acceptors in classic round so far
+    , _learnerFastVotes :: Votes FastMajorityQuorum Configuration
+      -- ^ CStructs received from acceptors in fast round so far
+    , _learnerLearned   :: Configuration
       -- ^ Eventually learned cstruct, result of consensus
     }
 
@@ -154,7 +156,7 @@ instance Buildable (LearnerState pv) where
 
 -- | Initial state of the learner.
 instance Default (LearnerState pv) where
-    def = LearnerState mempty mempty
+    def = LearnerState mempty mempty mempty
 
 -- * Misc
 

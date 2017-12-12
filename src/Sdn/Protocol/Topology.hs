@@ -1,6 +1,7 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE Rank2Types          #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE AllowAmbiguousTypes       #-}
+{-# LANGUAGE NoMonomorphismRestriction #-}
+{-# LANGUAGE Rank2Types                #-}
+{-# LANGUAGE TypeFamilies              #-}
 
 -- | Make up network layout
 
@@ -54,6 +55,8 @@ data TopologyMonitor pv m = TopologyMonitor
     , readAllStates    :: STM (AllStates pv)
     }
 
+-- | Monad in which process (and phases) are supposed to work.
+type ProcessM p pv m = ReaderT (ProcessContext $ ProcessState p pv) m
 
 -- | Create single newProcess.
 newProcess
@@ -65,7 +68,7 @@ newProcess
        , ProtocolVersion pv
        )
     => p
-    -> ReaderT (ProcessContext (ProcessState p pv)) m ()
+    -> ProcessM p pv m ()
     -> m (STM (ProcessState p pv))
 newProcess process action = do
     stateBox <- liftIO $ newTVarIO (initProcessState process)
@@ -103,12 +106,20 @@ type MonadTopology m =
     , MonadRpc m
     )
 
-type TopologyLauncher pv =
-    forall m. MonadTopology m => TopologySettings -> m (TopologyMonitor pv m)
+type TopologyLauncher pv m =
+    MonadTopology m => TopologySettings -> m (TopologyMonitor pv m)
 
--- | Launch Classic Paxos algorithm.
-launchClassicPaxos :: TopologyLauncher Classic
-launchClassicPaxos TopologySettings{..} = withMembers topologyMembers $ do
+data TopologyActions pv m = TopologyActions
+    { proposeAction     :: HasMembers => Policy -> ProcessM Proposer pv m ()
+    , startBallotAction :: HasMembers => ProcessM Leader pv m ()
+    , leaderListeners   :: HasMembers => [Method $ ProcessM Leader pv m]
+    , acceptorListeners :: HasMembers => [Method $ ProcessM Acceptor pv m]
+    , learnerListeners  :: HasMembers => [Method $ ProcessM Learner pv m]
+    }
+
+-- | Launch Paxos algorithm.
+launchPaxos :: ProtocolVersion pv => TopologyActions pv m -> TopologyLauncher pv m
+launchPaxos TopologyActions{..} TopologySettings{..} = withMembers topologyMembers $ do
     let (proposalSeed, ballotSeed) = splitGenSeed topologySeed
 
     proposerState <- newProcess Proposer . work (for topologyLifetime) $ do
@@ -116,31 +127,21 @@ launchClassicPaxos TopologySettings{..} = withMembers topologyMembers $ do
         wait (for 10 ms)
         runSchedule_ proposalSeed $ do
             policy <- limited topologyLifetime topologyProposalSchedule
-            lift $ propose policy
+            lift $ proposeAction policy
 
     leaderState <- newProcess Leader . work (for topologyLifetime) $ do
         work (for topologyLifetime) $ do
             -- wait for first proposal before start
             wait (for 20 ms)
-            runSchedule_ ballotSeed $ topologyBallotsSchedule >> lift phrase1a
+            runSchedule_ ballotSeed $ topologyBallotsSchedule >> lift startBallotAction
 
-        serve (processPort Leader)
-            [ listener rememberProposal
-            , listener phase2a
-            ]
+        serve (processPort Leader) leaderListeners
 
-    acceptorsStates <- forM (processesOf Acceptor) $
-        \process -> newProcess process . work (for topologyLifetime) $ do
-            serve (processPort process)
-                [ listener phase1b
-                , listener phase2b
-                ]
+    acceptorsStates <-
+        startListeningProcessesOf Acceptor acceptorListeners
 
-    learnersStates <- forM (processesOf Learner) $
-        \process -> newProcess process . work (for topologyLifetime) $ do
-            serve (processPort process)
-                [ listener learn
-                ]
+    learnersStates <-
+        startListeningProcessesOf Learner learnerListeners
 
     let readAllStates =
             AllStates
@@ -153,4 +154,58 @@ launchClassicPaxos TopologySettings{..} = withMembers topologyMembers $ do
     let awaitTermination = wait (till 100 ms (curTime + topologyLifetime))
 
     return TopologyMonitor{..}
-{-# NOINLINE launchClassicPaxos #-}
+  where
+    startListeningProcessesOf
+        :: (HasMembers, MonadTopology m, Process p, Integral i, ProtocolVersion pv)
+        => (i -> p)
+        -> [Method $ ProcessM p pv m]
+        -> m [STM $ ProcessState p pv]
+    startListeningProcessesOf processType listeners =
+        forM (processesOf processType) $
+            \process -> newProcess process . work (for topologyLifetime) $ do
+                serve (processPort process) listeners
+
+{-# NOINLINE launchPaxos #-}
+
+-- | Launch Classic Paxos.
+launchClassicPaxos :: forall m. TopologyLauncher Classic m
+launchClassicPaxos = launchPaxos
+    TopologyActions
+    { proposeAction = propose
+    , startBallotAction = phase1a
+    , leaderListeners =
+        [ listener rememberProposal
+        , listener phase2a
+        ]
+    , acceptorListeners =
+        [ listener phase1b
+        , listener phase2b
+        ]
+    , learnerListeners =
+        [ listener learn
+        ]
+    }
+
+-- | Launch Classic Paxos.
+launchFastPaxos :: forall m. TopologyLauncher Fast m
+launchFastPaxos = launchPaxos
+    TopologyActions
+    { proposeAction = proposeFast
+    , startBallotAction = initFastBallot
+    , leaderListeners =
+        [ listener rememberProposal
+        , listener phase2a  -- TODO: if not needed, mark message and phase as Classic
+        , listener detectConflicts
+        , listener leaderRememberFastProposal
+        ]
+    , acceptorListeners =
+        [ listener phase1b
+        , listener phase2b
+        , listener phase2bFast
+        , listener acceptorRememberFastProposal
+        ]
+    , learnerListeners =
+        [ listener learn
+        , listener learnFast
+        ]
+    }

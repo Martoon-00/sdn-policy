@@ -38,8 +38,8 @@ data Phase1bMsg pv = Phase1bMsg AcceptorId (BallotId pv) Configuration
     deriving (Generic)
 
 instance ProtocolVersion pv => Buildable (Phase1bMsg pv) where
-    build (Phase1bMsg (AcceptorId a) b c) =
-        bprint ("Phase 1b message from acceptor #"%build%" "%build%" "%build) a b c
+    build (Phase1bMsg a b c) =
+        bprint ("Phase 1b message from "%build%" "%build%" "%build) a b c
 
 declareMessagePV ''Phase1bMsg
 
@@ -58,8 +58,8 @@ data Phase2bMsg = Phase2bMsg AcceptorId Configuration
     deriving (Generic)
 
 instance Buildable Phase2bMsg where
-    build (Phase2bMsg (AcceptorId a) c) =
-        bprint ("Phase 2b message from acceptor #"%build%" "%build) a c
+    build (Phase2bMsg a c) =
+        bprint ("Phase 2b message from "%build%" "%build) a c
 
 declareMessage ''Phase2bMsg
 
@@ -78,8 +78,18 @@ newtype InitFastBallotMsg = InitFastBallotMsg (BallotId Fast)
     deriving (Generic)
 
 instance Buildable InitFastBallotMsg where
-    build (InitFastBallotMsg b) = bprint ("Fast ballot "%build%" initiation") b
+    build (InitFastBallotMsg b) = bprint (build%" initiation") b
 
 declareMessage ''InitFastBallotMsg
+
+
+data Phase2bFastMsg = Phase2bFastMsg AcceptorId Configuration
+    deriving (Generic)
+
+instance Buildable Phase2bFastMsg where
+    build (Phase2bFastMsg a c) =
+        bprint ("Phase 2b message from "%build%" "%build) a c
+
+declareMessage ''Phase2bFastMsg
 
 
