@@ -1,11 +1,12 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE TemplateHaskell        #-}
+{-# LANGUAGE TypeFamilies           #-}
 
 -- | Interface for commands and cstructs.
 
 module Sdn.Base.CStruct where
 
-import           Control.Lens         (makePrisms)
+import           Control.Lens         (makePrisms, traverseOf)
 import           Control.Monad.Except (throwError)
 import           Data.Default         (Default (..))
 import           Data.MessagePack     (MessagePack)
@@ -68,8 +69,8 @@ instance (Conflict a a, Eq a) => Conflict (Acceptance a) (Acceptance a) where
 
 instance Buildable p => Buildable (Acceptance p) where
     build = \case
-        Accepted p -> "+ " <> bprint build p
-        Rejected p -> "xx " <> bprint build p
+        Accepted p -> bprint ("+ "%build) p
+        Rejected p -> bprint ("xx "%build) p
 
 instance Arbitrary a => Arbitrary (Acceptance a) where
     arbitrary = elements [Accepted, Rejected] <*> arbitrary
@@ -106,6 +107,14 @@ class (SuperConflict cmd cstruct, Default cstruct, Buildable cstruct) =>
         => Votes qf cstruct -> Either Text cstruct
     combination = combinationDefault
 
+    -- | Returns cstruct with all commands, which are present in votes
+    -- of all acceptors of intersection of given quorum with some other quorum.
+    -- Fails if resulting cstruct is contradictory.
+    intersectingCombination
+        :: (HasMembers, QuorumIntersectionFamily qf)
+        => Votes qf cstruct -> Either Text cstruct
+    intersectingCombination = intersectingCombinationDefault
+
 
 -- | Construct cstruct from single command.
 liftCommand
@@ -135,18 +144,34 @@ acceptOrRejectCommand cmd cstruct =
         addCommand (Accepted cmd) cstruct
     <|> addCommand (Rejected cmd) cstruct
 
+-- | Take list of lists of cstructs, 'lub's inner lists and then 'gdb's results.
+mergeCStructs
+    :: (Container cstructs, cstruct ~ Element cstructs, Command cstruct cmd)
+    => [cstructs] -> Either Text cstruct
+mergeCStructs cstruct =
+    let gamma = map (foldr1 lub . toList) cstruct
+        combined = foldrM glb def gamma
+    in  maybe (errorContradictory gamma) pure combined
+  where
+    errorContradictory gamma =
+        throwError $
+        sformat ("mergeCStructs: got contradictory Gamma: "%buildList "\n  ,")
+            gamma
+
 -- | This is straightforward and very inefficient implementation of
 -- 'combination'.
 combinationDefault
     :: (HasMembers, Command cstruct cmd, QuorumFamily qf)
     => Votes qf cstruct -> Either Text cstruct
 combinationDefault votes =
-    let quorumsVotes = allMinQuorums votes
-        gamma = map (foldr1 lub . toList) quorumsVotes
-        combined = foldrM glb def gamma
-    in  maybe (errorContradictory gamma) pure combined
-    where
-    errorContradictory gamma =
-        throwError $
-        sformat ("Got contradictory Gamma: "%buildList "\n  ,") gamma
+    mergeCStructs $ allMinQuorums votes
 
+-- | This is straightforward and very inefficient implementation of
+-- 'intersectingCombination'.
+intersectingCombinationDefault
+    :: (HasMembers, Command cstruct cmd, QuorumIntersectionFamily qf)
+    => Votes qf cstruct -> Either Text cstruct
+intersectingCombinationDefault votes =
+    let subVotes = traverseOf votesL subsequences votes
+        fittingSubVotes = filter (isQuorumsIntersection votes) subVotes
+    in  mergeCStructs fittingSubVotes

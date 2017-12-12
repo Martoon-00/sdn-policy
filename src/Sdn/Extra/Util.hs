@@ -10,7 +10,7 @@
 
 module Sdn.Extra.Util where
 
-import           Control.Lens           (iso)
+import           Control.Lens           (Iso, iso)
 import           Control.TimeWarp.Rpc   (MonadRpc (..), NetworkAddress, RpcRequest (..),
                                          mkRequest)
 import qualified Control.TimeWarp.Rpc   as Rpc
@@ -70,7 +70,9 @@ modifyTVarS var modifier = do
     return res
 
 -- | Lens which looks inside the list-like structure
-listL :: Exts.IsList l => Lens' l [Exts.Item l]
+listL
+    :: (Exts.IsList (t a), Exts.IsList (t b))
+    => Iso (t a) (t b) [Exts.Item (t a)] [Exts.Item (t b)]
 listL = iso Exts.toList Exts.fromList
 
 -- | Try generating until getting 'Just'.

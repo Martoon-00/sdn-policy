@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes        #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 -- | Policies arangement.
@@ -110,7 +111,7 @@ instance Command Configuration PolicyEntry where
     -- its acceptance or rejection
     combination (votes :: Votes qf Configuration) =
         let allInvolvedPolicies =
-                toList $ fold $ S.fromList . fmap acceptanceCmd . toList <$> votes
+                toList $ fold $ ((votes & traverse . listL . traverse %~ acceptanceCmd) )
             combPolicies = flip mapMaybe allInvolvedPolicies $ \policy ->
                     tryAcceptance Accepted policy
                 <|> tryAcceptance Rejected policy
