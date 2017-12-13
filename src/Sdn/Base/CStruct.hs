@@ -6,8 +6,8 @@
 
 module Sdn.Base.CStruct where
 
-import           Control.Lens         (makePrisms, traverseOf)
-import           Control.Monad.Except (throwError)
+import           Control.Lens         (makePrisms)
+import           Control.Monad.Except (MonadError, throwError)
 import           Data.Default         (Default (..))
 import           Data.MessagePack     (MessagePack)
 import qualified Data.Text.Buildable
@@ -48,6 +48,15 @@ type SuperConflict a b =
     )
 
 -- | Command can be either accepted or denied.
+--
+-- Note: its @instance Ord@ implies that 'AcceptedT' is smaller
+-- than 'RejectedT' because one may want to try it first.
+data AcceptanceType
+    = AcceptedT
+    | RejectedT
+    deriving (Eq, Ord, Enum)
+
+-- | Acception or denial of command.
 data Acceptance cmd
     = Accepted cmd
     | Rejected cmd
@@ -59,6 +68,11 @@ acceptanceCmd :: Acceptance cmd -> cmd
 acceptanceCmd = \case
     Accepted cmd -> cmd
     Rejected cmd -> cmd
+
+acceptanceType :: Acceptance cmd -> AcceptanceType
+acceptanceType = \case
+    Accepted _ -> AcceptedT
+    Rejected _ -> RejectedT
 
 -- | Command rejection doesn't conflict with any other command.
 instance (Conflict a a, Eq a) => Conflict (Acceptance a) (Acceptance a) where
@@ -135,6 +149,13 @@ contains cstruct cmd =
 checkingAgreement :: Conflict a b => (a -> b -> c) -> a -> b -> Maybe c
 checkingAgreement f a b = guard (agrees a b) $> f a b
 
+checkingConsistency
+    :: (Conflict a a, Buildable a, MonadError Text m)
+    => a -> m a
+checkingConsistency x
+    | contradictive x = throwError $ "got contradictive cstruct: " <> pretty x
+    | otherwise       = pure x
+
 -- | Try to add command to cstruct; on fail add denial of that command.
 acceptOrRejectCommand
     :: Command cstruct (Acceptance cmd)
@@ -145,11 +166,12 @@ acceptOrRejectCommand cmd cstruct =
     <|> addCommand (Rejected cmd) cstruct
 
 -- | Take list of lists of cstructs, 'lub's inner lists and then 'gdb's results.
+-- None of given 'cstruct's should be empty.
 mergeCStructs
     :: (Container cstructs, cstruct ~ Element cstructs, Command cstruct cmd)
     => [cstructs] -> Either Text cstruct
-mergeCStructs cstruct =
-    let gamma = map (foldr1 lub . toList) cstruct
+mergeCStructs cstructs =
+    let gamma = map (foldr1 lub . toList) cstructs
         combined = foldrM glb def gamma
     in  maybe (errorContradictory gamma) pure combined
   where
@@ -170,14 +192,12 @@ combinationDefault
     :: (HasMembers, Command cstruct cmd, QuorumFamily qf)
     => Votes qf cstruct -> Either Text cstruct
 combinationDefault votes =
-    mergeCStructs $ allMinQuorums votes
+    mergeCStructs $ allMinQuorumsOf votes
 
 -- | This is straightforward and very inefficient implementation of
 -- 'intersectingCombination'.
 intersectingCombinationDefault
     :: (HasMembers, Command cstruct cmd, QuorumIntersectionFamily qf)
     => Votes qf cstruct -> Either Text cstruct
-intersectingCombinationDefault votes =
-    let subVotes = traverseOf votesL subsequences votes
-        fittingSubVotes = filter (isQuorumsIntersection votes) subVotes
-    in  mergeCStructs fittingSubVotes
+intersectingCombinationDefault =
+    mergeCStructs . filter (not . null) . getQuorumsSubIntersections

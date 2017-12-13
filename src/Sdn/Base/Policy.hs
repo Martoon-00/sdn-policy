@@ -5,18 +5,19 @@
 
 module Sdn.Base.Policy where
 
-
-import           Control.Monad.Except (throwError)
-import           Data.MessagePack     (MessagePack (..))
-import qualified Data.Set             as S
-import           Data.String          (IsString)
+import           Control.Lens        (Iso', iso, _Wrapped')
+import qualified Data.Map            as M
+import           Data.MessagePack    (MessagePack (..))
+import qualified Data.Set            as S
+import           Data.String         (IsString)
 import qualified Data.Text.Buildable
-import           Formatting           (bprint, build, sformat, (%))
-import           Test.QuickCheck      (Arbitrary (..), getNonNegative, oneof, resize)
+import           Formatting          (bprint, build, sformat, shown, (%))
+import           Test.QuickCheck     (Arbitrary (..), getNonNegative, oneof, resize)
 import           Universum
 
 import           Sdn.Base.CStruct
 import           Sdn.Base.Quorum
+import           Sdn.Base.Types
 import           Sdn.Extra.Util
 
 newtype PolicyName = PolicyName Text
@@ -101,6 +102,29 @@ instance Conflict Configuration Configuration where
     policies1 `conflicts` policies2 =
         any (conflicts policies1) policies2
 
+-- | Transpose votes about configurations.
+perPolicy :: Iso' (Votes qf Configuration) (M.Map PolicyEntry $ Votes qf ())
+perPolicy = _Wrapped' . iso toPolicyMap fromPolicyMap
+  where
+    toPolicyMap
+        :: Map AcceptorId (Set PolicyEntry)
+        -> Map PolicyEntry $ Votes qf ()
+    toPolicyMap accMap =
+        M.unionsWith mappend
+        [ one (policy, Votes $ one (accId, ()))
+        | (accId, policies) <- M.toList accMap
+        , policy <- S.toList policies
+        ]
+    fromPolicyMap
+        :: Map PolicyEntry $ Votes qf ()
+        -> Map AcceptorId (Set PolicyEntry)
+    fromPolicyMap policyMap =
+        M.unionsWith mappend
+        [ one (accId, one policy)
+        | (policy, Votes votes) <- M.toList policyMap
+        , (accId, ()) <- M.toList votes
+        ]
+
 instance Command Configuration PolicyEntry where
     addCommand = checkingAgreement S.insert
     glb = checkingAgreement S.union
@@ -110,19 +134,14 @@ instance Command Configuration PolicyEntry where
     -- for each policy check, whether there is a quorum containing
     -- its acceptance or rejection
     combination (votes :: Votes qf Configuration) =
-        let allInvolvedPolicies =
-                toList $ fold $ ((votes & traverse . listL . traverse %~ acceptanceCmd) )
-            combPolicies = flip mapMaybe allInvolvedPolicies $ \policy ->
-                    tryAcceptance Accepted policy
-                <|> tryAcceptance Rejected policy
-        in  sanityCheck $ S.fromList combPolicies
+        sanityCheck . M.keysSet $ M.filter (isQuorum @qf) (votes ^. perPolicy)
       where
-         tryAcceptance acc policy =
-             let containsPolicy = (`extends` liftCommand (acc policy))
-                 containingVotes = filterVotes containsPolicy votes
-             in  guard (isQuorum @qf containingVotes) $> acc policy
-         sanityCheck x
-             | contradictive x =
-                  throwError $
-                  sformat ("combination: got contradictive cstruct: "%build) x
-             | otherwise = pure x
+        sanityCheck = first ("combination: " <> ) . checkingConsistency
+
+    intersectingCombination (votes :: Votes qf Configuration) =
+        sanityCheck . M.keysSet $
+        M.filter (isQuorumsSubIntersection @qf votes) (votes ^. perPolicy)
+      where
+         sanityCheck =
+             first ("intersectingCombination: " <> ) . checkingConsistency
+

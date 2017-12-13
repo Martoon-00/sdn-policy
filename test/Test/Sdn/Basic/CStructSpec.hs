@@ -12,8 +12,8 @@ import           Data.Default          (def)
 import           GHC.Exts              (fromList)
 import           Test.Hspec            (Spec, SpecWith, describe)
 import           Test.Hspec.QuickCheck (prop)
-import           Test.QuickCheck       (arbitrary, forAll, listOf1, resize, sublistOf,
-                                        (===))
+import           Test.QuickCheck       (Gen, arbitrary, elements, forAll, listOf1, resize,
+                                        sublistOf, (===))
 import           Universum
 
 import           Sdn.Base
@@ -55,15 +55,20 @@ compareCombinations
        (HasMembers => CombinationFun qf)
     -> (HasMembers => CombinationFun qf)
     -> SpecWith ()
-compareCombinations combFun combFunDefault =
+compareCombinations combFun1 combFun2 =
     prop "policy specific impl. vs straightforward impl." $
-    forAll (resize 30 arbitrary) $ \members ->
+    forAll (resize 15 arbitrary) $ \members ->
     withMembers members $
-        forAll (resize 5 $ listOf1 arbitrary) $
+        forAll (resize 5 $ listOf1 $ arbitrary @Policy) $
             \availablePolicies ->
-        forAll (genVotes . genJust $ mkConfig <$> sublistOf availablePolicies) $
+        forAll (genVotesFromPolicies availablePolicies) $
             \(votes :: Votes qf Configuration) ->
-        combFun votes === combFunDefault votes
-
+        combFun1 votes === combFun2 votes
+  where
+    genVotesFromPolicies :: HasMembers => [Policy] -> Gen (Votes qf Configuration)
+    genVotesFromPolicies policies = do
+        policiesAcc <- forM policies $
+                       \policy -> elements [Accepted policy, Rejected policy]
+        genVotes . genJust $ mkConfig <$> sublistOf policiesAcc
 
 

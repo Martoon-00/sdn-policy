@@ -31,6 +31,7 @@ spec = do
 
         describe "QuorumIntersectionFamily" $ do
             describe "fast majority" $ do
+                checkQuorumIntersection 4 4 4
                 checkQuorumIntersection 8 6 5
                 checkQuorumIntersection 8 8 7
                 checkQuorumIntersection 9 6 4
@@ -60,7 +61,7 @@ checkQuorumIntersection acceptorsNum heardNum threashold =
             forAll arbitrary $
                 \v ->
             do
-                isIntersectionWithQuorum @FastMajorityQuorum @() @() q v
+                isSubIntersectionWithQuorum @FastMajorityQuorum @() @() q v
                     `shouldBe` (length v >= threashold)
 
                 when (length v >= threashold && isQuorum q) $

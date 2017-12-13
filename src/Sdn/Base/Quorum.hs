@@ -10,7 +10,7 @@ module Sdn.Base.Quorum where
 
 import           Control.Lens        (At (..), Index, Iso', IxValue, Ixed (..),
                                       Wrapped (..), mapMOf, traverseOf)
-import           Data.List           (subsequences)
+import           Data.List           (groupBy, subsequences)
 import qualified Data.Map            as M
 import           Data.Reflection     (Reifies (..))
 import qualified Data.Set            as S
@@ -20,6 +20,7 @@ import           GHC.Exts            (IsList (..))
 import           Test.QuickCheck     (Arbitrary (..), Gen, sublistOf)
 import           Universum           hiding (toList)
 import qualified Universum           as U
+import           Unsafe              (unsafeHead)
 
 import           Sdn.Base.Settings
 import           Sdn.Base.Types
@@ -28,7 +29,7 @@ import           Sdn.Extra.Util
 -- | For each acceptor - something proposed by him.
 -- Phantom type @f@ stands for used quorum family, and decides whether given
 -- number of votes forms quorum.
-newtype Votes f a = Votes (M.Map AcceptorId a)
+newtype Votes f a = Votes { getVotes :: M.Map AcceptorId a }
     deriving (Eq, Ord, Show, Monoid, Functor, Foldable, Traversable,
               Container, NontrivialContainer, Generic)
 
@@ -90,6 +91,18 @@ filterVotes p = listL %~ filter (p . snd)
 addVote :: AcceptorId -> a -> Votes f a -> Votes f a
 addVote aid a (Votes m) = Votes $ M.insert aid a m
 
+-- | Intersection of two votes.
+votesIntersection :: Votes f a -> Votes f () -> Votes f a
+votesIntersection (Votes v1) (Votes v2) = Votes $ M.intersection v1 v2
+
+votesNoDups :: [Votes f a] -> [Votes f a]
+votesNoDups = map unsafeHead . groupBy ((==) `on` toKey) . sortWith toKey
+  where
+    toKey = M.keysSet . view _Wrapped'
+
+allSubVotes :: Votes f a -> [Votes f a]
+allSubVotes = traverseOf votesL subsequences
+
 -- | Describes quorum family.
 class QuorumFamily f where
     -- | Check whether votes belong to a quorum of acceptors.
@@ -99,22 +112,39 @@ class QuorumFamily f where
     isMinQuorum :: HasMembers => Votes f a -> Bool
 
 class QuorumFamily f => QuorumIntersectionFamily f where
-    -- | @isIntersectionWithQuorum q v@ returns whether exists quorum @r@
+    -- | @isSubIntersectionWithQuorum q v@ returns whether exists quorum @r@
     -- such that @v@ is subset of intersection of @q@ and @r@.
-    isIntersectionWithQuorum :: HasMembers => Votes f a -> Votes f b -> Bool
+    isSubIntersectionWithQuorum :: HasMembers => Votes f a -> Votes f b -> Bool
 
--- | Similar to 'isIntersectionWithQuorum' but does additional sanity checks.
-isQuorumsIntersection
+-- | Similar to 'isIntersectionWithQuorum' but does additional sanity checks
+-- on arguments.
+isQuorumsSubIntersection
     :: (QuorumIntersectionFamily qf, HasMembers)
     => Votes qf a -> Votes qf cstruct -> Bool
-isQuorumsIntersection q v =
+isQuorumsSubIntersection q v =
     and
     [ isQuorum q
-    , isIntersectionWithQuorum q v
+    , isSubIntersectionWithQuorum q v
     , let Votes q' = q
           Votes v' = v
       in  M.keysSet v' `S.isSubsetOf` M.keysSet q'
     ]
+
+-- | @getIntersectionsWithQuorums q@ returns all possible @v = q \cup r@
+-- for various quorums @r@.
+getIntersectionsWithQuorums
+    :: (HasMembers, QuorumIntersectionFamily f)
+    => Votes f a -> [Votes f a]
+getIntersectionsWithQuorums q =
+    filter (isSubIntersectionWithQuorum q) (allSubVotes q)
+
+-- | @getIntersectionsWithQuorums q@ returns all possible @v = q \cup r@
+-- for various quorums @r@.
+getQuorumsSubIntersections
+    :: (HasMembers, QuorumIntersectionFamily f)
+    => Votes f a -> [Votes f a]
+getQuorumsSubIntersections q =
+    filter (isQuorumsSubIntersection q) (allSubVotes q)
 
 -- | Simple majority quorum.
 data MajorityQuorum frac
@@ -144,22 +174,28 @@ type FastMajorityQuorum = MajorityQuorum ThreeQuarters
 
 instance Reifies frac Rational =>
          QuorumIntersectionFamily (MajorityQuorum frac) where
-    isIntersectionWithQuorum q v =
+    isSubIntersectionWithQuorum q v =
         let frac = reflect @frac Proxy
-            Members {..} = getMembers
+            Members{..} = getMembers
             -- |v| > |q \cap r| = |q| + |r| - |q \cup r| = |q| + |r| - |acceptors|
         in  fromIntegral (length v)
                 > fromIntegral (length q)
                 + fromIntegral acceptorsNum * (frac - 1)
 
 -- | Take all possible minimum for inclusion quorums from given votes.
-allMinQuorums
+allMinQuorumsOf
     :: (HasMembers, QuorumFamily f)
      => Votes f a -> [Votes f a]
-allMinQuorums = filter isMinQuorum . traverseOf votesL subsequences
+allMinQuorumsOf = filter isMinQuorum . traverseOf votesL subsequences
 
 -- | Take all possible quorums from given votes.
-allQuorums
+allQuorumsOf
     :: (HasMembers, QuorumFamily f)
      => Votes f a -> [Votes f a]
-allQuorums = filter isQuorum . traverseOf votesL subsequences
+allQuorumsOf = filter isQuorum . allSubVotes
+
+-- | Get all possible quorums.
+allQuorums
+    :: (HasMembers, QuorumFamily f)
+    => [Votes f ()]
+allQuorums = allQuorumsOf maxBound
