@@ -89,6 +89,10 @@ instance Arbitrary FastBallotId where
         , RecoveryBallotId <$> arbitrary
         ]
 
+toRecoveryBallotId :: FastBallotId -> FastBallotId
+toRecoveryBallotId = \case
+    FastBallotId c -> RecoveryBallotId c
+    _ -> error "toRecoveryBallotId: expected non-recovery ballotId"
 
 -- | Identifier of acceptor.
 newtype AcceptorId = AcceptorId Int

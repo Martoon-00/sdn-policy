@@ -50,6 +50,7 @@ withProcessState modifier = do
 -- * Per-process contexts
 -- ** Proposer
 
+-- | State held by proposer.
 data ProposerState pv = ProposerState
     { _proposerProposedPolicies :: [Policy]
       -- ^ Policies ever proposed (for testing purposes)
@@ -68,7 +69,18 @@ instance Default (ProposerState pv) where
 
 -- ** Leader
 
--- * State kept by leader.
+-- | Whether need in recovery has been checked and recovery was
+-- launched if necessary.
+data FastBallotStatus
+    = FastBallotInProgress  -- fast ballot is executing at moment
+    | FastBallotSucceeded   -- fast ballot terminated without need in recovery
+    | FastBallotInRecovery  -- recovery has been initiated
+    deriving (Eq, Show)
+
+instance Default FastBallotStatus where
+    def = FastBallotInProgress
+
+-- | State kept by leader.
 data LeaderState pv = LeaderState
     { _leaderBallotId            :: BallotId pv
       -- ^ Number of current ballot
@@ -78,8 +90,9 @@ data LeaderState pv = LeaderState
       -- ^ Policies ever proposed on this fast ballot, used in recovery
     , _leaderVotes               :: Map (BallotId pv) (Votes ClassicMajorityQuorum Configuration)
       -- ^ CStructs received in 2b messages
-    , _leaderFastVotes           :: Map (BallotId pv) (Votes FastMajorityQuorum Configuration)
+    , _leaderFastVotes           :: Map (BallotId Fast) (Votes FastMajorityQuorum Configuration)
       -- ^ CStructs detected in 2b messages of fast ballot
+    , _leaderFastSuccessChecked  :: Map (BallotId Fast) FastBallotStatus
     }
 
 makeLenses ''LeaderState
@@ -100,20 +113,20 @@ instance ProtocolVersion pv => Buildable (LeaderState pv) where
 
 -- | Initial state of the leader.
 instance ProtocolVersion pv => Default (LeaderState pv) where
-    def = LeaderState startBallotId mempty mempty mempty mempty
+    def = LeaderState startBallotId mempty mempty mempty mempty mempty
 
 -- ** Acceptor
 
--- * State kept by acceptor.
+-- | State kept by acceptor.
 data AcceptorState pv = AcceptorState
-    { _acceptorId              :: AcceptorId
+    { _acceptorId                  :: AcceptorId
       -- ^ Identificator of this acceptor, should be read-only
-    , _acceptorBallotId        :: (BallotId pv)
+    , _acceptorBallotId            :: (BallotId pv)
       -- ^ Last heard ballotId from leader
-    , _acceptorCStruct         :: Configuration
+    , _acceptorCStruct             :: Configuration
       -- ^ Gathered CStruct so far
-    , _acceptorPendingPolicies :: Map (BallotId pv) [Policy]
-      -- ^ Policies proposed upon each ballot
+    , _acceptorFastPendingPolicies :: Map (BallotId pv) [Policy]
+      -- ^ Policies proposed upon each fast ballot
     }
 
 makeLenses ''AcceptorState
@@ -134,7 +147,7 @@ defAcceptorState id = AcceptorState id startBallotId mempty mempty
 
 -- ** Learner
 
--- * State kept by learner.
+-- | State kept by learner.
 data LearnerState pv = LearnerState
     { _learnerVotes     :: Votes ClassicMajorityQuorum Configuration
       -- ^ CStructs received from acceptors in classic round so far

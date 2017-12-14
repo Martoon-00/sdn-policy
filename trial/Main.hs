@@ -25,6 +25,7 @@ demoTopology = TopologySettings
     , topologyProposalSchedule =
         generate (GoodPolicy <$> arbitrary)  -- single proposal of policy
     , topologyBallotsSchedule = execute  -- start ballot once
+    , topologyRecoveryDelay = interval 1 sec
     , topologySeed = RandomSeed
     , topologyLifetime = interval 1 sec
     }

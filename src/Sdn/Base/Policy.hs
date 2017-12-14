@@ -11,7 +11,7 @@ import           Data.MessagePack    (MessagePack (..))
 import qualified Data.Set            as S
 import           Data.String         (IsString)
 import qualified Data.Text.Buildable
-import           Formatting          (bprint, build, sformat, shown, (%))
+import           Formatting          (bprint, build, sformat, (%))
 import           Test.QuickCheck     (Arbitrary (..), getNonNegative, oneof, resize)
 import           Universum
 

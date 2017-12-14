@@ -11,7 +11,8 @@ import           Control.Monad.Catch      (Handler (..), catches)
 import           Control.TimeWarp.Logging (WithNamedLogger, modifyLoggerName)
 import           Control.TimeWarp.Rpc     (Method (..), MonadRpc, serve)
 import           Control.TimeWarp.Timed   (Microsecond, MonadTimed, for, fork_, hour,
-                                           interval, ms, till, virtualTime, wait, work)
+                                           interval, ms, sec, till, virtualTime, wait,
+                                           work)
 import           Data.Default             (Default (..))
 import           Formatting               (build, sformat, shown, (%))
 import           Test.QuickCheck          (arbitrary)
@@ -31,8 +32,9 @@ type TopologySchedule p = forall m. MonadTopology m => Schedule m p
 data TopologySettings = TopologySettings
     { topologyMembers          :: Members
     , topologyProposalSchedule :: TopologySchedule Policy
-    , topologySeed             :: GenSeed
     , topologyBallotsSchedule  :: TopologySchedule ()
+    , topologyRecoveryDelay    :: Microsecond
+    , topologySeed             :: GenSeed
     , topologyLifetime         :: Microsecond
     }
 
@@ -43,6 +45,7 @@ instance Default TopologySettings where
         { topologyMembers = def
         , topologyProposalSchedule = generate (GoodPolicy <$> arbitrary)
         , topologyBallotsSchedule = execute
+        , topologyRecoveryDelay = interval 1 sec
         , topologySeed = RandomSeed
         , topologyLifetime = interval 999 hour
         }
@@ -188,10 +191,10 @@ launchClassicPaxos = launchPaxos
 
 -- | Launch Classic Paxos.
 launchFastPaxos :: forall m. TopologyLauncher Fast m
-launchFastPaxos = launchPaxos
+launchFastPaxos topologySettings@TopologySettings{..} = launchPaxos
     TopologyActions
     { proposeAction = proposeFast
-    , startBallotAction = initFastBallot
+    , startBallotAction = initFastBallot topologyRecoveryDelay
     , leaderListeners =
         [ listener rememberProposal
         , listener phase2a  -- TODO: if not needed, mark message and phase as Classic
@@ -209,3 +212,4 @@ launchFastPaxos = launchPaxos
         , listener learnFast
         ]
     }
+    topologySettings
