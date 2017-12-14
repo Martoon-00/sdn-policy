@@ -12,6 +12,7 @@ import           Control.Lens             (from)
 import           Control.TimeWarp.Logging (LoggerName)
 import           Control.TimeWarp.Rpc     (NetworkAddress, Port, localhost)
 import           Data.Default             (Default (..))
+import qualified Data.Tagged              as Tag
 import qualified System.Console.ANSI      as ANSI
 import           Universum
 
@@ -36,11 +37,11 @@ class Process p where
     processesNumber :: HasMembers => Int
 
     -- | Initial state of the process.
-    initProcessState :: ProtocolVersion pv => p -> ProcessState p pv
+    initProcessState :: ProtocolVersion pv => Proxy pv -> p -> ProcessState p pv
     default initProcessState
         :: Default (ProcessState p pv)
-        => p -> ProcessState p pv
-    initProcessState _ = def
+        => Proxy pv -> p -> ProcessState p pv
+    initProcessState _ _ = def
 
 -- | Constraint for having context with specified mutable state.
 type HasContext s m =
@@ -60,7 +61,7 @@ inProcessCtx
     -> ReaderT (ProcessContext (ProcessState p pv)) m a
     -> m a
 inProcessCtx _ participant action = do
-    var <- liftIO $ newTVarIO (initProcessState participant)
+    var <- liftIO $ newTVarIO (initProcessState @p @pv Proxy participant)
     runReaderT action (ProcessContext var)
 
 -- | Port binded to given process.
@@ -119,7 +120,7 @@ instance Process Leader where
             & loggerNameT %~ withColor ANSI.Vivid ANSI.Magenta
     processAddress Leader = (localhost, 5000)
     processesNumber = 1
-    initProcessState Leader = def
+    initProcessState pv Leader = Tag.proxy def pv
 
 
 data Acceptor = Acceptor AcceptorId
@@ -132,7 +133,7 @@ instance Process Acceptor where
             & loggerNameT %~ withColor ANSI.Vivid ANSI.Yellow
     processAddress (Acceptor id) = (localhost, 6000 + fromIntegral id)
     processesNumber = acceptorsNum getMembers
-    initProcessState (Acceptor id) = defAcceptorState id
+    initProcessState _ (Acceptor id) = defAcceptorState id
 
 
 data Learner = Learner Int

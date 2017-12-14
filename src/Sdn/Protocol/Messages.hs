@@ -7,12 +7,11 @@
 module Sdn.Protocol.Messages where
 
 import qualified Data.Text.Buildable
-import           Formatting            (bprint, build, (%))
+import           Formatting          (bprint, build, (%))
 import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra
-import           Sdn.Protocol.Versions
 
 -- * Classic
 
@@ -25,33 +24,33 @@ instance Buildable ProposalMsg where
 declareMessage ''ProposalMsg
 
 
-data Phase1aMsg pv = Phase1aMsg (BallotId pv)
+data Phase1aMsg = Phase1aMsg (BallotId 'ClassicRound)
     deriving (Generic)
 
-instance ProtocolVersion pv => Buildable (Phase1aMsg pv) where
+instance Buildable Phase1aMsg where
     build (Phase1aMsg b) = bprint ("Phase 1a message "%build) b
 
-declareMessagePV ''Phase1aMsg
+declareMessage ''Phase1aMsg
 
 
-data Phase1bMsg pv = Phase1bMsg AcceptorId (BallotId pv) Configuration
+data Phase1bMsg = Phase1bMsg AcceptorId (BallotId 'ClassicRound) Configuration
     deriving (Generic)
 
-instance ProtocolVersion pv => Buildable (Phase1bMsg pv) where
+instance Buildable Phase1bMsg where
     build (Phase1bMsg a b c) =
         bprint ("Phase 1b message from "%build%" "%build%" "%build) a b c
 
-declareMessagePV ''Phase1bMsg
+declareMessage ''Phase1bMsg
 
 
-data Phase2aMsg pv = Phase2aMsg (BallotId pv) Configuration
+data Phase2aMsg = Phase2aMsg (BallotId 'ClassicRound) Configuration
     deriving (Generic)
 
-instance ProtocolVersion pv => Buildable (Phase2aMsg pv) where
+instance Buildable Phase2aMsg where
     build (Phase2aMsg b c) =
         bprint ("Phase 2a message "%build%" "%build) b c
 
-declareMessagePV ''Phase2aMsg
+declareMessage ''Phase2aMsg
 
 
 data Phase2bMsg = Phase2bMsg AcceptorId Configuration
@@ -74,7 +73,7 @@ instance Buildable ProposalFastMsg where
 declareMessage ''ProposalFastMsg
 
 
-newtype InitFastBallotMsg = InitFastBallotMsg (BallotId Fast)
+newtype InitFastBallotMsg = InitFastBallotMsg (BallotId 'FastRound)
     deriving (Generic)
 
 instance Buildable InitFastBallotMsg where
@@ -83,7 +82,7 @@ instance Buildable InitFastBallotMsg where
 declareMessage ''InitFastBallotMsg
 
 
-data Phase2bFastMsg = Phase2bFastMsg (BallotId Fast) AcceptorId Configuration
+data Phase2bFastMsg = Phase2bFastMsg (BallotId 'FastRound) AcceptorId Configuration
     deriving (Generic)
 
 instance Buildable Phase2bFastMsg where

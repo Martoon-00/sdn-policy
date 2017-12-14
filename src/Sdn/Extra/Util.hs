@@ -10,15 +10,17 @@
 
 module Sdn.Extra.Util where
 
-import           Control.Lens           (Iso, iso)
+import           Control.Lens           (Iso, Iso', iso)
 import           Control.TimeWarp.Rpc   (MonadRpc (..), NetworkAddress, RpcRequest (..),
                                          mkRequest)
 import qualified Control.TimeWarp.Rpc   as Rpc
 import           Control.TimeWarp.Timed (MonadTimed (..), fork_)
+import           Data.Coerce            (coerce)
 import           Data.MessagePack       (MessagePack)
 import           Data.Text.Lazy.Builder (Builder)
 import           Formatting             (Format, bprint, build, formatToString, later,
                                          shown, (%))
+import           Formatting.Internal    (Format (..))
 import qualified GHC.Exts               as Exts
 import qualified Language.Haskell.TH    as TH
 import           Test.QuickCheck        (Gen, suchThat)
@@ -84,3 +86,14 @@ throwOnFail
     :: (Exception e', MonadThrow m)
     => (e -> e') -> Either e a -> m a
 throwOnFail mkException = either (throwM . mkException) pure
+
+-- | Modify text produced by formatter.
+mapfText :: (Builder -> Builder) -> Format a b -> Format a b
+mapfText how (Format f) = Format $ f . \g t -> g $ how t
+
+as :: forall b a. Coercible a b => Iso' a b
+as = iso coerce coerce
+
+-- | Add space at right if formatter returns non-empty text.
+rightSpaced :: Format a b -> Format a b
+rightSpaced = mapfText $ \x -> if x == "" then "" else x <> " "

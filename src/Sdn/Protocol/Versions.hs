@@ -1,64 +1,66 @@
-{-# LANGUAGE FunctionalDependencies     #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE TemplateHaskell            #-}
-{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE DefaultSignatures   #-}
+{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 -- | Different versions of protocol.
 
 module Sdn.Protocol.Versions where
 
-import           Control.TimeWarp.Rpc (RpcRequest (..))
-import           Data.MessagePack     (MessagePack (..))
-import           Language.Haskell.TH  as TH
+import           Control.Lens        (makeLenses)
+import           Data.Default
+import qualified Data.Text.Buildable
 import           Universum
 
 import           Sdn.Base.Types
 
-class ( NumBallot (BallotId pv)
-      , Ord (BallotId pv)
-      , Buildable (BallotId pv)
-      , MessagePack (BallotId pv)
+-- * Protocol versions.
+
+class ( HasStartBallotId pv
       ) =>
       ProtocolVersion pv where
-    type BallotId pv :: *
 
 -- | Tag for classic version of protocol.
 data Classic
+
+instance Buildable (Proxy Classic) where
+    build _ = ""
+
 instance ProtocolVersion Classic where
-    type BallotId Classic = ClassicBallotId
 
 -- | Tag for fast version of protocol with classic version used for recovery.
 data Fast
+
+instance Buildable (Proxy Fast) where
+    build _ = "fast"
+
 instance ProtocolVersion Fast where
-    type BallotId Fast = FastBallotId
 
 
--- | Carrying protocol version of monad.
-class Monad m => MonadProtocolVersion pv m | m -> pv where
-    getProtocolVersion :: m (Proxy pv)
+class HasStartBallotId pv where
+    type StartBallotType pv :: BallotType
+    startBallotId :: BallotId (StartBallotType pv)
+    default startBallotId
+        :: Default (BallotId (StartBallotType pv))
+        => BallotId (StartBallotType pv)
+    startBallotId = def
 
--- | And implementation for 'MonadProtocolVersion'.
-newtype ProtocolVersionT pv m a = ProtocolVersionT
-    { runProtocolVersion :: m a
-    } deriving (Functor, Applicative, Monad, MonadIO)
+instance HasStartBallotId Classic where
+    type StartBallotType Classic = 'ClassicRound
 
-instance MonadTrans (ProtocolVersionT pv) where
-    lift = ProtocolVersionT
+instance HasStartBallotId Fast where
+    type StartBallotType Fast = 'FastRound
 
-instance (Monad m) =>
-         MonadProtocolVersion pv (ProtocolVersionT pv m) where
-    getProtocolVersion = pure Proxy
+-- * Utilities
+
+data ForBothBallotTypes a = ForBothBallotTypes
+    { _forClassicRound :: a
+    , _forFastRound    :: a
+    } deriving (Eq)
+
+makeLenses ''ForBothBallotTypes
 
 
--- | Template-haskell fun to reduce boilerplate.
-declareMessagePV :: TH.Name -> TH.Q [TH.Dec]
-declareMessagePV msgName = do
-    let msgType = pure $ ConT msgName
-    let msgStr = show @_ @String msgName
-    [d| instance ProtocolVersion pv => MessagePack ($msgType pv)
-        instance ProtocolVersion pv => RpcRequest ($msgType pv) where
-            type Response ($msgType pv) = ()
-            type ExpectedError ($msgType pv) = Void
-            methodName _ = msgStr
-      |]
-
+type family PerBallotType pv x where
+    PerBallotType Classic x = x
+    PerBallotType Fast x = ForBothBallotTypes x

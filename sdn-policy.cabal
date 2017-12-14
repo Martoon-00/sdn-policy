@@ -48,6 +48,7 @@ library
                      , reflection
                      , stm
                      , stm-chans
+                     , tagged
                      , template-haskell
                      , text
                      , text-format
@@ -75,6 +76,7 @@ library
                        ViewPatterns
                        ExplicitForAll
                        DeriveGeneric
+                       DataKinds
   ghc-options:         -Wall
 
 
@@ -115,7 +117,6 @@ test-suite sdn-policy-test
   main-is:             Test.hs
   other-modules:       Spec
 
-                       Test.Sdn.Basic.BallotSpec
                        Test.Sdn.Basic.CStructSpec
                        Test.Sdn.Basic.QuorumSpec
 

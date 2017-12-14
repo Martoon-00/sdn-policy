@@ -2,7 +2,8 @@
 
 module Sdn.Protocol.Phases where
 
-import           Control.Lens           (at, non, (%=), (.=), (<%=), (<<.=), (<>=))
+import           Control.Lens           (at, non, (%=), (+=), (.=), (<%=), (<+=), (<<.=),
+                                         (<>=))
 import           Control.TimeWarp.Rpc   (MonadRpc)
 import           Control.TimeWarp.Timed (Microsecond, MonadTimed (..), after, schedule)
 import           Data.Default           (def)
@@ -11,7 +12,7 @@ import           Formatting             (build, sformat, (%))
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra              (MonadLog, MonadReporting, buildList, logInfo,
+import           Sdn.Extra              (MonadLog, MonadReporting, as, buildList, logInfo,
                                          submit, throwOnFail)
 import           Sdn.Protocol.Context
 import           Sdn.Protocol.Messages
@@ -64,25 +65,18 @@ rememberProposal (ProposalMsg policy) = do
     -- atomically modify process'es state
     withProcessState $ do
         -- add policy to pending policiesToApply for next ballot
-        bal <- nextFreshBallotId <$> use leaderBallotId
-        leaderPendingPolicies . at bal . non mempty %= (policy :)
+        -- We store @BallotId 'SomeRound@, 'as' allows to make it for specific round
+        -- In most cases round type may be ommited though
+        bal <- use $ leaderBallotId . as @(BallotId 'ClassicRound)
+        leaderPendingPolicies . at (bal + 1) . non mempty %= (policy :)
 
 acceptorRememberFastProposal
     :: (MonadPhase m, HasContextOf Acceptor Fast m)
     => ProposalFastMsg -> m ()
 acceptorRememberFastProposal (ProposalFastMsg policy) =
     withProcessState $ do
-        ballotId <- nextFreshBallotId <$> use acceptorBallotId
-        acceptorFastPendingPolicies . at ballotId . non mempty <>= one policy
-
--- TODO: very bad \^/
-leaderRememberFastProposal
-    :: (MonadPhase m, HasContextOf Leader Fast m)
-    => ProposalFastMsg -> m ()
-leaderRememberFastProposal (ProposalFastMsg policy) =
-    withProcessState $ do
-        ballotId <- nextFreshBallotId <$> use leaderBallotId
-        leaderPendingPoliciesFast . at ballotId . non mempty <>= one policy
+        bal <- use $ acceptorBallotId . as
+        acceptorFastPendingPolicies . at (bal + 1) . non mempty <>= one policy
 
 -- ** Phase 1
 
@@ -95,24 +89,24 @@ phase1a = do
 
     msg <- withProcessState $ do
         -- increment ballot id
-        leaderBallotId %= nextFreshBallotId
+        leaderBallotId += 1
         -- make up an "1a" message
-        Phase1aMsg @pv <$> use leaderBallotId
+        Phase1aMsg <$> use (leaderBallotId . as)
 
     broadcastTo (processesAddresses Acceptor) msg
 
 phase1b
     :: forall pv m.
        (MonadPhase m, HasContextOf Acceptor pv m)
-    => Phase1aMsg pv -> m ()
-phase1b (Phase1aMsg ballotId) = do
+    => Phase1aMsg -> m ()
+phase1b (Phase1aMsg bal) = do
     msg <- withProcessState $ do
         -- promise not to accept messages of lesser ballot numbers
-        -- make stored ballot id not lesser than @ballotId@
-        acceptorBallotId %= max ballotId
-        Phase1bMsg @pv
+        -- make stored ballot id not lesser than @bal@
+        acceptorBallotId . as %= max bal
+        Phase1bMsg
             <$> use acceptorId
-            <*> use acceptorBallotId
+            <*> use (acceptorBallotId . as)
             <*> use acceptorCStruct
 
     submit (processAddress Leader) msg
@@ -123,40 +117,40 @@ initFastBallot
 initFastBallot recoveryDelay = do
     logInfo "Starting new fast ballot"
 
-    ballotId <- withProcessState $ do
-        newBallotId <- leaderBallotId <%= nextFreshBallotId
+    bal <- withProcessState $ do
+        newBallotId <- leaderBallotId . as <+= 1
         pure newBallotId
 
     schedule (after recoveryDelay) $
-        checkRecoveryNecessity ballotId
+        checkRecoveryNecessity bal
 
-    broadcastTo (processesAddresses Acceptor) (InitFastBallotMsg ballotId)
+    broadcastTo (processesAddresses Acceptor) (InitFastBallotMsg bal)
 
 -- ** Phase 2
 
 phase2a
     :: forall pv m.
        (MonadPhase m, HasContextOf Leader pv m)
-    => Phase1bMsg pv -> m ()
-phase2a (Phase1bMsg accId ballotId cstruct) = do
+    => Phase1bMsg -> m ()
+phase2a (Phase1bMsg accId bal cstruct) = do
     maybeMsg <- withProcessState $ do
         -- add received vote to set of votes stored locally for this ballot,
         -- initializing this set if doesn't exist yet
         newVotes <-
-            leaderVotes . at ballotId . non mempty <%= addVote accId cstruct
+            leaderVotes . at bal . non mempty <%= addVote accId cstruct
 
         -- if some quorums appeared, recalculate Gamma and apply pending policiesToApply
         if isQuorum newVotes
         then do
             when (isMinQuorum newVotes) $
-                logInfo $ "Just got 1b from quorum of acceptors at " <> pretty ballotId
+                logInfo $ "Just got 1b from quorum of acceptors at " <> pretty bal
 
             combined <- throwOnFail ProtocolError $ combination newVotes
-            policiesToApply <- use $ leaderPendingPolicies . at ballotId . non mempty
+            policiesToApply <- use $ leaderPendingPolicies . at bal . non mempty
             let cstructWithNewPolicies = foldr acceptOrRejectCommand combined policiesToApply
 
             logInfo "Broadcasting cstruct"
-            pure $ Just (Phase2aMsg @pv ballotId cstructWithNewPolicies)
+            pure $ Just (Phase2aMsg bal cstructWithNewPolicies)
         else pure Nothing
 
     -- when got a message to submit - broadcast it
@@ -165,18 +159,18 @@ phase2a (Phase1bMsg accId ballotId cstruct) = do
 
 phase2b
     :: (MonadPhase m, HasContextOf Acceptor pv m)
-    => Phase2aMsg pv -> m ()
-phase2b (Phase2aMsg ballotId cstruct) = do
+    => Phase2aMsg -> m ()
+phase2b (Phase2aMsg bal cstruct) = do
     maybeMsg <- withProcessState $ do
-        localBallotId <- use acceptorBallotId
+        localBallotId <- use $ acceptorBallotId . as
         localCstruct <- use acceptorCStruct
 
         -- check whether did we promise to ignore this message
-        if localBallotId == ballotId && (cstruct `extends` localCstruct)
-            || localBallotId < ballotId
+        if localBallotId == bal && (cstruct `extends` localCstruct)
+            || localBallotId < bal
         then do
            -- if ok, remember received info
-           acceptorBallotId .= ballotId
+           acceptorBallotId . as .= bal
            acceptorCStruct .= cstruct
 
            -- form message
@@ -192,17 +186,17 @@ phase2b (Phase2aMsg ballotId cstruct) = do
 phase2bFast
     :: (MonadPhase m, HasContextOf Acceptor Fast m)
     => InitFastBallotMsg -> m ()
-phase2bFast (InitFastBallotMsg ballotId) = do
+phase2bFast (InitFastBallotMsg bal) = do
     msg <- withProcessState $ do
         -- TODO: operating with non-fast cstruct here is incorrect
         cstruct <- use acceptorCStruct
-        policiesToApply <- use $ acceptorFastPendingPolicies . at ballotId . non mempty
+        policiesToApply <- use $ acceptorFastPendingPolicies . at bal . non mempty
         logInfo $ sformat ("List of fast pending policies:\n    "%buildList ", ")
                   policiesToApply
         let cstruct' = foldr acceptOrRejectCommand cstruct policiesToApply
 
         accId <- use acceptorId
-        pure $ Phase2bFastMsg ballotId accId cstruct'
+        pure $ Phase2bFastMsg bal accId cstruct'
 
     broadcastTo (processAddresses Leader <> processesAddresses Learner) msg
 
@@ -264,58 +258,58 @@ learnFast (Phase2bFastMsg _ accId cstruct) = do
 
 delegateToRecovery
     :: (MonadPhase m, HasContextOf Leader Fast m)
-    => AcceptorId -> BallotId Fast -> Configuration -> m ()
-delegateToRecovery accId ballotId cstruct = do
-    let recoveryBallotId = toRecoveryBallotId ballotId
-    phase2a (Phase1bMsg @Fast accId recoveryBallotId cstruct)
+    => AcceptorId -> BallotId 'FastRound -> Configuration -> m ()
+delegateToRecovery accId bal cstruct = do
+    let recoveryBallotId = bal ^. as @(BallotId 'ClassicRound)
+    phase2a (Phase1bMsg accId recoveryBallotId cstruct)
 
 checkRecoveryNecessity
     :: (MonadPhase m, HasContextOf Leader Fast m)
-    => BallotId Fast -> m ()
-checkRecoveryNecessity ballotId = do
+    => BallotId 'FastRound -> m ()
+checkRecoveryNecessity bal = do
     needRecovery <- withProcessState $ do
-        fastBallotStatus <- use $ leaderFastSuccessChecked . at ballotId . non def
+        fastBallotStatus <- use $ leaderFastSuccessChecked . at bal . non def
 
         case fastBallotStatus of
             FastBallotInProgress -> do
-                votes <- use $ leaderFastVotes . at ballotId . non mempty
+                votes <- use $ leaderFastVotes . at bal . non mempty
                 combined <- throwOnFail ProtocolError $ intersectingCombination votes
                 let mentionedPolicyEntries = fold votes
                     needRecovery = combined /= mentionedPolicyEntries
 
-                leaderFastSuccessChecked . at ballotId . non def .=
+                leaderFastSuccessChecked . at bal . non def .=
                     if needRecovery then FastBallotInRecovery else FastBallotSucceeded
                 return needRecovery
             _ -> pure False
 
     when needRecovery $ do
-        logInfo $ sformat ("Recovery in "%build%" initiated!") ballotId
+        logInfo $ sformat ("Recovery in "%build%" initiated!") bal
 
         Votes votes <-
-            withProcessState $ use $ leaderFastVotes . at ballotId . non mempty
+            withProcessState $ use $ leaderFastVotes . at bal . non mempty
 
         -- artificially execute next available phase of recovery (classic) Paxos
         forM_ (M.toList votes) $ \(accId, cstruct) ->
-             delegateToRecovery accId ballotId cstruct
+             delegateToRecovery accId bal cstruct
 
 detectConflicts
     :: (MonadPhase m, HasContextOf Leader Fast m)
     => Phase2bFastMsg -> m ()
-detectConflicts (Phase2bFastMsg ballotId accId cstruct) = do
+detectConflicts (Phase2bFastMsg bal accId cstruct) = do
     newVotes <- withProcessState $ do
-        leaderFastVotes . at ballotId . non mempty <%= addVote accId cstruct
+        leaderFastVotes . at bal . non mempty <%= addVote accId cstruct
 
     if (void newVotes == maxBound)
         -- all possible votes collected - ready to checker whether recovery required
-        then checkRecoveryNecessity ballotId
+        then checkRecoveryNecessity bal
         -- if recovery already occured - delegate to phase2a of classic paxos
         else do
             fastBallotStatus <-
-                withProcessState . use $ leaderFastSuccessChecked . at ballotId . non def
+                withProcessState . use $ leaderFastSuccessChecked . at bal . non def
             case fastBallotStatus of
                 FastBallotInProgress -> pass
                 FastBallotSucceeded  -> pass
-                FastBallotInRecovery -> delegateToRecovery accId ballotId cstruct
+                FastBallotInRecovery -> delegateToRecovery accId bal cstruct
 
 
 

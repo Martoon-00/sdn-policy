@@ -1,6 +1,7 @@
-{-# LANGUAGE Rank2Types      #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TypeFamilies    #-}
+{-# LANGUAGE Rank2Types           #-}
+{-# LANGUAGE TemplateHaskell      #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- | Various contexts of processes
 
@@ -12,6 +13,7 @@ import           Control.TimeWarp.Rpc   (MonadRpc, NetworkAddress)
 import           Control.TimeWarp.Timed (MonadTimed)
 import           Data.Default           (Default (def))
 import qualified Data.Map               as M
+import           Data.Tagged            (Tagged (..))
 import qualified Data.Text.Buildable
 import           Data.Text.Lazy.Builder (Builder)
 import           Formatting             (Format, bprint, build, (%))
@@ -46,6 +48,10 @@ withProcessState
 withProcessState modifier = do
     var <- pcState <$> ask
     launchPureLog (atomically . modifyTVarS var) modifier
+
+type family StoredBallotType pv where
+    StoredBallotType Classic = 'ClassicRound
+    StoredBallotType Fast = 'SomeRound
 
 -- * Per-process contexts
 -- ** Proposer
@@ -82,38 +88,44 @@ instance Default FastBallotStatus where
 
 -- | State kept by leader.
 data LeaderState pv = LeaderState
-    { _leaderBallotId            :: BallotId pv
+    { _leaderBallotId            :: BallotId 'SomeRound
       -- ^ Number of current ballot
-    , _leaderPendingPolicies     :: Map (BallotId pv) [Policy]
+    , _leaderPendingPolicies     :: Map (BallotId 'ClassicRound) [Policy]
       -- ^ Policies proposed upon each ballot
-    , _leaderPendingPoliciesFast :: Map (BallotId pv) [Policy]
+    , _leaderPendingPoliciesFast :: Map (BallotId 'FastRound) [Policy]
       -- ^ Policies ever proposed on this fast ballot, used in recovery
-    , _leaderVotes               :: Map (BallotId pv) (Votes ClassicMajorityQuorum Configuration)
+    , _leaderVotes               :: Map (BallotId 'ClassicRound) (Votes ClassicMajorityQuorum Configuration)
       -- ^ CStructs received in 2b messages
-    , _leaderFastVotes           :: Map (BallotId Fast) (Votes FastMajorityQuorum Configuration)
+    , _leaderFastVotes           :: Map (BallotId 'FastRound) (Votes FastMajorityQuorum Configuration)
       -- ^ CStructs detected in 2b messages of fast ballot
-    , _leaderFastSuccessChecked  :: Map (BallotId Fast) FastBallotStatus
+    , _leaderFastSuccessChecked  :: Map (BallotId 'FastRound) FastBallotStatus
     }
 
 makeLenses ''LeaderState
 
-instance ProtocolVersion pv => Buildable (LeaderState pv) where
-    build LeaderState{..} =
+instance (ProtocolVersion pv, Buildable (BallotId $ StoredBallotType pv)) =>
+         Buildable (LeaderState pv) where
+    build LeaderState {..} =
         bprint
-            ("\n    current ballod id: "%build%
-             "\n    pending policies: "%buildList "\n    , "%
-             "\n    votes: "%buildList "\n    , ")
+            ("\n    current ballod id: " %build %
+             "\n    pending policies: " %buildList "\n    , " %
+             "\n    votes: " %buildList "\n    , ")
             _leaderBallotId
             (buildBallotMap _leaderPendingPolicies (buildList ", "))
             (buildBallotMap _leaderVotes build)
       where
-        buildBallotMap :: Map (BallotId pv) a -> Format Builder (a -> Builder) -> [Builder]
+        buildBallotMap
+            :: Buildable (BallotId t)
+            => Map (BallotId t) a -> Format Builder (a -> Builder) -> [Builder]
         buildBallotMap m how =
-            M.toList m <&> \(id, v) -> bprint (build%": "%how) id v
+            M.toList m <&> \(id, v) -> bprint (build % ": " %how) id v
 
 -- | Initial state of the leader.
-instance ProtocolVersion pv => Default (LeaderState pv) where
-    def = LeaderState startBallotId mempty mempty mempty mempty mempty
+instance HasStartBallotId pv =>
+         Default (Tagged pv $ LeaderState pv) where
+    def = Tagged $ LeaderState balId mempty mempty mempty mempty mempty
+      where
+        balId = coerceBallotId $ startBallotId @pv
 
 -- ** Acceptor
 
@@ -121,11 +133,11 @@ instance ProtocolVersion pv => Default (LeaderState pv) where
 data AcceptorState pv = AcceptorState
     { _acceptorId                  :: AcceptorId
       -- ^ Identificator of this acceptor, should be read-only
-    , _acceptorBallotId            :: (BallotId pv)
+    , _acceptorBallotId            :: (BallotId 'SomeRound)
       -- ^ Last heard ballotId from leader
     , _acceptorCStruct             :: Configuration
       -- ^ Gathered CStruct so far
-    , _acceptorFastPendingPolicies :: Map (BallotId pv) [Policy]
+    , _acceptorFastPendingPolicies :: Map (BallotId 'FastRound) [Policy]
       -- ^ Policies proposed upon each fast ballot
     }
 
@@ -142,8 +154,10 @@ instance ProtocolVersion pv => Buildable (AcceptorState pv) where
             _acceptorCStruct
 
 -- | Initial state of acceptor.
-defAcceptorState :: ProtocolVersion pv => AcceptorId -> (AcceptorState pv)
-defAcceptorState id = AcceptorState id startBallotId mempty mempty
+defAcceptorState :: forall pv. HasStartBallotId pv => AcceptorId -> (AcceptorState pv)
+defAcceptorState id = AcceptorState id balId mempty mempty
+  where
+      balId = coerceBallotId $ startBallotId @pv
 
 -- ** Learner
 
@@ -180,13 +194,13 @@ data AllStates pv = AllStates
     , learnersStates  :: [LearnerState pv]
     }
 
-instance ProtocolVersion pv => Buildable (AllStates pv) where
-    build AllStates{..} =
+instance (ProtocolVersion pv, Buildable (BallotId $ StoredBallotType pv)) =>
+         Buildable (AllStates pv) where
+    build AllStates {..} =
         bprint
-            (  "\n  Proposer state: "%build%
-             "\n\n  Leader state: "%build%
-             "\n\n  Acceptors states: "%buildList "\n  , "%
-             "\n\n  Learners states: "%buildList "\n  , ")
+            ("\n  Proposer state: " %build % "\n\n  Leader state: " %build %
+             "\n\n  Acceptors states: " %buildList "\n  , " %
+             "\n\n  Learners states: " %buildList "\n  , ")
             proposerState
             leaderState
             acceptorsStates

@@ -74,7 +74,7 @@ newProcess
     -> ProcessM p pv m ()
     -> m (STM (ProcessState p pv))
 newProcess process action = do
-    stateBox <- liftIO $ newTVarIO (initProcessState process)
+    stateBox <- liftIO $ newTVarIO (initProcessState Proxy process)
     fork_ $
         flip runReaderT (ProcessContext stateBox) $
         modifyLoggerName (<> processName process) $
@@ -199,7 +199,6 @@ launchFastPaxos topologySettings@TopologySettings{..} = launchPaxos
         [ listener rememberProposal
         , listener phase2a  -- TODO: if not needed, mark message and phase as Classic
         , listener detectConflicts
-        , listener leaderRememberFastProposal
         ]
     , acceptorListeners =
         [ listener phase1b

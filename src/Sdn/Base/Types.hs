@@ -1,98 +1,56 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 -- | Most of the primitive types used by protocol
 
 module Sdn.Base.Types where
 
-import           Control.Lens        (Iso', Wrapped (..), from, iso)
+import           Control.Lens        (Wrapped (..))
 import           Data.Default        (Default (..))
 import           Data.MessagePack    (MessagePack)
 import qualified Data.Text.Buildable
 import           Formatting          (bprint, build, (%))
-import           Test.QuickCheck     (Arbitrary (..), oneof)
+import           Test.QuickCheck     (Arbitrary (..), getNonNegative)
 import           Universum
 
--- | Raw ballot number.
-newtype BallotCounter = BallotCounter Int
+import           Sdn.Extra.Util      (rightSpaced)
+
+-- | Type of the round.
+data BallotType
+    = SomeRound     -- when no one cares
+    | ClassicRound  -- classic rounds
+    | FastRound     -- fast rounds
+
+instance Buildable (Proxy 'ClassicRound) where
+    build _ = ""
+
+instance Buildable (Proxy 'FastRound) where
+    build _ = "fast"
+
+instance Buildable (Proxy 'SomeRound) where
+    build _ = "some"
+
+-- | Ballot number.
+newtype BallotId (t :: BallotType) = BallotId Int
     deriving (Eq, Ord, Show, Enum, Num, Real, Integral, MessagePack, Generic)
 
-instance Wrapped BallotCounter
+instance Wrapped (BallotId t)
 
-instance Buildable BallotCounter where
-    build (BallotCounter bid) = bprint ("ballot #"%build) bid
+instance Buildable (Proxy t) => Buildable (BallotId t) where
+    build (BallotId bid) =
+        bprint (rightSpaced build%"ballot #"%build) (Proxy @t) bid
 
-instance Default BallotCounter where
-    def = BallotCounter 0
+instance Default (BallotId t) where
+    def = BallotId 0
 
-instance Arbitrary BallotCounter where
-    arbitrary = BallotCounter <$> arbitrary
+instance Arbitrary (BallotId t) where
+    arbitrary = BallotId . getNonNegative <$> arbitrary
 
--- | Allows arithmetic on ballots.
--- Implementations of methods below should be sensible.
-class NumBallot b where
-    flatBallotId :: Iso' b Rational
+coerceBallotId :: forall b a. BallotId a -> BallotId b
+coerceBallotId (BallotId a) = BallotId a
 
-startBallotId :: NumBallot b => b
-startBallotId = 0 ^. from flatBallotId
 
-nextFreshBallotId :: NumBallot b => b -> b
-nextFreshBallotId = flatBallotId %~ fromIntegral . identity @Int . floor . (+1)
-
-prestartBallotId :: NumBallot b => b
-prestartBallotId = (-1) ^. from flatBallotId
-
--- | Ballot id used in Classic Paxos.
-newtype ClassicBallotId = ClassicBallotId BallotCounter
-    deriving (Eq, Ord, Show, Num, MessagePack, Generic)
-
-instance Wrapped ClassicBallotId
-
-instance NumBallot ClassicBallotId where
-    flatBallotId = _Wrapped' . _Wrapped' . iso fromIntegral round
-
-instance Buildable ClassicBallotId where
-    build (ClassicBallotId c) = bprint ("classic "%build) c
-
-instance Arbitrary ClassicBallotId where
-    arbitrary = ClassicBallotId <$> arbitrary
-
--- | Ballot id used in Fast Paxos.
-data FastBallotId
-    = FastBallotId BallotCounter
-    | RecoveryBallotId BallotCounter
-    deriving (Eq, Show, Generic)
-
-instance Ord FastBallotId where
-    compare = compare `on` view flatBallotId
-
-instance Buildable FastBallotId where
-    build = \case
-        FastBallotId c -> bprint ("fast "%build) c
-        RecoveryBallotId c -> bprint ("recovery "%build) c
-
-instance MessagePack FastBallotId
-
-instance NumBallot FastBallotId where
-    flatBallotId = iso toFlat fromFlat
-      where
-        toFlat = \case
-            FastBallotId c -> fromIntegral c
-            RecoveryBallotId c -> fromIntegral c + 0.5
-        fromFlat c =
-            if even @Int $ round (2 * c)
-            then FastBallotId (round c)
-            else RecoveryBallotId (floor c)
-
-instance Arbitrary FastBallotId where
-    arbitrary = oneof
-        [ FastBallotId <$> arbitrary
-        , RecoveryBallotId <$> arbitrary
-        ]
-
-toRecoveryBallotId :: FastBallotId -> FastBallotId
-toRecoveryBallotId = \case
-    FastBallotId c -> RecoveryBallotId c
-    _ -> error "toRecoveryBallotId: expected non-recovery ballotId"
 
 -- | Identifier of acceptor.
 newtype AcceptorId = AcceptorId Int
