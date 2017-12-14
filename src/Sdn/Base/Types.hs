@@ -14,42 +14,20 @@ import           Formatting          (bprint, build, (%))
 import           Test.QuickCheck     (Arbitrary (..), getNonNegative)
 import           Universum
 
-import           Sdn.Extra.Util      (rightSpaced)
-
--- | Type of the round.
-data BallotType
-    = SomeRound     -- when no one cares
-    | ClassicRound  -- classic rounds
-    | FastRound     -- fast rounds
-
-instance Buildable (Proxy 'ClassicRound) where
-    build _ = ""
-
-instance Buildable (Proxy 'FastRound) where
-    build _ = "fast"
-
-instance Buildable (Proxy 'SomeRound) where
-    build _ = "some"
-
 -- | Ballot number.
-newtype BallotId (t :: BallotType) = BallotId Int
+newtype BallotId = BallotId Int
     deriving (Eq, Ord, Show, Enum, Num, Real, Integral, MessagePack, Generic)
 
-instance Wrapped (BallotId t)
+instance Wrapped BallotId
 
-instance Buildable (Proxy t) => Buildable (BallotId t) where
-    build (BallotId bid) =
-        bprint (rightSpaced build%"ballot #"%build) (Proxy @t) bid
+instance Buildable BallotId where
+    build (BallotId bid) = bprint ("ballot #" %build) bid
 
-instance Default (BallotId t) where
+instance Default BallotId where
     def = BallotId 0
 
-instance Arbitrary (BallotId t) where
+instance Arbitrary BallotId where
     arbitrary = BallotId . getNonNegative <$> arbitrary
-
-coerceBallotId :: forall b a. BallotId a -> BallotId b
-coerceBallotId (BallotId a) = BallotId a
-
 
 
 -- | Identifier of acceptor.

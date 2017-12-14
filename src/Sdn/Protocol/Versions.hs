@@ -8,15 +8,12 @@
 module Sdn.Protocol.Versions where
 
 import           Control.Lens        (makeLenses)
-import           Data.Default
 import qualified Data.Text.Buildable
 import           Universum
 
-import           Sdn.Base.Types
-
 -- * Protocol versions.
 
-class ( HasStartBallotId pv
+class (
       ) =>
       ProtocolVersion pv where
 
@@ -35,21 +32,6 @@ instance Buildable (Proxy Fast) where
     build _ = "fast"
 
 instance ProtocolVersion Fast where
-
-
-class HasStartBallotId pv where
-    type StartBallotType pv :: BallotType
-    startBallotId :: BallotId (StartBallotType pv)
-    default startBallotId
-        :: Default (BallotId (StartBallotType pv))
-        => BallotId (StartBallotType pv)
-    startBallotId = def
-
-instance HasStartBallotId Classic where
-    type StartBallotType Classic = 'ClassicRound
-
-instance HasStartBallotId Fast where
-    type StartBallotType Fast = 'FastRound
 
 -- * Utilities
 

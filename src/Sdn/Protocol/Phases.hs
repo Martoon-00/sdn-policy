@@ -67,7 +67,7 @@ rememberProposal (ProposalMsg policy) = do
         -- add policy to pending policiesToApply for next ballot
         -- We store @BallotId 'SomeRound@, 'as' allows to make it for specific round
         -- In most cases round type may be ommited though
-        bal <- use $ leaderBallotId . as @(BallotId 'ClassicRound)
+        bal <- use leaderBallotId
         leaderPendingPolicies . at (bal + 1) . non mempty %= (policy :)
 
 acceptorRememberFastProposal
@@ -258,14 +258,14 @@ learnFast (Phase2bFastMsg _ accId cstruct) = do
 
 delegateToRecovery
     :: (MonadPhase m, HasContextOf Leader Fast m)
-    => AcceptorId -> BallotId 'FastRound -> Configuration -> m ()
+    => AcceptorId -> BallotId -> Configuration -> m ()
 delegateToRecovery accId bal cstruct = do
-    let recoveryBallotId = bal ^. as @(BallotId 'ClassicRound)
+    let recoveryBallotId = bal
     phase2a (Phase1bMsg accId recoveryBallotId cstruct)
 
 checkRecoveryNecessity
     :: (MonadPhase m, HasContextOf Leader Fast m)
-    => BallotId 'FastRound -> m ()
+    => BallotId -> m ()
 checkRecoveryNecessity bal = do
     needRecovery <- withProcessState $ do
         fastBallotStatus <- use $ leaderFastSuccessChecked . at bal . non def

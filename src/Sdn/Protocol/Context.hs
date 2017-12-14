@@ -49,10 +49,6 @@ withProcessState modifier = do
     var <- pcState <$> ask
     launchPureLog (atomically . modifyTVarS var) modifier
 
-type family StoredBallotType pv where
-    StoredBallotType Classic = 'ClassicRound
-    StoredBallotType Fast = 'SomeRound
-
 -- * Per-process contexts
 -- ** Proposer
 
@@ -88,22 +84,22 @@ instance Default FastBallotStatus where
 
 -- | State kept by leader.
 data LeaderState pv = LeaderState
-    { _leaderBallotId            :: BallotId 'SomeRound
+    { _leaderBallotId            :: BallotId
       -- ^ Number of current ballot
-    , _leaderPendingPolicies     :: Map (BallotId 'ClassicRound) [Policy]
+    , _leaderPendingPolicies     :: Map BallotId [Policy]
       -- ^ Policies proposed upon each ballot
-    , _leaderPendingPoliciesFast :: Map (BallotId 'FastRound) [Policy]
+    , _leaderPendingPoliciesFast :: Map BallotId [Policy]
       -- ^ Policies ever proposed on this fast ballot, used in recovery
-    , _leaderVotes               :: Map (BallotId 'ClassicRound) (Votes ClassicMajorityQuorum Configuration)
+    , _leaderVotes               :: Map BallotId (Votes ClassicMajorityQuorum Configuration)
       -- ^ CStructs received in 2b messages
-    , _leaderFastVotes           :: Map (BallotId 'FastRound) (Votes FastMajorityQuorum Configuration)
+    , _leaderFastVotes           :: Map BallotId (Votes FastMajorityQuorum Configuration)
       -- ^ CStructs detected in 2b messages of fast ballot
-    , _leaderFastSuccessChecked  :: Map (BallotId 'FastRound) FastBallotStatus
+    , _leaderFastSuccessChecked  :: Map BallotId FastBallotStatus
     }
 
 makeLenses ''LeaderState
 
-instance (ProtocolVersion pv, Buildable (BallotId $ StoredBallotType pv)) =>
+instance ProtocolVersion pv =>
          Buildable (LeaderState pv) where
     build LeaderState {..} =
         bprint
@@ -115,17 +111,14 @@ instance (ProtocolVersion pv, Buildable (BallotId $ StoredBallotType pv)) =>
             (buildBallotMap _leaderVotes build)
       where
         buildBallotMap
-            :: Buildable (BallotId t)
-            => Map (BallotId t) a -> Format Builder (a -> Builder) -> [Builder]
+            :: Buildable BallotId
+            => Map BallotId a -> Format Builder (a -> Builder) -> [Builder]
         buildBallotMap m how =
             M.toList m <&> \(id, v) -> bprint (build % ": " %how) id v
 
 -- | Initial state of the leader.
-instance HasStartBallotId pv =>
-         Default (Tagged pv $ LeaderState pv) where
-    def = Tagged $ LeaderState balId mempty mempty mempty mempty mempty
-      where
-        balId = coerceBallotId $ startBallotId @pv
+instance Default (Tagged pv $ LeaderState pv) where
+    def = Tagged $ LeaderState def mempty mempty mempty mempty mempty
 
 -- ** Acceptor
 
@@ -133,11 +126,11 @@ instance HasStartBallotId pv =>
 data AcceptorState pv = AcceptorState
     { _acceptorId                  :: AcceptorId
       -- ^ Identificator of this acceptor, should be read-only
-    , _acceptorBallotId            :: (BallotId 'SomeRound)
+    , _acceptorBallotId            :: BallotId
       -- ^ Last heard ballotId from leader
     , _acceptorCStruct             :: Configuration
       -- ^ Gathered CStruct so far
-    , _acceptorFastPendingPolicies :: Map (BallotId 'FastRound) [Policy]
+    , _acceptorFastPendingPolicies :: Map BallotId [Policy]
       -- ^ Policies proposed upon each fast ballot
     }
 
@@ -154,10 +147,8 @@ instance ProtocolVersion pv => Buildable (AcceptorState pv) where
             _acceptorCStruct
 
 -- | Initial state of acceptor.
-defAcceptorState :: forall pv. HasStartBallotId pv => AcceptorId -> (AcceptorState pv)
-defAcceptorState id = AcceptorState id balId mempty mempty
-  where
-      balId = coerceBallotId $ startBallotId @pv
+defAcceptorState :: forall pv. AcceptorId -> (AcceptorState pv)
+defAcceptorState id = AcceptorState id def mempty mempty
 
 -- ** Learner
 
@@ -194,7 +185,7 @@ data AllStates pv = AllStates
     , learnersStates  :: [LearnerState pv]
     }
 
-instance (ProtocolVersion pv, Buildable (BallotId $ StoredBallotType pv)) =>
+instance ProtocolVersion pv =>
          Buildable (AllStates pv) where
     build AllStates {..} =
         bprint

@@ -24,7 +24,7 @@ instance Buildable ProposalMsg where
 declareMessage ''ProposalMsg
 
 
-data Phase1aMsg = Phase1aMsg (BallotId 'ClassicRound)
+data Phase1aMsg = Phase1aMsg BallotId
     deriving (Generic)
 
 instance Buildable Phase1aMsg where
@@ -33,7 +33,7 @@ instance Buildable Phase1aMsg where
 declareMessage ''Phase1aMsg
 
 
-data Phase1bMsg = Phase1bMsg AcceptorId (BallotId 'ClassicRound) Configuration
+data Phase1bMsg = Phase1bMsg AcceptorId BallotId Configuration
     deriving (Generic)
 
 instance Buildable Phase1bMsg where
@@ -43,7 +43,7 @@ instance Buildable Phase1bMsg where
 declareMessage ''Phase1bMsg
 
 
-data Phase2aMsg = Phase2aMsg (BallotId 'ClassicRound) Configuration
+data Phase2aMsg = Phase2aMsg BallotId Configuration
     deriving (Generic)
 
 instance Buildable Phase2aMsg where
@@ -73,7 +73,7 @@ instance Buildable ProposalFastMsg where
 declareMessage ''ProposalFastMsg
 
 
-newtype InitFastBallotMsg = InitFastBallotMsg (BallotId 'FastRound)
+newtype InitFastBallotMsg = InitFastBallotMsg BallotId
     deriving (Generic)
 
 instance Buildable InitFastBallotMsg where
@@ -82,7 +82,7 @@ instance Buildable InitFastBallotMsg where
 declareMessage ''InitFastBallotMsg
 
 
-data Phase2bFastMsg = Phase2bFastMsg (BallotId 'FastRound) AcceptorId Configuration
+data Phase2bFastMsg = Phase2bFastMsg BallotId AcceptorId Configuration
     deriving (Generic)
 
 instance Buildable Phase2bFastMsg where

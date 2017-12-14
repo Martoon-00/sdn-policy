@@ -21,7 +21,6 @@ import           Test.QuickCheck.Gen         (chooseAny)
 import           Test.QuickCheck.Monadic     (monadicIO, stop)
 import           Test.QuickCheck.Property    (failed, reason, succeeded)
 
-import           Sdn.Base
 import           Sdn.Extra
 import           Sdn.Protocol
 import qualified Sdn.Schedule                as S
@@ -50,7 +49,7 @@ instance Default (TestLaunchParams Classic) where
 
 testLaunch
     :: forall pv.
-       (ProtocolVersion pv, Buildable (BallotId $ StoredBallotType pv))
+       ProtocolVersion pv
     => TestLaunchParams pv -> Property
 testLaunch TestLaunchParams{..} =
     forAll (Blind <$> chooseAny) $ \(Blind seed) -> do
