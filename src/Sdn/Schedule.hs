@@ -78,10 +78,11 @@ runSchedule seed (Schedule schedule) consumer = do
     let scPush = consumer
     scGen <- getGenSeed seed
     scCont <- newTVarIO def
-    schedule ScheduleContext{..}
+    fork_ $ schedule ScheduleContext{..}
 
 -- | Execute schedule without any job passed.
-runSchedule_ :: MonadSchedule m
+runSchedule_
+    :: MonadSchedule m
     => GenSeed -> Schedule m () -> m ()
 runSchedule_ seed schedule = runSchedule seed schedule $ \() -> pass
 

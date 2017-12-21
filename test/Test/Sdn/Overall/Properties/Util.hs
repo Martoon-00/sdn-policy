@@ -27,15 +27,10 @@ protocolProperties
     -> [ProtocolProperty pv m]
     -> m (Maybe (AllStates pv, Text))
 protocolProperties monitor mkProperties = do
-    putText "Prop 1"
     let propertiesMM = sequence mkProperties (readAllStates monitor)
-    putText "Prop 2"
     propertiesM <- sequence propertiesMM
-    putText "Prop 3"
     awaitTermination monitor
-    putText "Prop 4"
     properties <- sequence propertiesM
-    putText "Prop 5"
     return $ head $
         [ (states, err)
         | (states, Left err) <- properties

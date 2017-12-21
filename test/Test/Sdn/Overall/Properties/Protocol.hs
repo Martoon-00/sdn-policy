@@ -72,7 +72,7 @@ numberOfLearnedPolicies predicate cmp AllStates{..} = do
 
 basicProperties :: MonadIO m => [ProtocolProperty pv m]
 basicProperties =
-    [ -- eventually proposedPoliciesWereLearned
-    -- , invariant learnedPoliciesWereProposed
-    --, eventually learnersAgree
+    [ eventually proposedPoliciesWereLearned
+    , invariant learnedPoliciesWereProposed
+    , eventually learnersAgree
     ]

@@ -127,15 +127,15 @@ launchPaxos TopologyActions{..} TopologySettings{..} = withMembers topologyMembe
 
     proposerState <- newProcess Proposer . work (for topologyLifetime) $ do
         -- wait for servers to bootstrap
-        wait (for 10 ms)
         runSchedule_ proposalSeed $ do
+            delayed (interval 10 ms)
             policy <- limited topologyLifetime topologyProposalSchedule
             lift $ proposeAction policy
 
     leaderState <- newProcess Leader . work (for topologyLifetime) $ do
         -- wait for first proposal before start
-        wait (for 20 ms)
         runSchedule_ ballotSeed $ do
+            delayed (interval 20 ms)
             limited topologyLifetime topologyBallotsSchedule
             lift startBallotAction
 

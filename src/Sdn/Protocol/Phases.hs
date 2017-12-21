@@ -44,7 +44,7 @@ propose policy = do
     withProcessState $
         proposerProposedPolicies <>= one policy
     -- and send it to leader
-    submit (processAddress Leader) (ProposalMsg policy)
+    broadcastTo (processAddresses Leader) (ProposalMsg policy)
 
 proposeFast
     :: (MonadPhase m, HasContextOf Proposer Fast m)
