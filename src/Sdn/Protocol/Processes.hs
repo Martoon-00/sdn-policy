@@ -24,7 +24,7 @@ import           Sdn.Protocol.Versions
 -- | Unique features of each process.
 class Process p where
     -- | State kept by the process
-    type ProcessState p :: * -> *
+    type ProcessState p :: *
 
     -- | Name of the process, used in logging.
     processName :: p -> LoggerName
@@ -37,10 +37,10 @@ class Process p where
     processesNumber :: HasMembers => Int
 
     -- | Initial state of the process.
-    initProcessState :: ProtocolVersion pv => Proxy pv -> p -> ProcessState p pv
+    initProcessState :: ProtocolVersion pv => Proxy pv -> p -> ProcessState p
     default initProcessState
-        :: Default (ProcessState p pv)
-        => Proxy pv -> p -> ProcessState p pv
+        :: Default (ProcessState p)
+        => Proxy pv -> p -> ProcessState p
     initProcessState _ _ = def
 
 -- | Constraint for having context with specified mutable state.
@@ -50,7 +50,7 @@ type HasContext s m =
     )
 
 -- | Constraint for having context of specified type of process.
-type HasContextOf p pv m = (HasContext (ProcessState p pv) m, ProtocolVersion pv)
+type HasContextOf p m = HasContext (ProcessState p) m
 
 -- | Provide context for given process.
 inProcessCtx
@@ -58,7 +58,7 @@ inProcessCtx
        (MonadIO m, Process p, ProtocolVersion pv)
     => Proxy pv
     -> p
-    -> ReaderT (ProcessContext (ProcessState p pv)) m a
+    -> ReaderT (ProcessContext (ProcessState p)) m a
     -> m a
 inProcessCtx _ participant action = do
     var <- liftIO $ newTVarIO (initProcessState @p @pv Proxy participant)

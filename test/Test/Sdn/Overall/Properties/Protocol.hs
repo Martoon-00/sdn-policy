@@ -17,7 +17,7 @@ import           Test.Sdn.Overall.Properties.Util
 
 -- * Property primitives
 
-proposedPoliciesWereLearned :: PropertyChecker pv
+proposedPoliciesWereLearned :: PropertyChecker
 proposedPoliciesWereLearned AllStates{..} = do
     let proposed's = _proposerProposedPolicies proposerState
     let learned's = _learnerLearned <$> learnersStates
@@ -31,7 +31,7 @@ proposedPoliciesWereLearned AllStates{..} = do
         throwError $
         sformat ("Proposed "%build%" wasn't leart by learner "%build) p li
 
-learnedPoliciesWereProposed :: PropertyChecker pv
+learnedPoliciesWereProposed :: PropertyChecker
 learnedPoliciesWereProposed AllStates{..} = do
     let proposed's = _proposerProposedPolicies proposerState
     let validOutcomes = S.fromList $ [Accepted, Rejected] <*> proposed's
@@ -44,7 +44,7 @@ learnedPoliciesWereProposed AllStates{..} = do
         throwError $
         sformat ("Learned "%build%" by "%build%" was never proposed") p li
 
-learnersAgree :: PropertyChecker pv
+learnersAgree :: PropertyChecker
 learnersAgree AllStates{..} = do
     let learned = _learnerLearned <$> learnersStates
     l :| ls <- maybe (Left "No learners") Right $ nonEmpty learned
@@ -54,7 +54,7 @@ learnersAgree AllStates{..} = do
 -- | Checks that number of learned policies matches predicate.
 numberOfLearnedPolicies :: (Prism' (Acceptance Policy) a)
                         -> (Word -> Bool)
-                        -> PropertyChecker pv
+                        -> PropertyChecker
 numberOfLearnedPolicies predicate cmp AllStates{..} = do
     let learned's = _learnerLearned <$> learnersStates
     forM_ (zip [1..] learned's) $ \(learnerId, learned) -> do

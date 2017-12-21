@@ -55,15 +55,15 @@ data TopologyMonitor pv m = TopologyMonitor
     { -- | Returns when all active processes in the topology finish
       awaitTermination :: m ()
       -- | Fetch states of all processes in topology
-    , readAllStates    :: STM (AllStates pv)
+    , readAllStates    :: STM AllStates
     }
 
 -- | Monad in which process (and phases) are supposed to work.
-type ProcessM p pv m = ReaderT (ProcessContext $ ProcessState p pv) m
+type ProcessM p m = ReaderT (ProcessContext $ ProcessState p) m
 
 -- | Create single newProcess.
 newProcess
-    :: forall p pv m.
+    :: forall pv p m.
        ( MonadIO m
        , MonadTimed m
        , WithNamedLogger m
@@ -71,10 +71,10 @@ newProcess
        , ProtocolVersion pv
        )
     => p
-    -> ProcessM p pv m ()
-    -> m (STM (ProcessState p pv))
+    -> ProcessM p m ()
+    -> m (STM (ProcessState p))
 newProcess process action = do
-    stateBox <- liftIO $ newTVarIO (initProcessState Proxy process)
+    stateBox <- liftIO $ newTVarIO (initProcessState @p @pv Proxy process)
     fork_ $
         flip runReaderT (ProcessContext stateBox) $
         modifyLoggerName (<> processName process) $
@@ -113,26 +113,29 @@ type TopologyLauncher pv m =
     MonadTopology m => TopologySettings -> m (TopologyMonitor pv m)
 
 data TopologyActions pv m = TopologyActions
-    { proposeAction     :: HasMembers => Policy -> ProcessM Proposer pv m ()
-    , startBallotAction :: HasMembers => ProcessM Leader pv m ()
-    , leaderListeners   :: HasMembers => [Method $ ProcessM Leader pv m]
-    , acceptorListeners :: HasMembers => [Method $ ProcessM Acceptor pv m]
-    , learnerListeners  :: HasMembers => [Method $ ProcessM Learner pv m]
+    { proposeAction     :: HasMembers => Policy -> ProcessM Proposer m ()
+    , startBallotAction :: HasMembers => ProcessM Leader m ()
+    , leaderListeners   :: HasMembers => [Method $ ProcessM Leader m]
+    , acceptorListeners :: HasMembers => [Method $ ProcessM Acceptor m]
+    , learnerListeners  :: HasMembers => [Method $ ProcessM Learner m]
     }
 
 -- | Launch Paxos algorithm.
-launchPaxos :: ProtocolVersion pv => TopologyActions pv m -> TopologyLauncher pv m
+launchPaxos
+    :: forall pv m.
+       ProtocolVersion pv
+    => TopologyActions pv m -> TopologyLauncher pv m
 launchPaxos TopologyActions{..} TopologySettings{..} = withMembers topologyMembers $ do
     let (proposalSeed, ballotSeed) = splitGenSeed topologySeed
 
-    proposerState <- newProcess Proposer . work (for topologyLifetime) $ do
+    proposerState <- newProcess @pv Proposer . work (for topologyLifetime) $ do
         -- wait for servers to bootstrap
         runSchedule_ proposalSeed $ do
             delayed (interval 10 ms)
             policy <- limited topologyLifetime topologyProposalSchedule
             lift $ proposeAction policy
 
-    leaderState <- newProcess Leader . work (for topologyLifetime) $ do
+    leaderState <- newProcess @pv Leader . work (for topologyLifetime) $ do
         -- wait for first proposal before start
         runSchedule_ ballotSeed $ do
             delayed (interval 20 ms)
@@ -162,11 +165,11 @@ launchPaxos TopologyActions{..} TopologySettings{..} = withMembers topologyMembe
     startListeningProcessesOf
         :: (HasMembers, MonadTopology m, Process p, Integral i, ProtocolVersion pv)
         => (i -> p)
-        -> [Method $ ProcessM p pv m]
-        -> m [STM $ ProcessState p pv]
+        -> [Method $ ProcessM p m]
+        -> m [STM $ ProcessState p]
     startListeningProcessesOf processType listeners =
         forM (processesOf processType) $
-            \process -> newProcess process . work (for topologyLifetime) $ do
+            \process -> newProcess @pv process . work (for topologyLifetime) $ do
                 serve (processPort process) listeners
 
 {-# NOINLINE launchPaxos #-}
