@@ -18,8 +18,8 @@ import           Control.TimeWarp.Timed (MonadTimed (..), fork_)
 import           Data.Coerce            (coerce)
 import           Data.MessagePack       (MessagePack)
 import           Data.Text.Lazy.Builder (Builder)
-import           Formatting             (Format, bprint, build, formatToString, later,
-                                         shown, (%))
+import           Formatting             (Format, bprint, formatToString, later, shown,
+                                         (%))
 import           Formatting.Internal    (Format (..))
 import qualified GHC.Exts               as Exts
 import qualified Language.Haskell.TH    as TH
@@ -53,15 +53,15 @@ submit
 submit = fork_ ... Rpc.submit
 
 -- | Builder for list.
-buildList
+listF
     :: (Container l, Buildable (Element l))
-    => Builder -> Format r (l -> r)
-buildList delim =
+    => Builder -> Format Builder (Element l -> Builder) -> Format r (l -> r)
+listF delim buildElem =
     later $ \(toList -> values) ->
     if null values
     then "[]"
     else mconcat $
-         one "[ " <> (intersperse delim $ bprint build <$> values) <> one " ]"
+         one "[ " <> (intersperse delim $ bprint buildElem <$> values) <> one " ]"
 
 -- | Extended modifier for 'TVar'.
 modifyTVarS :: TVar s -> StateT s STM a -> STM a

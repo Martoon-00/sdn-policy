@@ -80,7 +80,7 @@ mkConfig policies =
     in  guard (consistent res) $> res
 
 instance Buildable Configuration where
-    build = bprint (buildList ", ") . toList
+    build = bprint (listF ", " build) . toList
 
 instance MessagePack Configuration where
     toObject = toObject . S.toList

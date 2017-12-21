@@ -133,10 +133,11 @@ launchPaxos TopologyActions{..} TopologySettings{..} = withMembers topologyMembe
             lift $ proposeAction policy
 
     leaderState <- newProcess Leader . work (for topologyLifetime) $ do
-        work (for topologyLifetime) $ do
-            -- wait for first proposal before start
-            wait (for 20 ms)
-            runSchedule_ ballotSeed $ topologyBallotsSchedule >> lift startBallotAction
+        -- wait for first proposal before start
+        wait (for 20 ms)
+        runSchedule_ ballotSeed $ do
+            limited topologyLifetime topologyBallotsSchedule
+            lift startBallotAction
 
         serve (processPort Leader) leaderListeners
 
@@ -197,7 +198,7 @@ launchFastPaxos topologySettings@TopologySettings{..} = launchPaxos
     , startBallotAction = initFastBallot topologyRecoveryDelay
     , leaderListeners =
         [ listener rememberProposal
-        , listener phase2a  -- TODO: if not needed, mark message and phase as Classic
+        , listener phase2a
         , listener detectConflicts
         ]
     , acceptorListeners =

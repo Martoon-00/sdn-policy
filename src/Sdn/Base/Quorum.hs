@@ -15,7 +15,7 @@ import qualified Data.Map            as M
 import           Data.Reflection     (Reifies (..))
 import qualified Data.Set            as S
 import qualified Data.Text.Buildable
-import           Formatting          (bprint)
+import           Formatting          (bprint, build)
 import           GHC.Exts            (IsList (..))
 import           Test.QuickCheck     (Arbitrary (..), Gen, sublistOf)
 import           Universum           hiding (toList)
@@ -53,7 +53,7 @@ votesL :: Iso' (Votes f a) [(AcceptorId, a)]
 votesL = _Wrapped' . listL
 
 instance Buildable a => Buildable (Votes t a) where
-    build (Votes v) = bprint (buildList ", ") $ U.toList v
+    build (Votes v) = bprint (listF ", " build) $ U.toList v
 
 instance (HasMembers, a ~ ()) => Bounded (Votes f a) where
     minBound = fromList []

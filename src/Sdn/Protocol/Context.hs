@@ -16,11 +16,12 @@ import qualified Data.Map               as M
 import           Data.Tagged            (Tagged (..))
 import qualified Data.Text.Buildable
 import           Data.Text.Lazy.Builder (Builder)
-import           Formatting             (Format, bprint, build, (%))
+import           Formatting             (Format, bprint, build, later, (%))
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra
+import           Sdn.Extra              (Message, MonadLog, MonadReporting, PureLog,
+                                         launchPureLog, listF, modifyTVarS, submit)
 import           Sdn.Protocol.Versions
 
 -- * General
@@ -49,6 +50,30 @@ withProcessState modifier = do
     var <- pcState <$> ask
     launchPureLog (atomically . modifyTVarS var) modifier
 
+data ForBothRoundTypes a = ForBothRoundTypes
+    { _forClassic :: a
+    , _forFast    :: a
+    }
+
+makeLenses ''ForBothRoundTypes
+
+instance Monoid a => Monoid (ForBothRoundTypes a) where
+    mempty = ForBothRoundTypes mempty mempty
+    ForBothRoundTypes a1 b1 `mappend` ForBothRoundTypes a2 b2
+        = ForBothRoundTypes (a1 <> a2) (b1 <> b2)
+
+type PerBallot a = Map BallotId a
+type PerBallots a = ForBothRoundTypes $ PerBallot a
+
+-- | Formatter for ballot id map
+ballotMapF
+    :: Buildable BallotId
+    => Format Builder (a -> Builder) -> Format r (PerBallot a -> r)
+ballotMapF f =
+    later $ \m ->
+    mconcat $ M.toList m <&> \(id, v) -> bprint (build % ": " %f) id v
+
+
 -- * Per-process contexts
 -- ** Proposer
 
@@ -63,7 +88,7 @@ makeLenses ''ProposerState
 instance Buildable (ProposerState pv) where
     build ProposerState{..} =
         bprint
-            ("\n    proposed policies:\n    "%buildList "\n    , ")
+            ("\n    proposed policies:\n    "%listF "\n    , " build)
             _proposerProposedPolicies
 
 instance Default (ProposerState pv) where
@@ -86,39 +111,36 @@ instance Default FastBallotStatus where
 data LeaderState pv = LeaderState
     { _leaderBallotId            :: BallotId
       -- ^ Number of current ballot
-    , _leaderPendingPolicies     :: Map BallotId [Policy]
-      -- ^ Policies proposed upon each ballot
-    , _leaderPendingPoliciesFast :: Map BallotId [Policy]
+    , _leaderPendingPolicies     :: PerBallots [Policy]
       -- ^ Policies ever proposed on this fast ballot, used in recovery
-    , _leaderVotes               :: Map BallotId (Votes ClassicMajorityQuorum Configuration)
+    , _leaderVotes               :: Map BallotId $ Votes ClassicMajorityQuorum Configuration
       -- ^ CStructs received in 2b messages
-    , _leaderFastVotes           :: Map BallotId (Votes FastMajorityQuorum Configuration)
+    , _leaderFastVotes           :: Map BallotId $ Votes FastMajorityQuorum Configuration
       -- ^ CStructs detected in 2b messages of fast ballot
     , _leaderFastSuccessChecked  :: Map BallotId FastBallotStatus
     }
 
 makeLenses ''LeaderState
 
+bothRoundsF :: Format Builder (a -> Builder) -> Format r (ForBothRoundTypes a -> r)
+bothRoundsF fmt = later $ \ForBothRoundTypes{..} ->
+    bprint ("_fast_: "%fmt) _forClassic <>
+    bprint ("\n  _classic_: "%fmt) _forFast
+
 instance ProtocolVersion pv =>
          Buildable (LeaderState pv) where
     build LeaderState {..} =
         bprint
             ("\n    current ballod id: " %build %
-             "\n    pending policies: " %buildList "\n    , " %
-             "\n    votes: " %buildList "\n    , ")
+             "\n    pending policies: " %bothRoundsF (ballotMapF $ listF ", " build) %
+             "\n    votes: " %ballotMapF build)
             _leaderBallotId
-            (buildBallotMap _leaderPendingPolicies (buildList ", "))
-            (buildBallotMap _leaderVotes build)
-      where
-        buildBallotMap
-            :: Buildable BallotId
-            => Map BallotId a -> Format Builder (a -> Builder) -> [Builder]
-        buildBallotMap m how =
-            M.toList m <&> \(id, v) -> bprint (build % ": " %how) id v
+            _leaderPendingPolicies
+            _leaderVotes
 
 -- | Initial state of the leader.
 instance Default (Tagged pv $ LeaderState pv) where
-    def = Tagged $ LeaderState def mempty mempty mempty mempty mempty
+    def = Tagged $ LeaderState def mempty mempty mempty mempty
 
 -- ** Acceptor
 
@@ -190,8 +212,8 @@ instance ProtocolVersion pv =>
     build AllStates {..} =
         bprint
             ("\n  Proposer state: " %build % "\n\n  Leader state: " %build %
-             "\n\n  Acceptors states: " %buildList "\n  , " %
-             "\n\n  Learners states: " %buildList "\n  , ")
+             "\n\n  Acceptors states: " %listF "\n  , " build %
+             "\n\n  Learners states: " %listF "\n  , " build)
             proposerState
             leaderState
             acceptorsStates

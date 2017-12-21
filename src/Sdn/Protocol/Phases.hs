@@ -12,7 +12,7 @@ import           Formatting             (build, sformat, (%))
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra              (MonadLog, MonadReporting, as, buildList, logInfo,
+import           Sdn.Extra              (MonadLog, MonadReporting, as, listF, logInfo,
                                          submit, throwOnFail)
 import           Sdn.Protocol.Context
 import           Sdn.Protocol.Messages
@@ -68,7 +68,7 @@ rememberProposal (ProposalMsg policy) = do
         -- We store @BallotId 'SomeRound@, 'as' allows to make it for specific round
         -- In most cases round type may be ommited though
         bal <- use leaderBallotId
-        leaderPendingPolicies . at (bal + 1) . non mempty %= (policy :)
+        leaderPendingPolicies . forClassic . at (bal + 1) . non mempty %= (policy :)
 
 acceptorRememberFastProposal
     :: (MonadPhase m, HasContextOf Acceptor Fast m)
@@ -146,10 +146,10 @@ phase2a (Phase1bMsg accId bal cstruct) = do
                 logInfo $ "Just got 1b from quorum of acceptors at " <> pretty bal
 
             combined <- throwOnFail ProtocolError $ combination newVotes
-            policiesToApply <- use $ leaderPendingPolicies . at bal . non mempty
+            policiesToApply <- use $ leaderPendingPolicies . forClassic . at bal . non mempty
             let cstructWithNewPolicies = foldr acceptOrRejectCommand combined policiesToApply
 
-            logInfo "Broadcasting cstruct"
+            logInfo $ "Broadcasting cstruct: " <> show cstructWithNewPolicies
             pure $ Just (Phase2aMsg bal cstructWithNewPolicies)
         else pure Nothing
 
@@ -191,7 +191,7 @@ phase2bFast (InitFastBallotMsg bal) = do
         -- TODO: operating with non-fast cstruct here is incorrect
         cstruct <- use acceptorCStruct
         policiesToApply <- use $ acceptorFastPendingPolicies . at bal . non mempty
-        logInfo $ sformat ("List of fast pending policies:\n    "%buildList ", ")
+        logInfo $ sformat ("List of fast pending policies:\n    "%listF ", " build)
                   policiesToApply
         let cstruct' = foldr acceptOrRejectCommand cstruct policiesToApply
 

@@ -177,7 +177,7 @@ mergeCStructs cstructs =
   where
     errorContradictory gamma =
         throwError $
-        sformat ("mergeCStructs: got contradictory Gamma: "%buildList "\n  ,")
+        sformat ("mergeCStructs: got contradictory Gamma: "%listF "\n  ," build)
             gamma
 
 -- | Takes first argument only if it is extension of second one.

@@ -51,6 +51,7 @@ learnersAgree AllStates{..} = do
     forM_ ls $ \l' ->
         when (l /= l') $ Left "learners disagree"
 
+-- | Checks that number of learned policies matches predicate.
 numberOfLearnedPolicies :: (Prism' (Acceptance Policy) a)
                         -> (Word -> Bool)
                         -> PropertyChecker pv
@@ -71,7 +72,7 @@ numberOfLearnedPolicies predicate cmp AllStates{..} = do
 
 basicProperties :: MonadIO m => [ProtocolProperty pv m]
 basicProperties =
-    [ eventually proposedPoliciesWereLearned
-    , invariant learnedPoliciesWereProposed
-    , eventually learnersAgree
+    [ -- eventually proposedPoliciesWereLearned
+    -- , invariant learnedPoliciesWereProposed
+    --, eventually learnersAgree
     ]
