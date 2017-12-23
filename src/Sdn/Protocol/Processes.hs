@@ -17,7 +17,7 @@ import qualified System.Console.ANSI      as ANSI
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra
+import           Sdn.Extra                (loggerNameT, withColor)
 import           Sdn.Protocol.Context
 import           Sdn.Protocol.Versions
 
@@ -28,6 +28,9 @@ class Process p where
 
     -- | Name of the process, used in logging.
     processName :: p -> LoggerName
+
+    -- | Color assigned to process (subjectively).
+    processColor :: (ANSI.ColorIntensity, ANSI.Color)
 
     -- | Address binded to given process.
     -- All processes have predefined determined addresses.
@@ -95,6 +98,12 @@ processAddresses
     => p -> [NetworkAddress]
 processAddresses p = one (processAddress p)
 
+coloredProcessName
+    :: forall p.
+       Process p
+    => p -> LoggerName
+coloredProcessName p = processName p & loggerNameT %~ withColor (processColor @p)
+
 
 -- * Instances of the processes
 
@@ -103,9 +112,8 @@ data Proposer = Proposer
 instance Process Proposer where
     type ProcessState Proposer = ProposerState
 
-    processName _ =
-        "proposer"
-            & loggerNameT %~ withColor ANSI.Dull ANSI.Magenta
+    processName _ = "proposer"
+    processColor = (ANSI.Dull, ANSI.Magenta)
     processAddress Proposer = (localhost, 4000)
     processesNumber = 1
 
@@ -115,9 +123,8 @@ data Leader = Leader
 instance Process Leader where
     type ProcessState Leader = LeaderState
 
-    processName _ =
-        "leader"
-            & loggerNameT %~ withColor ANSI.Vivid ANSI.Magenta
+    processName _ = "leader"
+    processColor = (ANSI.Vivid, ANSI.Magenta)
     processAddress Leader = (localhost, 5000)
     processesNumber = 1
     initProcessState pv Leader = Tag.proxy def pv
@@ -130,7 +137,7 @@ instance Process Acceptor where
 
     processName (Acceptor (AcceptorId id)) =
         "acceptor" <> (pretty id ^. from loggerNameT)
-            & loggerNameT %~ withColor ANSI.Vivid ANSI.Yellow
+    processColor = (ANSI.Vivid, ANSI.Yellow)
     processAddress (Acceptor id) = (localhost, 6000 + fromIntegral id)
     processesNumber = acceptorsNum getMembers
     initProcessState _ (Acceptor id) = defAcceptorState id
@@ -143,6 +150,6 @@ instance Process Learner where
 
     processName (Learner id) =
         "learner" <> (pretty id ^. from loggerNameT)
-            & loggerNameT %~ withColor ANSI.Vivid ANSI.Cyan
+    processColor = (ANSI.Vivid, ANSI.Cyan)
     processAddress (Learner id) = (localhost, 7000 + id)
     processesNumber = learnersNum getMembers

@@ -20,6 +20,7 @@ extra-deps:
 - serokell-util-0.5.0
 - time-units-1.0.0
 - universum-0.7.1
+- streaming-commons-0.1.16  # 0.1.17 is picked by default and it's broken :(
 
 flags: {}
 

@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes  #-}
 {-# LANGUAGE TemplateHaskell      #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -6,12 +7,16 @@
 
 module Sdn.Protocol.Messages where
 
+import           Control.TimeWarp.Logging (LoggerName)
 import qualified Data.Text.Buildable
-import           Formatting          (bprint, build, (%))
+import           Formatting               (bprint, build, (%))
 import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra
+
+class HasMessageShortcut msg where
+    messageShortcut :: LoggerName
 
 -- * Classic
 
@@ -20,6 +25,8 @@ newtype ProposalMsg = ProposalMsg Policy
 
 instance Buildable ProposalMsg where
     build (ProposalMsg p) = bprint ("Proposal message "%build) p
+instance HasMessageShortcut ProposalMsg where
+    messageShortcut = "prop"
 
 declareMessage ''ProposalMsg
 
@@ -29,6 +36,8 @@ data Phase1aMsg = Phase1aMsg BallotId
 
 instance Buildable Phase1aMsg where
     build (Phase1aMsg b) = bprint ("Phase 1a message "%build) b
+instance HasMessageShortcut Phase1aMsg where
+    messageShortcut = "1a"
 
 declareMessage ''Phase1aMsg
 
@@ -39,6 +48,8 @@ data Phase1bMsg = Phase1bMsg AcceptorId BallotId Configuration
 instance Buildable Phase1bMsg where
     build (Phase1bMsg a b c) =
         bprint ("Phase 1b message from "%build%" "%build%" "%build) a b c
+instance HasMessageShortcut Phase1bMsg where
+    messageShortcut = "1b"
 
 declareMessage ''Phase1bMsg
 
@@ -49,6 +60,8 @@ data Phase2aMsg = Phase2aMsg BallotId Configuration
 instance Buildable Phase2aMsg where
     build (Phase2aMsg b c) =
         bprint ("Phase 2a message "%build%" "%build) b c
+instance HasMessageShortcut Phase2aMsg where
+    messageShortcut = "2a"
 
 declareMessage ''Phase2aMsg
 
@@ -59,6 +72,8 @@ data Phase2bMsg = Phase2bMsg AcceptorId Configuration
 instance Buildable Phase2bMsg where
     build (Phase2bMsg a c) =
         bprint ("Phase 2b message from "%build%" "%build) a c
+instance HasMessageShortcut Phase2bMsg where
+    messageShortcut = "2b"
 
 declareMessage ''Phase2bMsg
 
@@ -69,6 +84,8 @@ newtype ProposalFastMsg = ProposalFastMsg Policy
 
 instance Buildable ProposalFastMsg where
     build (ProposalFastMsg p) = bprint ("Fast proposal message "%build) p
+instance HasMessageShortcut ProposalFastMsg where
+    messageShortcut = "fprop"
 
 declareMessage ''ProposalFastMsg
 
@@ -78,6 +95,8 @@ newtype InitFastBallotMsg = InitFastBallotMsg BallotId
 
 instance Buildable InitFastBallotMsg where
     build (InitFastBallotMsg b) = bprint (build%" initiation") b
+instance HasMessageShortcut InitFastBallotMsg where
+    messageShortcut = "fbal"
 
 declareMessage ''InitFastBallotMsg
 
@@ -88,6 +107,8 @@ data Phase2bFastMsg = Phase2bFastMsg BallotId AcceptorId Configuration
 instance Buildable Phase2bFastMsg where
     build (Phase2bFastMsg b a c) =
         bprint ("Phase 2b message at "%build%" from "%build%" "%build) b a c
+instance HasMessageShortcut Phase2bFastMsg where
+    messageShortcut = "f2b"
 
 declareMessage ''Phase2bFastMsg
 

@@ -14,13 +14,16 @@ import           Control.TimeWarp.Timed   (Microsecond, MonadTimed, for, fork_, 
                                            interval, ms, sec, till, virtualTime, wait,
                                            work)
 import           Data.Default             (Default (..))
-import           Formatting               (build, sformat, shown, (%))
+import           Formatting               (build, sformat, shown, stext, (%))
 import           Test.QuickCheck          (arbitrary)
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra
+import           Sdn.Extra                (Message, MonadLog, MonadReporting, coloredF,
+                                           gray, logError, logInfo, loggerNameT,
+                                           resetColoring, withColor)
 import           Sdn.Protocol.Context
+import           Sdn.Protocol.Messages
 import           Sdn.Protocol.Phases
 import           Sdn.Protocol.Processes
 import           Sdn.Protocol.Versions
@@ -77,23 +80,32 @@ newProcess process action = do
     stateBox <- liftIO $ newTVarIO (initProcessState @p @pv Proxy process)
     fork_ $
         flip runReaderT (ProcessContext stateBox) $
-        modifyLoggerName (<> processName process) $
+        modifyLoggerName (<> coloredProcessName process) $
         action
     return $ readTVar stateBox
 
 -- | Create single messages listener for server.
 listener
-    :: ( MonadCatch m
+    :: forall p msg m.
+       ( MonadCatch m
        , MonadLog m
        , MonadReporting m
+       , WithNamedLogger m
        , Message msg
        , Buildable msg
+       , HasMessageShortcut msg
+       , Process p
+       , HasContextOf p m
        )
     => (msg -> m ()) -> Method m
-listener endpoint = Method $ \msg -> do
-    logInfo $ sformat ("Incoming message: "%build) msg
+listener endpoint = Method . clarifyLoggerName $ \msg -> do
+    logInfo $ sformat (coloredF gray (stext%" "%build)) "<--" msg
     endpoint msg `catches` handlers
   where
+    loggerNameMod = (loggerNameT %~ withColor (processColor @p))
+                  . (<> messageShortcut @msg)
+                  . (loggerNameT %~ resetColoring)
+    clarifyLoggerName f (msg :: msg) = modifyLoggerName loggerNameMod $ f msg
     handlers =
         [ Handler $ logError . sformat (build @ProtocolError)
         , Handler $ logError . sformat ("Strange error: "%shown @SomeException)
@@ -181,15 +193,15 @@ launchClassicPaxos = launchPaxos
     { proposeAction = propose
     , startBallotAction = phase1a
     , leaderListeners =
-        [ listener rememberProposal
-        , listener phase2a
+        [ listener @Leader rememberProposal
+        , listener @Leader phase2a
         ]
     , acceptorListeners =
-        [ listener phase1b
-        , listener phase2b
+        [ listener @Acceptor phase1b
+        , listener @Acceptor phase2b
         ]
     , learnerListeners =
-        [ listener learn
+        [ listener @Learner learn
         ]
     }
 
@@ -200,19 +212,19 @@ launchFastPaxos topologySettings@TopologySettings{..} = launchPaxos
     { proposeAction = proposeFast
     , startBallotAction = initFastBallot topologyRecoveryDelay
     , leaderListeners =
-        [ listener rememberProposal
-        , listener phase2a
-        , listener detectConflicts
+        [ listener @Leader rememberProposal
+        , listener @Leader phase2a
+        , listener @Leader detectConflicts
         ]
     , acceptorListeners =
-        [ listener phase1b
-        , listener phase2b
-        , listener phase2bFast
-        , listener acceptorRememberFastProposal
+        [ listener @Acceptor phase1b
+        , listener @Acceptor phase2b
+        , listener @Acceptor phase2bFast
+        , listener @Acceptor acceptorRememberFastProposal
         ]
     , learnerListeners =
-        [ listener learn
-        , listener learnFast
+        [ listener @Learner learn
+        , listener @Learner learnFast
         ]
     }
     topologySettings

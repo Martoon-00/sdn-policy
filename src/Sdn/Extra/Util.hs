@@ -19,10 +19,11 @@ import           Data.Coerce            (coerce)
 import           Data.MessagePack       (MessagePack)
 import           Data.Text.Lazy.Builder (Builder)
 import           Formatting             (Format, bprint, formatToString, later, shown,
-                                         (%))
+                                         string, (%))
 import           Formatting.Internal    (Format (..))
 import qualified GHC.Exts               as Exts
 import qualified Language.Haskell.TH    as TH
+import qualified System.Console.ANSI    as ANSI
 import           Test.QuickCheck        (Gen, suchThat)
 import           Universum
 import           Unsafe                 (unsafeFromJust)
@@ -97,3 +98,16 @@ as = iso coerce coerce
 -- | Add space at right if formatter returns non-empty text.
 rightSpaced :: Format a b -> Format a b
 rightSpaced = mapfText $ \x -> if x == "" then "" else x <> " "
+
+-- | Colorizing formatter
+coloredF :: (ANSI.ColorIntensity, ANSI.Color) -> Format a b -> Format a b
+coloredF (int, color) = mapfText colorize
+  where
+    colorize text = mconcat
+        [ bprint string $ ANSI.setSGRCode [ANSI.SetColor ANSI.Foreground int color]
+        , text
+        , bprint string $ ANSI.setSGRCode [ANSI.Reset]
+        ]
+
+gray :: (ANSI.ColorIntensity, ANSI.Color)
+gray = (ANSI.Dull, ANSI.White)

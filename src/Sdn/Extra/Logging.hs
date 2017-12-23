@@ -12,6 +12,7 @@ module Sdn.Extra.Logging
     ( MonadLog
     , loggerNameT
     , withColor
+    , resetColoring
     , setDropLoggerName
     , logInfo
     , logError
@@ -34,46 +35,46 @@ import           Control.TimeWarp.Logging       (LoggerName (..), LoggerNameBox 
                                                  WithNamedLogger (..))
 import           Control.TimeWarp.Rpc           (MonadRpc)
 import           Control.TimeWarp.Timed         (Microsecond, MonadTimed (..), ThreadId)
+import qualified Data.Text                      as T
 import           Data.Time.Units                (toMicroseconds)
-import           Formatting                     (left, sformat, (%))
+import           Formatting                     (build, left, sformat, stext, (%))
 import           GHC.IO.Unsafe                  (unsafePerformIO)
 import qualified System.Console.ANSI            as ANSI
 import           Universum                      hiding (pass)
 
+import           Sdn.Extra.Util                 (coloredF, gray)
 
 -- * Util
 
 loggerNameT :: Iso' LoggerName Text
 loggerNameT = iso pretty (fromString . toString)
 
-withColor :: ANSI.ColorIntensity -> ANSI.Color -> Text -> Text
-withColor intensity color text =
+withColor :: (ANSI.ColorIntensity, ANSI.Color) -> Text -> Text
+withColor (intensity, color) text =
     mconcat
     [ toText $ ANSI.setSGRCode [ANSI.SetColor ANSI.Foreground intensity color]
     , text
     , toText $ ANSI.setSGRCode [ANSI.Reset]
     ]
 
+resetColoring :: Text -> Text
+resetColoring text =
+    let ts = T.splitOn "\ESC" text
+        removeColoring = T.drop 1 . T.dropWhile (/= 'm')
+    in  foldMap removeColoring ts
+
 data LogEntry = LogEntry LoggerName Microsecond Text
     deriving (Show)
 
 loggingFormatter :: LogEntry -> Text
 loggingFormatter (LogEntry name (toMicroseconds -> time) msg) =
-    mconcat
-    [ inGray "["
-    , pretty name
-    , inGray "]"
-    , " "
-    , inGray $ mconcat
-        [ "["
-        , timeText
-        , "]"
-        ]
-    , " "
-    , msg
-    ]
+    sformat (coloredF gray ("["%build%"]") % " "
+            %coloredF gray ("["%build%"]") % " "
+            %stext)
+        name
+        timeText
+        msg
   where
-    inGray = withColor ANSI.Dull ANSI.White
     timeText =
         let seconds = time `div` 1000000
             centiseconds = time `div` 10000 `mod` 100
@@ -183,7 +184,7 @@ instance Monad m => MonadReporting (PureLog m) where
 
 logError :: (MonadLog m, MonadReporting m) => Text -> m ()
 logError msg = do
-    logInfo $ withColor ANSI.Dull ANSI.Red "Error: " <> msg
+    logInfo $ withColor (ANSI.Dull, ANSI.Red) "Error: " <> msg
     reportError msg
 
 -- * Pure logging & error reporting
