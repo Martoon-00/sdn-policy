@@ -35,6 +35,7 @@ import           Control.TimeWarp.Logging       (LoggerName (..), LoggerNameBox 
                                                  WithNamedLogger (..))
 import           Control.TimeWarp.Rpc           (MonadRpc)
 import           Control.TimeWarp.Timed         (Microsecond, MonadTimed (..), ThreadId)
+import           Data.List                      (isInfixOf)
 import qualified Data.Text                      as T
 import           Data.Time.Units                (toMicroseconds)
 import           Formatting                     (build, left, sformat, stext, (%))
@@ -59,9 +60,9 @@ withColor (intensity, color) text =
 
 resetColoring :: Text -> Text
 resetColoring text =
-    let ts = T.splitOn "\ESC" text
+    let t:ts = T.splitOn "\ESC" text
         removeColoring = T.drop 1 . T.dropWhile (/= 'm')
-    in  foldMap removeColoring ts
+    in  mconcat $ t : map removeColoring ts
 
 data LogEntry = LogEntry LoggerName Microsecond Text
     deriving (Show)
@@ -81,12 +82,12 @@ loggingFormatter (LogEntry name (toMicroseconds -> time) msg) =
         in sformat (left 1 '0'%":"%left 2 '0') seconds centiseconds
 
 dropName :: LoggerName
-dropName = "drop"
+dropName = "*super-special-drop-name*"
 
 isDropName :: LoggerName -> Bool
 isDropName (LoggerName name) =
     let LoggerName dropName' = dropName
-    in  dropName' `isPrefixOf` name
+    in  (dropName' <> ".") `isInfixOf` name
 
 setDropLoggerName :: WithNamedLogger m => m a -> m a
 setDropLoggerName = modifyLoggerName (dropName <> )

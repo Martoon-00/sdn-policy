@@ -88,8 +88,17 @@ spec = do
                 }
             }
 
-        prop "temporaly no quorum of acceptors is accessible" $
-            pending
+        -- prop "temporaly no quorum of acceptors is accessible" $
+        --     testLaunch @Classic def
+        --     { testDelays =
+        --         D.forAddressesList (processAddress . Acceptor <$> [1, 2]) $
+        --             D.temporal (interval 15 sec) $
+        --             D.blackout
+        --     , testSettings = def
+        --         { topologyLifetime = interval 30 sec
+        --         , topologyBallotsSchedule = S.periodic (interval 10 sec)
+        --         }
+        --     }
 
         prop "highly interleaving ballots" $
             -- this may be problematic with current implementation
