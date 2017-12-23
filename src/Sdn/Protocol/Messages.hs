@@ -26,7 +26,7 @@ newtype ProposalMsg = ProposalMsg Policy
 instance Buildable ProposalMsg where
     build (ProposalMsg p) = bprint ("Proposal message "%build) p
 instance HasMessageShortcut ProposalMsg where
-    messageShortcut = "prop"
+    messageShortcut = "1a"
 
 declareMessage ''ProposalMsg
 
@@ -37,7 +37,7 @@ data Phase1aMsg = Phase1aMsg BallotId
 instance Buildable Phase1aMsg where
     build (Phase1aMsg b) = bprint ("Phase 1a message "%build) b
 instance HasMessageShortcut Phase1aMsg where
-    messageShortcut = "1a"
+    messageShortcut = "1b"
 
 declareMessage ''Phase1aMsg
 
@@ -49,7 +49,7 @@ instance Buildable Phase1bMsg where
     build (Phase1bMsg a b c) =
         bprint ("Phase 1b message from "%build%" "%build%" "%build) a b c
 instance HasMessageShortcut Phase1bMsg where
-    messageShortcut = "1b"
+    messageShortcut = "2a"
 
 declareMessage ''Phase1bMsg
 
@@ -61,7 +61,7 @@ instance Buildable Phase2aMsg where
     build (Phase2aMsg b c) =
         bprint ("Phase 2a message "%build%" "%build) b c
 instance HasMessageShortcut Phase2aMsg where
-    messageShortcut = "2a"
+    messageShortcut = "2b"
 
 declareMessage ''Phase2aMsg
 
@@ -73,7 +73,7 @@ instance Buildable Phase2bMsg where
     build (Phase2bMsg a c) =
         bprint ("Phase 2b message from "%build%" "%build) a c
 instance HasMessageShortcut Phase2bMsg where
-    messageShortcut = "2b"
+    messageShortcut = mempty
 
 declareMessage ''Phase2bMsg
 
@@ -85,7 +85,7 @@ newtype ProposalFastMsg = ProposalFastMsg Policy
 instance Buildable ProposalFastMsg where
     build (ProposalFastMsg p) = bprint ("Fast proposal message "%build) p
 instance HasMessageShortcut ProposalFastMsg where
-    messageShortcut = "fprop"
+    messageShortcut = "rem"
 
 declareMessage ''ProposalFastMsg
 
@@ -96,7 +96,7 @@ newtype InitFastBallotMsg = InitFastBallotMsg BallotId
 instance Buildable InitFastBallotMsg where
     build (InitFastBallotMsg b) = bprint (build%" initiation") b
 instance HasMessageShortcut InitFastBallotMsg where
-    messageShortcut = "fbal"
+    messageShortcut = "rem" <> "f"
 
 declareMessage ''InitFastBallotMsg
 
@@ -108,7 +108,7 @@ instance Buildable Phase2bFastMsg where
     build (Phase2bFastMsg b a c) =
         bprint ("Phase 2b message at "%build%" from "%build%" "%build) b a c
 instance HasMessageShortcut Phase2bFastMsg where
-    messageShortcut = "f2b"
+    messageShortcut = "2b" <> "f"
 
 declareMessage ''Phase2bFastMsg
 

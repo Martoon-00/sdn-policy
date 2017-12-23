@@ -11,7 +11,7 @@ packages:
     - msgpack-rpc
 - location:
     git: https://github.com/serokell/time-warp.git
-    commit: b3ab04c1f42d6069caf9a6776e4e2c1ae666c065
+    commit: ca2bf62ee213be9868b6820bf5ea147e4fcc30c0
   extra-dep: true
 
 extra-deps:
