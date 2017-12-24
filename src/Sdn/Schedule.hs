@@ -147,13 +147,15 @@ periodicCounting
     :: MonadSchedule m
     => Maybe Word -> Microsecond -> Schedule m ()
 periodicCounting mnum period =
-    checkingCont . Schedule $ \ScheduleContext{..} ->
+    Schedule $ \ScheduleContext{..} ->
         let loop (Just 0) _ = return ()
             loop mrem gen = do
                 let mrem' = fmap pred mrem
-                scPush ()
-                wait (for period)
-                loop mrem' gen
+                WhetherContinue further <- readTVarIO scCont
+                when further $ do
+                    scPush ()
+                    wait (for period)
+                    loop mrem' gen
         in  fork_ $ loop mnum scGen
 
 -- | Execute with given period indefinetely.

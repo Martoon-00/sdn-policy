@@ -82,7 +82,7 @@ loggingFormatter (LogEntry name (toMicroseconds -> time) msg) =
         in sformat (left 1 '0'%":"%left 2 '0') seconds centiseconds
 
 dropName :: LoggerName
-dropName = "*super-special-drop-name*"
+dropName = "*no-logging*"
 
 isDropName :: LoggerName -> Bool
 isDropName (LoggerName name) =

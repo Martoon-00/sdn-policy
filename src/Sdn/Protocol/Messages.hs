@@ -85,7 +85,7 @@ newtype ProposalFastMsg = ProposalFastMsg Policy
 instance Buildable ProposalFastMsg where
     build (ProposalFastMsg p) = bprint ("Fast proposal message "%build) p
 instance HasMessageShortcut ProposalFastMsg where
-    messageShortcut = "rem"
+    messageShortcut = "rem" <> "f"
 
 declareMessage ''ProposalFastMsg
 
@@ -96,7 +96,7 @@ newtype InitFastBallotMsg = InitFastBallotMsg BallotId
 instance Buildable InitFastBallotMsg where
     build (InitFastBallotMsg b) = bprint (build%" initiation") b
 instance HasMessageShortcut InitFastBallotMsg where
-    messageShortcut = "rem" <> "f"
+    messageShortcut = "2b" <> "f"
 
 declareMessage ''InitFastBallotMsg
 
@@ -108,7 +108,7 @@ instance Buildable Phase2bFastMsg where
     build (Phase2bFastMsg b a c) =
         bprint ("Phase 2b message at "%build%" from "%build%" "%build) b a c
 instance HasMessageShortcut Phase2bFastMsg where
-    messageShortcut = "2b" <> "f"
+    messageShortcut = mempty
 
 declareMessage ''Phase2bFastMsg
 

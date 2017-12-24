@@ -34,18 +34,25 @@ data TestLaunchParams pv = TestLaunchParams
     , testProperties :: forall m. MonadIO m => [ProtocolProperty pv m]
     }
 
+defTestLaunchParams :: (forall m. TopologyLauncher pv m) -> TestLaunchParams pv
+defTestLaunchParams launcher =
+    TestLaunchParams
+    { testLauncher = launcher
+        -- ^ use Classic Paxos protocol
+    , testSettings = def
+        -- ^ default topology settings allow to execute
+        -- 1 ballot with 1 policy proposed
+    , testDelays = D.steady
+        -- ^ no message delays
+    , testProperties = basicProperties
+        -- ^ set of reasonable properties for any good consensus launch
+    }
+
 instance Default (TestLaunchParams Classic) where
-    def = TestLaunchParams
-        { testLauncher = launchClassicPaxos
-          -- ^ use Classic Paxos protocol
-        , testSettings = def
-          -- ^ default topology settings allow to execute
-          -- 1 ballot with 1 policy proposed
-        , testDelays = D.steady
-          -- ^ no message delays
-        , testProperties = basicProperties
-          -- ^ set of reasonable properties for any good consensus launch
-        }
+    def = defTestLaunchParams launchClassicPaxos
+
+instance Default (TestLaunchParams Fast) where
+    def = defTestLaunchParams launchFastPaxos
 
 testLaunch
     :: forall pv.

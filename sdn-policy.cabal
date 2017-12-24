@@ -120,7 +120,7 @@ test-suite sdn-policy-test
                        Test.Sdn.Basic.CStructSpec
                        Test.Sdn.Basic.QuorumSpec
 
-                       Test.Sdn.Overall.ClassicSpec
+                       Test.Sdn.Overall.AllSpec
                        Test.Sdn.Overall.Launcher
                        Test.Sdn.Overall.Properties
                        Test.Sdn.Overall.Properties.Protocol

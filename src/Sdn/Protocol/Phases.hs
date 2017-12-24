@@ -74,8 +74,9 @@ acceptorRememberFastProposal
     => ProposalFastMsg -> m ()
 acceptorRememberFastProposal (ProposalFastMsg policy) =
     withProcessState $ do
-        bal <- use $ acceptorBallotId . as
-        acceptorFastPendingPolicies . at (bal + 1) . non mempty <>= one policy
+        bal <- fmap (+1) . use $ acceptorLastKnownBallotId . as
+        logInfo $ sformat (build%" to apply at "%build) policy bal
+        acceptorFastPendingPolicies . at bal . non mempty <>= one policy
 
 -- ** Phase 1
 
@@ -100,10 +101,10 @@ phase1b (Phase1aMsg bal) = do
     msg <- withProcessState $ do
         -- promise not to accept messages of lesser ballot numbers
         -- make stored ballot id not lesser than @bal@
-        acceptorBallotId . as %= max bal
+        acceptorLastKnownBallotId . as %= max bal
         Phase1bMsg
             <$> use acceptorId
-            <*> use (acceptorBallotId . as)
+            <*> use (acceptorLastKnownBallotId . as)
             <*> use acceptorCStruct
 
     submit (processAddress Leader) msg
@@ -158,7 +159,7 @@ phase2b
     => Phase2aMsg -> m ()
 phase2b (Phase2aMsg bal cstruct) = do
     maybeMsg <- withProcessState $ do
-        localBallotId <- use $ acceptorBallotId . as
+        localBallotId <- use $ acceptorLastKnownBallotId . as
         localCstruct <- use acceptorCStruct
 
         -- check whether did we promise to ignore this message
@@ -166,7 +167,7 @@ phase2b (Phase2aMsg bal cstruct) = do
             || localBallotId < bal
         then do
            -- if ok, remember received info
-           acceptorBallotId . as .= bal
+           acceptorLastKnownBallotId . as .= bal
            acceptorCStruct .= cstruct
 
            -- form message
@@ -184,11 +185,13 @@ phase2bFast
     => InitFastBallotMsg -> m ()
 phase2bFast (InitFastBallotMsg bal) = do
     msg <- withProcessState $ do
+        acceptorLastKnownBallotId . as %= max bal
         -- TODO: operating with non-fast cstruct here is incorrect
         cstruct <- use acceptorCStruct
         policiesToApply <- use $ acceptorFastPendingPolicies . at bal . non mempty
-        logInfo $ sformat ("List of fast pending policies:\n    "%listF ", " build)
-                  policiesToApply
+        logInfo $ sformat ("List of fast pending policies at "%build
+                          %":\n    "%listF ", " build)
+                  bal policiesToApply
         let cstruct' = foldr acceptOrRejectCommand cstruct policiesToApply
 
         accId <- use acceptorId
@@ -204,8 +207,10 @@ updateLearnedValue newLearned = do
     prevLearned <- learnerLearned <<.= newLearned
 
     -- sanity check
-    unless (newLearned `extends` prevLearned) $
-        errorBadLearnedCStruct prevLearned newLearned
+    unless (newLearned `extends` prevLearned) $ do
+        if prevLearned `extends` newLearned
+        then logInfo "Currently learnt cstruct extends new one, ignoring"
+        else errorBadLearnedCStruct prevLearned newLearned
 
     -- report if the interesting happened
     when (newLearned /= prevLearned) $

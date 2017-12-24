@@ -146,7 +146,7 @@ instance Default (Tagged pv LeaderState) where
 data AcceptorState = AcceptorState
     { _acceptorId                  :: AcceptorId
       -- ^ Identificator of this acceptor, should be read-only
-    , _acceptorBallotId            :: BallotId
+    , _acceptorLastKnownBallotId   :: BallotId
       -- ^ Last heard ballotId from leader
     , _acceptorCStruct             :: Configuration
       -- ^ Gathered CStruct so far
@@ -163,7 +163,7 @@ instance Buildable AcceptorState where
              "\n    last known ballot id: "%build%
              "\n    cstruct: "%build)
             _acceptorId
-            _acceptorBallotId
+            _acceptorLastKnownBallotId
             _acceptorCStruct
 
 -- | Initial state of acceptor.
