@@ -16,16 +16,16 @@ type PropertyOutcome = Either Text ()
 -- | First monad is expected to be wrapped out on protocol start,
 -- inner monad to be wrapped out after protocol termination.
 type ProtocolProperty pv m =
-    STM AllStates -> m (m (AllStates, PropertyOutcome))
+    STM (AllStates pv) -> m (m (AllStates pv, PropertyOutcome))
 
-type PropertyChecker = AllStates -> Either Text ()
+type PropertyChecker pv = AllStates pv -> Either Text ()
 
 -- | Combines properties into large one.
 protocolProperties
     :: MonadIO m
     => TopologyMonitor pv m
     -> [ProtocolProperty pv m]
-    -> m (Maybe (AllStates, Text))
+    -> m (Maybe (AllStates pv, Text))
 protocolProperties monitor mkProperties = do
     let propertiesMM = sequence mkProperties (readAllStates monitor)
     propertiesM <- sequence propertiesMM
@@ -48,7 +48,7 @@ justFail _ = pure . pure . (error "Failed!", ) $ Left "¯\\_(ツ)_/¯"
 -- | Property checked when protocol is claimed to be completed.
 eventually
     :: MonadIO m
-    => PropertyChecker -> ProtocolProperty pv m
+    => PropertyChecker pv -> ProtocolProperty pv m
 eventually checker readState = return $ do
     allStates <- atomically readState
     return (allStates, checker allStates)
@@ -56,7 +56,7 @@ eventually checker readState = return $ do
 -- | Property checked every time state of some process changes.
 invariant
     :: MonadIO m
-    => PropertyChecker -> ProtocolProperty pv m
+    => PropertyChecker pv -> ProtocolProperty pv m
 invariant checker readState = do
     finished <- liftIO $ newTVarIO False
     checkerThread <-

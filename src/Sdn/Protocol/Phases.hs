@@ -18,6 +18,7 @@ import           Sdn.Extra              (MonadLog, MonadReporting, as, listF, lo
 import           Sdn.Protocol.Context
 import           Sdn.Protocol.Messages
 import           Sdn.Protocol.Processes
+import           Sdn.Protocol.Versions
 
 -- * Commons
 
@@ -36,7 +37,7 @@ type MonadPhase m =
 -- ** Proposal
 
 propose
-    :: (MonadPhase m, HasContextOf Proposer m)
+    :: (MonadPhase m, HasContextOf Proposer Classic m)
     => Policy -> m ()
 propose policy = do
     logInfo $ sformat ("Proposing policy: "%build) policy
@@ -47,7 +48,7 @@ propose policy = do
     broadcastTo (processAddresses Leader) (ProposalMsg policy)
 
 proposeFast
-    :: (MonadPhase m, HasContextOf Proposer m)
+    :: (MonadPhase m, HasContextOf Proposer Fast m)
     => Policy -> m ()
 proposeFast policy = do
     logInfo $ sformat ("Proposing policy (fast): "%build) policy
@@ -59,7 +60,7 @@ proposeFast policy = do
 -- ** Remembering proposals
 
 rememberProposal
-    :: (MonadPhase m, HasContextOf Leader m)
+    :: (MonadPhase m, HasContextOf Leader pv m)
     => ProposalMsg -> m ()
 rememberProposal (ProposalMsg policy) = do
     -- atomically modify process'es state
@@ -71,7 +72,7 @@ rememberProposal (ProposalMsg policy) = do
         leaderPendingPolicies . forClassic . at (bal + 1) . non mempty %= (policy :)
 
 acceptorRememberFastProposal
-    :: (MonadPhase m, HasContextOf Acceptor m)
+    :: (MonadPhase m, HasContextOf Acceptor Fast m)
     => ProposalFastMsg -> m ()
 acceptorRememberFastProposal (ProposalFastMsg policy) =
     withProcessState $ do
@@ -82,7 +83,8 @@ acceptorRememberFastProposal (ProposalFastMsg policy) =
 -- ** Phase 1
 
 phase1a
-    :: (MonadPhase m, HasContextOf Leader m)
+    :: forall pv m.
+       (MonadPhase m, HasContextOf Leader pv m)
     => m ()
 phase1a = do
     logInfo "Starting new ballot"
@@ -96,7 +98,8 @@ phase1a = do
     broadcastTo (processesAddresses Acceptor) msg
 
 phase1b
-    :: (MonadPhase m, HasContextOf Acceptor m)
+    :: forall pv m.
+       (MonadPhase m, HasContextOf Acceptor pv m)
     => Phase1aMsg -> m ()
 phase1b (Phase1aMsg bal) = do
     msg <- withProcessState $ do
@@ -111,7 +114,7 @@ phase1b (Phase1aMsg bal) = do
     submit (processAddress Leader) msg
 
 initFastBallot
-    :: (MonadPhase m, HasContextOf Leader m)
+    :: (MonadPhase m, HasContextOf Leader Fast m)
     => Microsecond -> m ()
 initFastBallot recoveryDelay = do
     logInfo "Starting new fast ballot"
@@ -128,7 +131,8 @@ initFastBallot recoveryDelay = do
 -- ** Phase 2
 
 phase2a
-    :: (MonadPhase m, HasContextOf Leader m)
+    :: forall pv m.
+       (MonadPhase m, HasContextOf Leader pv m)
     => Phase1bMsg -> m ()
 phase2a (Phase1bMsg accId bal cstruct) = do
     maybeMsg <- withProcessState $ do
@@ -156,7 +160,7 @@ phase2a (Phase1bMsg accId bal cstruct) = do
         broadcastTo (processesAddresses Acceptor)
 
 phase2b
-    :: (MonadPhase m, HasContextOf Acceptor m)
+    :: (MonadPhase m, HasContextOf Acceptor pv m)
     => Phase2aMsg -> m ()
 phase2b (Phase2aMsg bal cstruct) = do
     maybeMsg <- withProcessState $ do
@@ -182,7 +186,7 @@ phase2b (Phase2aMsg bal cstruct) = do
         broadcastTo (processesAddresses Learner)
 
 phase2bFast
-    :: (MonadPhase m, HasContextOf Acceptor m)
+    :: (MonadPhase m, HasContextOf Acceptor Fast m)
     => InitFastBallotMsg -> m ()
 phase2bFast (InitFastBallotMsg bal) = do
     msg <- withProcessState $ do
@@ -203,7 +207,7 @@ phase2bFast (InitFastBallotMsg bal) = do
 -- ** Learning
 
 -- | Update learned value with all checks and cautions.
-updateLearnedValue :: Configuration -> TransactionM (ProcessState Learner) ()
+updateLearnedValue :: Configuration -> TransactionM (ProcessState Learner pv) ()
 updateLearnedValue newLearned = do
     prevLearned <- use learnerLearned
 
@@ -229,7 +233,7 @@ updateLearnedValue newLearned = do
         sformat ("New learned cstruct: "%build) new
 
 learn
-    :: (MonadPhase m, HasContextOf Learner m)
+    :: (MonadPhase m, HasContextOf Learner pv m)
     => Phase2bMsg -> m ()
 learn (Phase2bMsg accId cstruct) = do
     withProcessState $ do
@@ -251,7 +255,7 @@ learn (Phase2bMsg accId cstruct) = do
             >>= updateLearnedValue
 
 learnFast
-    :: (MonadPhase m, HasContextOf Learner m)
+    :: (MonadPhase m, HasContextOf Learner pv m)
     => Phase2bFastMsg -> m ()
 learnFast (Phase2bFastMsg _ accId cstruct) = do
     withProcessState $ do
@@ -271,14 +275,14 @@ learnFast (Phase2bFastMsg _ accId cstruct) = do
 -- ** Recovery detection and initialition
 
 delegateToRecovery
-    :: (MonadPhase m, HasContextOf Leader m)
+    :: (MonadPhase m, HasContextOf Leader Fast m)
     => AcceptorId -> BallotId -> Configuration -> m ()
 delegateToRecovery accId bal cstruct = do
     let recoveryBallotId = bal
     phase2a (Phase1bMsg accId recoveryBallotId cstruct)
 
 checkRecoveryNecessity
-    :: (MonadPhase m, HasContextOf Leader m)
+    :: (MonadPhase m, HasContextOf Leader Fast m)
     => BallotId -> m ()
 checkRecoveryNecessity bal = do
     (needRecovery, unconfirmedPolicies) <- withProcessState $ do
@@ -311,7 +315,7 @@ checkRecoveryNecessity bal = do
              delegateToRecovery accId bal cstruct
 
 detectConflicts
-    :: (MonadPhase m, HasContextOf Leader m)
+    :: (MonadPhase m, HasContextOf Leader Fast m)
     => Phase2bFastMsg -> m ()
 detectConflicts (Phase2bFastMsg bal accId cstruct) = do
     newVotes <- withProcessState $ do

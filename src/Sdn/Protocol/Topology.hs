@@ -58,15 +58,15 @@ data TopologyMonitor pv m = TopologyMonitor
     { -- | Returns when all active processes in the topology finish
       awaitTermination :: m ()
       -- | Fetch states of all processes in topology
-    , readAllStates    :: STM AllStates
+    , readAllStates    :: STM (AllStates pv)
     }
 
 -- | Monad in which process (and phases) are supposed to work.
-type ProcessM p m = ReaderT (ProcessContext $ ProcessState p) m
+type ProcessM p pv m = ReaderT (ProcessContext $ ProcessState p pv) m
 
 -- | Create single newProcess.
 newProcess
-    :: forall pv p m.
+    :: forall p pv m.
        ( MonadIO m
        , MonadTimed m
        , WithNamedLogger m
@@ -74,10 +74,10 @@ newProcess
        , ProtocolVersion pv
        )
     => p
-    -> ProcessM p m ()
-    -> m (STM (ProcessState p))
+    -> ProcessM p pv m ()
+    -> m (STM (ProcessState p pv))
 newProcess process action = do
-    stateBox <- liftIO $ newTVarIO (initProcessState @p @pv Proxy process)
+    stateBox <- liftIO $ newTVarIO (initProcessState process)
     fork_ $
         flip runReaderT (ProcessContext stateBox) $
         modifyLoggerName (<> coloredProcessName process) $
@@ -86,7 +86,7 @@ newProcess process action = do
 
 -- | Create single messages listener for server.
 listener
-    :: forall p msg m.
+    :: forall p pv msg m.
        ( MonadCatch m
        , MonadLog m
        , MonadReporting m
@@ -95,7 +95,7 @@ listener
        , Buildable msg
        , HasMessageShortcut msg
        , Process p
-       , HasContextOf p m
+       , HasContextOf p pv m
        )
     => (msg -> m ()) -> Method m
 listener endpoint = Method . clarifyLoggerName $ \msg -> do
@@ -125,29 +125,26 @@ type TopologyLauncher pv m =
     MonadTopology m => TopologySettings -> m (TopologyMonitor pv m)
 
 data TopologyActions pv m = TopologyActions
-    { proposeAction     :: HasMembers => Policy -> ProcessM Proposer m ()
-    , startBallotAction :: HasMembers => ProcessM Leader m ()
-    , leaderListeners   :: HasMembers => [Method $ ProcessM Leader m]
-    , acceptorListeners :: HasMembers => [Method $ ProcessM Acceptor m]
-    , learnerListeners  :: HasMembers => [Method $ ProcessM Learner m]
+    { proposeAction     :: HasMembers => Policy -> ProcessM Proposer pv m ()
+    , startBallotAction :: HasMembers => ProcessM Leader pv m ()
+    , leaderListeners   :: HasMembers => [Method $ ProcessM Leader pv m]
+    , acceptorListeners :: HasMembers => [Method $ ProcessM Acceptor pv m]
+    , learnerListeners  :: HasMembers => [Method $ ProcessM Learner pv m]
     }
 
 -- | Launch Paxos algorithm.
-launchPaxos
-    :: forall pv m.
-       ProtocolVersion pv
-    => TopologyActions pv m -> TopologyLauncher pv m
+launchPaxos :: ProtocolVersion pv => TopologyActions pv m -> TopologyLauncher pv m
 launchPaxos TopologyActions{..} TopologySettings{..} = withMembers topologyMembers $ do
     let (proposalSeed, ballotSeed) = splitGenSeed topologySeed
 
-    proposerState <- newProcess @pv Proposer . work (for topologyLifetime) $ do
+    proposerState <- newProcess Proposer . work (for topologyLifetime) $ do
         -- wait for servers to bootstrap
         runSchedule_ proposalSeed $ do
             delayed (interval 10 ms)
             policy <- limited topologyLifetime topologyProposalSchedule
             lift $ proposeAction policy
 
-    leaderState <- newProcess @pv Leader . work (for topologyLifetime) $ do
+    leaderState <- newProcess Leader . work (for topologyLifetime) $ do
         -- wait for first proposal before start
         runSchedule_ ballotSeed $ do
             delayed (interval 20 ms)
@@ -177,11 +174,11 @@ launchPaxos TopologyActions{..} TopologySettings{..} = withMembers topologyMembe
     startListeningProcessesOf
         :: (HasMembers, MonadTopology m, Process p, Integral i, ProtocolVersion pv)
         => (i -> p)
-        -> [Method $ ProcessM p m]
-        -> m [STM $ ProcessState p]
+        -> [Method $ ProcessM p pv m]
+        -> m [STM $ ProcessState p pv]
     startListeningProcessesOf processType listeners =
         forM (processesOf processType) $
-            \process -> newProcess @pv process . work (for topologyLifetime) $ do
+            \process -> newProcess process . work (for topologyLifetime) $ do
                 serve (processPort process) listeners
 
 {-# NOINLINE launchPaxos #-}

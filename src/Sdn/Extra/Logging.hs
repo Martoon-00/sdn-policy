@@ -79,7 +79,7 @@ loggingFormatter (LogEntry name (toMicroseconds -> time) msg) =
     timeText =
         let seconds = time `div` 1000000
             centiseconds = time `div` 10000 `mod` 100
-        in sformat (left 1 '0'%":"%left 2 '0') seconds centiseconds
+        in sformat (left 3 '0'%":"%left 2 '0') seconds centiseconds
 
 dropName :: LoggerName
 dropName = "*no-logging*"
