@@ -77,8 +77,8 @@ acceptanceType = \case
 -- | Command rejection doesn't conflict with any other command.
 instance (Conflict a a, Eq a) => Conflict (Acceptance a) (Acceptance a) where
     Accepted cmd1 `conflicts` Accepted cmd2 = conflicts cmd1 cmd2
-    Accepted cmd1 `conflicts` Rejected cmd2 = cmd1 /= cmd2
-    Rejected cmd1 `conflicts` Accepted cmd2 = cmd1 /= cmd2
+    Accepted cmd1 `conflicts` Rejected cmd2 = cmd1 == cmd2
+    Rejected cmd1 `conflicts` Accepted cmd2 = cmd1 == cmd2
     Rejected _ `conflicts` Rejected _ = False
 
 instance Buildable p => Buildable (Acceptance p) where

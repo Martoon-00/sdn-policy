@@ -108,7 +108,7 @@ instance Buildable Phase2bFastMsg where
     build (Phase2bFastMsg b a c) =
         bprint ("Phase 2b message at "%build%" from "%build%" "%build) b a c
 instance HasMessageShortcut Phase2bFastMsg where
-    messageShortcut = mempty
+    messageShortcut = "f"
 
 declareMessage ''Phase2bFastMsg
 

@@ -6,11 +6,13 @@ module Test.Sdn.Overall.Properties.Protocol where
 
 import           Control.Lens                     (Prism', has)
 import           Control.Monad.Error.Class        (throwError)
+import qualified Data.Map                         as M
 import qualified Data.Set                         as S
-import           Formatting                       (build, sformat, (%))
+import           Formatting                       (build, sformat, text, (%))
 import           Universum
 
 import           Sdn.Base
+import           Sdn.Extra                        (listF)
 import           Sdn.Protocol
 import           Test.Sdn.Overall.Properties.Util
 
@@ -66,6 +68,17 @@ numberOfLearnedPolicies predicate cmp AllStates{..} = do
         throwError $
         sformat ("Unexpected number of learned policies for learner "%build
                 %", but "%build%" are present:"%build) li (length l) l
+
+recoveryWasUsed :: Bool -> PropertyChecker
+recoveryWasUsed used AllStates{..} =
+    let recoveries = _leaderRecoveryUsed leaderState
+    in  unless (null recoveries /= used) $
+            failProp recoveries
+  where
+    failProp recoveries =
+        throwError $
+        sformat ("Got recoveries at "%listF ", " build%", despite they were "%text%"expected")
+            (M.keys recoveries) (if used then "" else "un")
 
 
 -- * Properties groups

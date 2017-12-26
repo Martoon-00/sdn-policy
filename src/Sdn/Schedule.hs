@@ -33,6 +33,8 @@ import           Test.QuickCheck.Gen    (Gen, unGen)
 import           Test.QuickCheck.Random (mkQCGen)
 import           Universum
 
+import           Sdn.Extra.Util         (modifyTVarS)
+
 -- | Whether executing job should be continued.
 newtype WhetherContinue = WhetherContinue Bool
 
@@ -101,17 +103,19 @@ instance Functor (Schedule m) where
     fmap f (Schedule s) = Schedule $ \ctx ->
         s ctx{ scPush = scPush ctx . f }
 
-instance Applicative (Schedule m) where
+instance MonadIO m => Applicative (Schedule m) where
     pure = return
     (<*>) = ap
 
-instance Monad (Schedule m) where
+instance MonadIO m => Monad (Schedule m) where
     return = generate . pure
-    Schedule s1 >>= f = Schedule $ \ctx ->
+    Schedule s1 >>= f = Schedule $ \ctx -> do
         let (gen1, gen2) = split (scGen ctx)
-            push p = case f p of
-                     Schedule s2 -> s2 ctx{ scGen = gen1 }
-        in  s1 ctx{ scPush = push, scGen = gen2 }
+        genBox <- newTVarIO gen1
+        let push p = do
+               gen' <- atomically . modifyTVarS genBox $ state split
+               case f p of Schedule s2 -> s2 ctx{ scGen = gen' }
+        s1 ctx{ scPush = push, scGen = gen2 }
 
 instance MonadIO m => MonadIO (Schedule m) where
     liftIO = lift . liftIO
@@ -131,7 +135,7 @@ generate generator = do
 
 -- | Just fires once, for jobs without any data.
 -- Synonym to @return ()@.
-execute :: Schedule m ()
+execute :: MonadIO m => Schedule m ()
 execute = pass
 
 checkCont :: MonadSchedule m => Schedule m ()
@@ -150,9 +154,9 @@ periodicCounting mnum period =
     Schedule $ \ScheduleContext{..} ->
         let loop (Just 0) _ = return ()
             loop mrem gen = do
-                let mrem' = fmap pred mrem
                 WhetherContinue further <- readTVarIO scCont
                 when further $ do
+                    let mrem' = fmap pred mrem
                     scPush ()
                     wait (for period)
                     loop mrem' gen

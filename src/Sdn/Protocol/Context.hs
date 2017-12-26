@@ -108,15 +108,18 @@ instance Default FastBallotStatus where
 
 -- | State kept by leader.
 data LeaderState = LeaderState
-    { _leaderBallotId            :: BallotId
+    { _leaderBallotId         :: BallotId
       -- ^ Number of current ballot
-    , _leaderPendingPolicies     :: PerBallots [Policy]
+    , _leaderPendingPolicies  :: PerBallots [Policy]
       -- ^ Policies ever proposed on this fast ballot, used in recovery
-    , _leaderVotes               :: Map BallotId $ Votes ClassicMajorityQuorum Configuration
+    , _leaderVotes            :: Map BallotId $ Votes ClassicMajorityQuorum Configuration
       -- ^ CStructs received in 2b messages
-    , _leaderFastVotes           :: Map BallotId $ Votes FastMajorityQuorum Configuration
+    , _leaderFastVotes        :: Map BallotId $ Votes FastMajorityQuorum Configuration
       -- ^ CStructs detected in 2b messages of fast ballot
-    , _leaderFastSuccessChecked  :: Map BallotId FastBallotStatus
+    , _leaderFastBallotStatus :: Map BallotId FastBallotStatus
+      -- ^ Whether fast ballot succeeded or failed with conflict.
+    , _leaderRecoveryUsed     :: Map BallotId ()
+      -- ^ Ballots for which extra recovery ballot was initiated.
     }
 
 makeLenses ''LeaderState
@@ -138,7 +141,7 @@ instance Buildable LeaderState where
 
 -- | Initial state of the leader.
 instance Default (Tagged pv LeaderState) where
-    def = Tagged $ LeaderState def mempty mempty mempty mempty
+    def = Tagged $ LeaderState def mempty mempty mempty mempty mempty
 
 -- ** Acceptor
 

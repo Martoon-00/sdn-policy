@@ -205,7 +205,7 @@ newtype PureLog m a = PureLog (WriterT LogAndError m a)
              , MonadThrow, MonadCatch, MonadState __, MonadReader __)
 
 launchPureLog
-    :: (Monad m, MonadLog n, MonadReporting n)
+    :: (MonadCatch m, MonadLog n, MonadReporting n)
     => (forall x. m (x, a) -> n (x, b)) -> PureLog m a -> n b
 launchPureLog hoist' (PureLog action) = do
     (logs, res) <- hoist' $ swap <$> runWriterT action

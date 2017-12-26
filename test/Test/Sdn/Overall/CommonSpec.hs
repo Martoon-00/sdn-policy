@@ -1,6 +1,6 @@
--- | All system tests yet lie here.
+-- | Common properties for classic and fast versions of algorithm.
 
-module Test.Sdn.Overall.AllSpec
+module Test.Sdn.Overall.CommonSpec
     ( spec
     ) where
 

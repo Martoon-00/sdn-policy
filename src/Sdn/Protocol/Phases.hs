@@ -3,17 +3,18 @@
 module Sdn.Protocol.Phases where
 
 import           Control.Lens           (at, non, (%=), (+=), (.=), (<%=), (<+=), (<<.=),
-                                         (<>=))
+                                         (<>=), (?=))
 import           Control.TimeWarp.Rpc   (MonadRpc)
 import           Control.TimeWarp.Timed (Microsecond, MonadTimed (..), after, schedule)
 import           Data.Default           (def)
 import qualified Data.Map               as M
+import qualified Data.Set               as S
 import           Formatting             (build, sformat, (%))
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra              (MonadLog, MonadReporting, as, listF, logInfo,
-                                         submit, throwOnFail)
+import           Sdn.Extra              (MonadLog, MonadReporting, as, listF, logError,
+                                         logInfo, submit, throwOnFail)
 import           Sdn.Protocol.Context
 import           Sdn.Protocol.Messages
 import           Sdn.Protocol.Processes
@@ -204,21 +205,22 @@ phase2bFast (InitFastBallotMsg bal) = do
 -- | Update learned value with all checks and cautions.
 updateLearnedValue :: Configuration -> TransactionM (ProcessState Learner) ()
 updateLearnedValue newLearned = do
-    prevLearned <- learnerLearned <<.= newLearned
+    prevLearned <- use learnerLearned
 
     -- sanity check
-    unless (newLearned `extends` prevLearned) $ do
+    if newLearned `extends` prevLearned
+    then learnerLearned .= newLearned
+    else do
         if prevLearned `extends` newLearned
-        then logInfo "Currently learnt cstruct extends new one, ignoring"
-        else errorBadLearnedCStruct prevLearned newLearned
+        then logInfo "Previously learnt cstruct extends new one, ignoring"
+        else reportErrorBadLearnedCStruct prevLearned newLearned
 
     -- report if the interesting happened
     when (newLearned /= prevLearned) $
         reportNewLearnedCStruct newLearned
   where
-
-    errorBadLearnedCStruct prev new =
-        throwM . ProtocolError $
+    reportErrorBadLearnedCStruct prev new =
+        logError $
         sformat ("Newly learned cstruct doesn't extend previous one:\n"%
                  "\t"%build%"\n\t->\n\t"%build)
                 prev new
@@ -235,8 +237,14 @@ learn (Phase2bMsg accId cstruct) = do
 
         -- we should check here that new cstruct extends previous one.
         -- but the contrary is not an error, because of not-FIFO channels
+        lv <- use learnerVotes
         learnerVotes . at accId . non mempty %= maxOrSecond cstruct
 
+        lv2 <- use learnerVotes
+        meq <- use learnerVotes
+            >>= throwOnFail ProtocolError . combination
+
+        logInfo $ sformat ("Meme "%build%"\n"%build%"\n"%build%"\n"%build) lv lv2 cstruct meq
         -- update total learned cstruct
         use learnerVotes
             >>= throwOnFail ProtocolError . combination
@@ -247,10 +255,15 @@ learnFast
     => Phase2bFastMsg -> m ()
 learnFast (Phase2bFastMsg _ accId cstruct) = do
     withProcessState $ do
+        lv <- use learnerFastVotes
         learnerFastVotes . at accId . non mempty %= maxOrSecond cstruct
 
+        lv2 <- use learnerFastVotes
+        meq <- use learnerFastVotes
+             >>= throwOnFail ProtocolError . intersectingCombination
         -- it's safe to learn votes from fast round even if recovery is going happen,
         -- because recovery deals with liveleness, correctness always holds.
+        logInfo $ sformat ("Meme "%build%"\n"%build%"\n"%build%"\n"%build) lv lv2 cstruct meq
         use learnerFastVotes
              >>= throwOnFail ProtocolError . intersectingCombination
              >>= updateLearnedValue
@@ -268,8 +281,8 @@ checkRecoveryNecessity
     :: (MonadPhase m, HasContextOf Leader m)
     => BallotId -> m ()
 checkRecoveryNecessity bal = do
-    needRecovery <- withProcessState $ do
-        fastBallotStatus <- use $ leaderFastSuccessChecked . at bal . non def
+    (needRecovery, unconfirmedPolicies) <- withProcessState $ do
+        fastBallotStatus <- use $ leaderFastBallotStatus . at bal . non def
 
         case fastBallotStatus of
             FastBallotInProgress -> do
@@ -277,17 +290,21 @@ checkRecoveryNecessity bal = do
                 combined <- throwOnFail ProtocolError $ intersectingCombination votes
                 let mentionedPolicyEntries = fold votes
                     needRecovery = combined /= mentionedPolicyEntries
+                    unconfirmedPolicies = mentionedPolicyEntries `S.difference` combined
 
-                leaderFastSuccessChecked . at bal . non def .=
+                leaderFastBallotStatus . at bal . non def .=
                     if needRecovery then FastBallotInRecovery else FastBallotSucceeded
-                return needRecovery
-            _ -> pure False
+                return (needRecovery, unconfirmedPolicies)
+            _ -> pure (False, mempty)
 
     when needRecovery $ do
         logInfo $ sformat ("Recovery in "%build%" initiated!") bal
+        logInfo $ sformat ("Unconfirmed policies: "%build)
+                  unconfirmedPolicies
 
-        Votes votes <-
-            withProcessState $ use $ leaderFastVotes . at bal . non mempty
+        Votes votes <- withProcessState $ do
+            leaderRecoveryUsed . at bal ?= ()
+            use $ leaderFastVotes . at bal . non mempty
 
         -- artificially execute next available phase of recovery (classic) Paxos
         forM_ (M.toList votes) $ \(accId, cstruct) ->
@@ -306,7 +323,7 @@ detectConflicts (Phase2bFastMsg bal accId cstruct) = do
         -- if recovery already occured - delegate to phase2a of classic paxos
         else do
             fastBallotStatus <-
-                withProcessState . use $ leaderFastSuccessChecked . at bal . non def
+                withProcessState . use $ leaderFastBallotStatus . at bal . non def
             case fastBallotStatus of
                 FastBallotInProgress -> pass
                 FastBallotSucceeded  -> pass
