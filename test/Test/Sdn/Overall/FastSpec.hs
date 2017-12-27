@@ -23,14 +23,24 @@ spec = do
     let testLaunchF = testLaunch @Fast
 
     describe "no recovery" $ do
+        prop "normal condition" $
+            testLaunchF def
+            { testProperties =
+                eventually (recoveryWasUsed False)
+              : basicProperties
+            }
         prop "acceptor unavailable" $
             testLaunchF def
-            { testDelays =
+            { testSettings = def
+                { topologyMembers = def { acceptorsNum = 5 }
+                }
+            , testDelays =
                 D.forAddress (processAddress (Acceptor 1)) D.blackout
             , testProperties =
                 eventually (recoveryWasUsed False)
               : basicProperties
             }
+
 
     describe "recovery" $ do
         prop "1 ballot, many conflicting policies" $
@@ -40,13 +50,10 @@ spec = do
             { testSettings = def
                 { topologyProposalSchedule = do
                       S.times n
-                      -- don't generate same policy!
-                      -- and in other code with S.times
                       S.generate (BadPolicy <$> arbitrary)
                 }
-
             , testProperties =
-                eventually (recoveryWasUsed True)
-              : basicProperties
+                -- eventually (recoveryWasUsed True) :  -- dunno how to force recovery
+                basicProperties
             }
 

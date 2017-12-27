@@ -77,7 +77,8 @@ recoveryWasUsed used AllStates{..} =
   where
     failProp recoveries =
         throwError $
-        sformat ("Got recoveries at "%listF ", " build%", despite they were "%text%"expected")
+        sformat ("Got recoveries at ballots "%listF ", " build
+                %", despite they were "%text%"expected")
             (M.keys recoveries) (if used then "" else "un")
 
 

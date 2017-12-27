@@ -11,11 +11,14 @@ import           Control.Lens        (makeLenses)
 import qualified Data.Text.Buildable
 import           Universum
 
+import           Sdn.Base.Quorum
+
 -- * Protocol versions.
 
-class (
+class ( QuorumFamily (VersionQuorum pv)
       ) =>
       ProtocolVersion pv where
+    type VersionQuorum pv :: *
 
 -- | Tag for classic version of protocol.
 data Classic
@@ -24,6 +27,7 @@ instance Buildable (Proxy Classic) where
     build _ = ""
 
 instance ProtocolVersion Classic where
+    type VersionQuorum Classic = ClassicMajorityQuorum
 
 -- | Tag for fast version of protocol with classic version used for recovery.
 data Fast
@@ -32,6 +36,7 @@ instance Buildable (Proxy Fast) where
     build _ = "fast"
 
 instance ProtocolVersion Fast where
+    type VersionQuorum Fast = FastMajorityQuorum
 
 -- * Utilities
 

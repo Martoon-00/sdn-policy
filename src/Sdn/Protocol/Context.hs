@@ -72,7 +72,6 @@ ballotMapF f =
     later $ \m ->
     mconcat $ M.toList m <&> \(id, v) -> bprint (build % ": " %f) id v
 
-
 -- * Per-process contexts
 -- ** Proposer
 
@@ -105,6 +104,8 @@ data FastBallotStatus
 
 instance Default FastBallotStatus where
     def = FastBallotInProgress
+
+-- TODO full Buildable instances
 
 -- | State kept by leader.
 data LeaderState pv = LeaderState
@@ -178,11 +179,9 @@ defAcceptorState id = AcceptorState id def mempty mempty
 
 -- | State kept by learner.
 data LearnerState pv = LearnerState
-    { _learnerVotes     :: Votes ClassicMajorityQuorum Configuration
-      -- ^ CStructs received from acceptors in classic round so far
-    , _learnerFastVotes :: Votes FastMajorityQuorum Configuration
-      -- ^ CStructs received from acceptors in fast round so far
-    , _learnerLearned   :: Configuration
+    { _learnerVotes   :: Votes (VersionQuorum pv) Configuration
+      -- ^ CStructs received from acceptors so far
+    , _learnerLearned :: Configuration
       -- ^ Eventually learned cstruct, result of consensus
     }
 
@@ -198,7 +197,7 @@ instance Buildable (LearnerState pv) where
 
 -- | Initial state of the learner.
 instance Default (LearnerState pv) where
-    def = LearnerState mempty mempty mempty
+    def = LearnerState mempty mempty
 
 -- * Misc
 

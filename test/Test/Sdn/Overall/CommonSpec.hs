@@ -9,6 +9,7 @@ import           Universum
 import qualified Control.TimeWarp.Rpc        as D
 import           Control.TimeWarp.Timed      (Millisecond, Second, hour, interval, sec)
 import           Data.Default
+import           Data.Typeable               (typeRep)
 import           Test.Hspec                  (Spec, describe, pending)
 import           Test.Hspec.QuickCheck       (prop)
 import           Test.QuickCheck             (Positive (..), Small (..), arbitrary, oneof,
@@ -24,7 +25,7 @@ spec :: Spec
 spec = describe "common" $ do
 
     -- artifical scenarious which check whether protocol at least slightly works
-    let checkCommon (_ :: Proxy pv) = do
+    let checkCommon (pv :: Proxy pv) = do
           describe "primitive cases" $ do
 
             prop "simple" $
@@ -32,12 +33,13 @@ spec = describe "common" $ do
                 -- see @instance Default TestLaunchParams@ below for their definition
                 testLaunch @pv def
 
-            prop "acceptor unavailable" $
-                testLaunch @pv def
-                { testDelays =
-                    D.forAddress (processAddress (Acceptor 1))
-                        D.blackout
-                }
+            when (typeRep pv == typeRep (Proxy @Classic)) $  -- for fast version there is a special case
+                prop "acceptor unavailable" $
+                    testLaunch @pv def
+                    { testDelays =
+                        D.forAddress (processAddress (Acceptor 1))
+                            D.blackout
+                    }
 
             prop "too many acceptors unavailable" $
                 testLaunch @pv def

@@ -2,8 +2,8 @@
 
 module Sdn.Protocol.Phases where
 
-import           Control.Lens           (at, non, (%=), (+=), (.=), (<%=), (<+=), (<<.=),
-                                         (<>=), (?=))
+import           Control.Lens           (at, non, (%=), (+=), (.=), (<%=), (<+=), (<>=),
+                                         (?=))
 import           Control.TimeWarp.Rpc   (MonadRpc)
 import           Control.TimeWarp.Timed (Microsecond, MonadTimed (..), after, schedule)
 import           Data.Default           (def)
@@ -191,13 +191,14 @@ phase2bFast
 phase2bFast (InitFastBallotMsg bal) = do
     msg <- withProcessState $ do
         acceptorLastKnownBallotId . as %= max bal
-        -- TODO: operating with non-fast cstruct here is incorrect
+
         cstruct <- use acceptorCStruct
         policiesToApply <- use $ acceptorFastPendingPolicies . at bal . non mempty
         logInfo $ sformat ("List of fast pending policies at "%build
                           %":\n    "%listF ", " build)
                   bal policiesToApply
         let cstruct' = foldr acceptOrRejectCommand cstruct policiesToApply
+        acceptorCStruct .= cstruct'
 
         accId <- use acceptorId
         pure $ Phase2bFastMsg bal accId cstruct'
@@ -232,6 +233,14 @@ updateLearnedValue newLearned = do
         logInfo $
         sformat ("New learned cstruct: "%build) new
 
+warnOnPartUpdate :: MonadLog m => Configuration -> Configuration -> m ()
+warnOnPartUpdate incoming updated = do
+    unless (updated `extends` incoming) $
+        logInfo $ sformat ("Incoming cstruct was (partly) dropped:\
+                        \\n  incoming:  "%build%
+                        "\n  new value: "%build)
+              incoming updated
+
 learn
     :: (MonadPhase m, HasContextOf Learner pv m)
     => Phase2bMsg -> m ()
@@ -241,34 +250,25 @@ learn (Phase2bMsg accId cstruct) = do
 
         -- we should check here that new cstruct extends previous one.
         -- but the contrary is not an error, because of not-FIFO channels
-        lv <- use learnerVotes
-        learnerVotes . at accId . non mempty %= maxOrSecond cstruct
+        updated <- learnerVotes . at accId . non mempty <%= maxOrSecond cstruct
+        warnOnPartUpdate cstruct updated
 
-        lv2 <- use learnerVotes
-        meq <- use learnerVotes
-            >>= throwOnFail ProtocolError . combination
-
-        logInfo $ sformat ("Meme "%build%"\n"%build%"\n"%build%"\n"%build) lv lv2 cstruct meq
         -- update total learned cstruct
         use learnerVotes
             >>= throwOnFail ProtocolError . combination
             >>= updateLearnedValue
 
 learnFast
-    :: (MonadPhase m, HasContextOf Learner pv m)
+    :: (MonadPhase m, HasContextOf Learner Fast m)
     => Phase2bFastMsg -> m ()
 learnFast (Phase2bFastMsg _ accId cstruct) = do
     withProcessState $ do
-        lv <- use learnerFastVotes
-        learnerFastVotes . at accId . non mempty %= maxOrSecond cstruct
+        updated <- learnerVotes . at accId . non mempty <%= maxOrSecond cstruct
+        warnOnPartUpdate cstruct updated
 
-        lv2 <- use learnerFastVotes
-        meq <- use learnerFastVotes
-             >>= throwOnFail ProtocolError . intersectingCombination
         -- it's safe to learn votes from fast round even if recovery is going happen,
         -- because recovery deals with liveleness, correctness always holds.
-        logInfo $ sformat ("Meme "%build%"\n"%build%"\n"%build%"\n"%build) lv lv2 cstruct meq
-        use learnerFastVotes
+        use learnerVotes
              >>= throwOnFail ProtocolError . intersectingCombination
              >>= updateLearnedValue
 
