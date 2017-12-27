@@ -28,12 +28,12 @@ Most intersting modules are:
 * [Topology](./src/Sdn/Protocol/Topology.hs) module - functions which construct a network with appropriate processes
 
 - [x] Classic Generalized Paxos
-- [ ] Fast Generalized Paxos (where profit from commuting policies comes into play)
+- [x] Fast Generalized Paxos (where profit from commuting policies comes into play)
 - [ ] Leader selection (?)
 
 ## Launch
 
-To launch demo you need [stack](https://docs.haskellstack.org/en/stable/README/) tool.
+To build this project you need [stack](https://docs.haskellstack.org/en/stable/README/) tool.
 
 Executing `./launch-demo.sh` performs 1 consensus ballot with 1 proposed policy.
 
@@ -45,8 +45,9 @@ Executing `./launch-demo.sh` performs 1 consensus ballot with 1 proposed policy.
 
 Tests consist of several scenarious run and checked on various properties.
 
-* [Protocol](./test/Test/Sdn/Overall/Properties/Protocol.hs) module - contains list of properties
-* [ClassicSpec](./test/Test/Sdn/Overall/ClassicSpec.hs) module - contains test scenarious.
+* [Protocol](./test/Test/Sdn/Overall/Properties/Protocol.hs) module - contains list of ever checked properties
+* [CommonSpec](./test/Test/Sdn/Overall/CommonSpec.hs) module - contains test scenarious common for classic and fast versions of algorithm.
+* [FastSpec](./test/Test/Sdn/Overall/FastSpec.hs) module - contains test scenarious special for fast version.
 
 Basic property examples:
 
