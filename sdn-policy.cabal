@@ -97,9 +97,11 @@ executable demo
                      , time-warp
                      , QuickCheck
                      , universum
+                     , yaml
   default-language:    Haskell2010
   default-extensions:  FlexibleContexts
                        FlexibleInstances
+                       DeriveGeneric
                        OverloadedStrings
                        TypeOperators
                        ConstraintKinds

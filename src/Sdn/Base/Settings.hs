@@ -16,7 +16,7 @@ import           Universum
 data Members = Members
     { acceptorsNum :: Int
     , learnersNum  :: Int
-    } deriving (Show)
+    } deriving (Show, Generic)
 
 instance Default Members where
     def = Members

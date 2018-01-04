@@ -15,14 +15,14 @@ import           Control.Lens           (Iso, Iso', LensRules, iso, lensField, l
 import           Control.TimeWarp.Rpc   (MonadRpc (..), NetworkAddress, RpcRequest (..),
                                          mkRequest)
 import qualified Control.TimeWarp.Rpc   as Rpc
-import           Control.TimeWarp.Timed (MonadTimed (..), fork_)
+import           Control.TimeWarp.Timed (Microsecond, MonadTimed (..), fork_)
 import           Data.Coerce            (coerce)
 import           Data.MessagePack       (MessagePack)
 import qualified Data.Text.Buildable
 import           Data.Text.Lazy.Builder (Builder)
 import           Data.Time.Units        (Millisecond, Second)
 import           Formatting             (Format, bprint, build, formatToString, later,
-                                         shown, string, (%))
+                                         shortest, shown, string, (%))
 import           Formatting.Internal    (Format (..))
 import qualified GHC.Exts               as Exts
 import qualified Language.Haskell.TH    as TH
@@ -124,6 +124,14 @@ instance Buildable Second where
 
 instance Buildable Millisecond where
     build = bprint (build%" ms") . toInteger
+
+instance Buildable Microsecond where
+    build (toInteger -> t)
+        | t > 100000 = bprint (shortest%" sec") (deciRound 100000)
+        | t > 100 = bprint (shortest%" ms") (deciRound 100)
+        | otherwise = bprint (shortest%" mcs") t
+      where
+        deciRound d = fromIntegral @Int @Double (round (fromIntegral @_ @Double t / d)) / 10
 
 -- | Something with description.
 data WithDesc a = WithDesc Text a

@@ -1,0 +1,19 @@
+type: classic
+members:
+  acceptors: 3
+  learners: 1
+proposals:
+  once: good
+ballots:
+  once: execute
+recovery:
+  delay:
+    sec: 3
+
+lifetime:
+  ## by default time is specified in seconds:
+  # 5
+  ## but one can pass measure explicitely:
+  # sec: 5
+  ## 'sec', 'ms' and 'mcs' are supported
+  ms: 1200

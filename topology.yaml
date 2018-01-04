@@ -1,0 +1,21 @@
+# type of used algorithm - 'classic' or 'fast'
+type: classic
+
+# participants of concensus
+members:
+  acceptors: 3
+  learners: 1
+
+# schedules. see `topologies/schedules.yaml` for fine-tuning examples.
+proposals:
+  once: good
+ballots:
+  once: execute
+
+# how much time to wait before checking for need in recovery ballot
+# used in fast version only.
+recovery:
+  delay: 3
+
+# how soon to shutdown. see also `topologies/time.yaml`.
+lifetime: 5

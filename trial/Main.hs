@@ -13,7 +13,9 @@ main :: IO ()
 main = do
     options@ProtocolOptions{..} <- getProtocolOptions
     let topologySettings = buildTopologySettings poTopologySettings
+    putText ""
     putText $ "Executing with following options:\n" <> pretty options
+    putText ""
 
     -- initialize environment
     runMsgPackRpc . runNoErrorReporting . usingLoggerName mempty $ do
@@ -21,9 +23,9 @@ main = do
         logInfo "Starting"
 
         -- execute consensus
-        -- case poType of
-        --     ClassicProtocol ->
-        --         launchClassicPaxos topologySettings >>= awaitTermination
-        --     FastProtocol ->
-        --         launchFastPaxos topologySettings >>= awaitTermination
+        case poType of
+            ClassicProtocol ->
+                launchClassicPaxos topologySettings >>= awaitTermination
+            FastProtocol ->
+                launchFastPaxos topologySettings >>= awaitTermination
 

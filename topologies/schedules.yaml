@@ -1,0 +1,76 @@
+type: classic
+members:
+  acceptors: 3
+  learners: 1
+  
+ballots:
+  ## Here is simple schedule which fires 'ones' and proposes simple policy.
+  # once: execute  # 'null' also works
+  ##
+  ## Action which fires periodically:
+  # period: 2  # fire every 2 seconds
+  # repeat: 3  # 3 repeat; this is optional
+  # schedule:
+  #   once: execute
+  #
+  ## Action which starts after some time:
+  # delay: 5  # fire after 5 seconds
+  # schedule:
+  #   once: execute
+  #
+  ## Action which happens several times on spot
+  # times: 3
+  # schedule:
+  #   once: execute
+  #
+  ## Schedules can be nested:
+  # delay: 2
+  # schedule:
+  #   period: 1
+  #   once: execute
+  #
+  ## and run in parallel:
+  # - delay: 1
+  #   schedule:
+  #     once: execute
+  # - delay: 3
+  #   schedule:
+  #     once: execute
+  ## this starts two ballots, one at 1-st and another at 3-rd second of
+  ## topology lifetime.
+  # once: execute
+
+proposals:
+  ## There are several types of policies to propose.
+  ## Most simple example:
+  # once: good
+  ## Good policy doesn't conflict with any other one.
+  ##
+  ## Bad policies, vice versa, conflict with any other one, including Good ones:
+  # once: bad
+  #
+  ## Finally, Moody policies conflict with Bad policies and Moody policies of
+  ## same id:
+  # once:
+  #   moody: 1
+  #
+  ## Also, policies could be choosen randomly:
+  # once:
+  # - weight: 5
+  #   policy: good
+  # - policy: bad
+  ## it declares that Good policies are proposed 5 times more often than Bad ones.
+  period:
+    sec: 1
+  repeat: 3
+  schedule:
+    - weight: 5
+      policy: good
+    - weight: 1
+      policy: bad
+
+recovery:
+  delay:
+    sec: 3
+lifetime: 5
+

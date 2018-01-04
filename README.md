@@ -35,10 +35,10 @@ Most intersting modules are:
 
 To build this project you need [stack](https://docs.haskellstack.org/en/stable/README/) tool.
 
-Executing `./launch-demo.sh` performs 1 consensus ballot with 1 proposed policy.
+Executing `./launch-demo.sh` compiles the project and performs 1 consensus ballot with 1 proposed policy.
 
-- [x] Allow to pass topology parameters to executable
-- [ ] Usage example
+More complex network topology parameters can be specified in `./topology.yaml`.
+Custom config file can be passed via `--config` option.
 
 ## Tests
 
