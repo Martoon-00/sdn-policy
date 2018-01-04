@@ -1,12 +1,14 @@
 {-# LANGUAGE AllowAmbiguousTypes       #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
 {-# LANGUAGE Rank2Types                #-}
+{-# LANGUAGE TemplateHaskell           #-}
 {-# LANGUAGE TypeFamilies              #-}
 
 -- | Make up network layout
 
 module Sdn.Protocol.Topology where
 
+import           Control.Lens             (makeLensesFor)
 import           Control.Monad.Catch      (Handler (..), catches)
 import           Control.TimeWarp.Logging (WithNamedLogger, modifyLoggerName)
 import           Control.TimeWarp.Rpc     (Method (..), MonadRpc, serve)
@@ -29,6 +31,16 @@ import           Sdn.Protocol.Processes
 import           Sdn.Protocol.Versions
 import           Sdn.Schedule
 
+type MonadTopology m =
+    ( MonadIO m
+    , MonadCatch m
+    , WithNamedLogger m
+    , MonadLog m
+    , MonadReporting m
+    , MonadTimed m
+    , MonadRpc m
+    )
+
 type TopologySchedule p = forall m. MonadTopology m => Schedule m p
 
 -- | Contains all info to build network which serves consensus algorithm.
@@ -40,6 +52,13 @@ data TopologySettings = TopologySettings
     , topologySeed             :: GenSeed
     , topologyLifetime         :: Microsecond
     }
+
+makeLensesFor
+    [ ("topologyMembers", "topologyMembersL")
+    , ("topologyRecoveryDelay", "topologyRecoveryDelayL")
+    , ("topologySeed", "topologySeedL")
+    , ("topologyLifetime", "topologyLifetimeL")
+    ] ''TopologySettings
 
 -- | Example of topology.
 instance Default TopologySettings where
@@ -110,16 +129,6 @@ listener endpoint = Method . clarifyLoggerName $ \msg -> do
         [ Handler $ logError . sformat (build @ProtocolError)
         , Handler $ logError . sformat ("Strange error: "%shown @SomeException)
         ]
-
-type MonadTopology m =
-    ( MonadIO m
-    , MonadCatch m
-    , WithNamedLogger m
-    , MonadLog m
-    , MonadReporting m
-    , MonadTimed m
-    , MonadRpc m
-    )
 
 type TopologyLauncher pv m =
     MonadTopology m => TopologySettings -> m (TopologyMonitor pv m)

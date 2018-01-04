@@ -37,7 +37,8 @@ To build this project you need [stack](https://docs.haskellstack.org/en/stable/R
 
 Executing `./launch-demo.sh` performs 1 consensus ballot with 1 proposed policy.
 
-- [ ] Allow to pass topology parameters to executable
+- [x] Allow to pass topology parameters to executable
+- [ ] Usage example
 
 ## Tests
 

@@ -1,31 +1,29 @@
 module Main where
 
-import           Control.TimeWarp.Logging (usingLoggerName)
+import           Control.TimeWarp.Logging (logInfo, usingLoggerName)
 import           Control.TimeWarp.Rpc     (runMsgPackRpc)
-import           Control.TimeWarp.Timed   (interval, sec)
-import           Test.QuickCheck          (arbitrary)
+import           Control.TimeWarp.Timed   (for, sec, wait)
 import           Universum
 
-import           Sdn.Base
-import           Sdn.Extra
+import           Options
+import           Sdn.Extra                (runNoErrorReporting)
 import           Sdn.Protocol
-import           Sdn.Schedule
 
 main :: IO ()
-main =
-    -- initialize environment
-    runMsgPackRpc . runNoErrorReporting . usingLoggerName mempty $
-        -- execute consensus
-        launchClassicPaxos demoTopology >>= awaitTermination
+main = do
+    options@ProtocolOptions{..} <- getProtocolOptions
+    let topologySettings = buildTopologySettings poTopologySettings
+    putText $ "Executing with following options:\n" <> pretty options
 
--- | Simple example of network topology.
-demoTopology :: TopologySettings
-demoTopology = TopologySettings
-    { topologyMembers = Members { acceptorsNum = 3, learnersNum = 1 }
-    , topologyProposalSchedule =
-        generate (GoodPolicy <$> arbitrary)  -- single proposal of policy
-    , topologyBallotsSchedule = execute  -- start ballot once
-    , topologyRecoveryDelay = interval 1 sec
-    , topologySeed = RandomSeed
-    , topologyLifetime = interval 1 sec
-    }
+    -- initialize environment
+    runMsgPackRpc . runNoErrorReporting . usingLoggerName mempty $ do
+        wait (for 1 sec)
+        logInfo "Starting"
+
+        -- execute consensus
+        -- case poType of
+        --     ClassicProtocol ->
+        --         launchClassicPaxos topologySettings >>= awaitTermination
+        --     FastProtocol ->
+        --         launchFastPaxos topologySettings >>= awaitTermination
+

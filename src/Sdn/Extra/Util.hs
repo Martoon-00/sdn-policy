@@ -10,16 +10,19 @@
 
 module Sdn.Extra.Util where
 
-import           Control.Lens           (Iso, Iso', iso)
+import           Control.Lens           (Iso, Iso', LensRules, iso, lensField, lensRules,
+                                         mappingNamer)
 import           Control.TimeWarp.Rpc   (MonadRpc (..), NetworkAddress, RpcRequest (..),
                                          mkRequest)
 import qualified Control.TimeWarp.Rpc   as Rpc
 import           Control.TimeWarp.Timed (MonadTimed (..), fork_)
 import           Data.Coerce            (coerce)
 import           Data.MessagePack       (MessagePack)
+import qualified Data.Text.Buildable
 import           Data.Text.Lazy.Builder (Builder)
-import           Formatting             (Format, bprint, formatToString, later, shown,
-                                         string, (%))
+import           Data.Time.Units        (Millisecond, Second)
+import           Formatting             (Format, bprint, build, formatToString, later,
+                                         shown, string, (%))
 import           Formatting.Internal    (Format (..))
 import qualified GHC.Exts               as Exts
 import qualified Language.Haskell.TH    as TH
@@ -82,6 +85,10 @@ listL = iso Exts.toList Exts.fromList
 genJust :: Gen (Maybe a) -> Gen a
 genJust gen = unsafeFromJust <$> gen `suchThat` isJust
 
+-- | Rule to generate 'memeL' lenses for 'meme' field.
+postfixLFields :: LensRules
+postfixLFields = lensRules & lensField .~ mappingNamer (\s -> [s++"L"])
+
 -- | Move from pure exception to monadic one.
 throwOnFail
     :: (Exception e', MonadThrow m)
@@ -111,3 +118,26 @@ coloredF (int, color) = mapfText colorize
 
 gray :: (ANSI.ColorIntensity, ANSI.Color)
 gray = (ANSI.Dull, ANSI.White)
+
+instance Buildable Second where
+    build = bprint (build%" sec") . toInteger
+
+instance Buildable Millisecond where
+    build = bprint (build%" ms") . toInteger
+
+-- | Something with description.
+data WithDesc a = WithDesc Text a
+    deriving (Functor)
+
+-- | Alias for 'WithDesc'.
+(?:) :: Text -> a -> WithDesc a
+(?:) = WithDesc
+infix 1 ?:
+
+getWithDesc :: WithDesc a -> (Text, a)
+getWithDesc (WithDesc t a) = (t, a)
+
+combineWithDesc :: [WithDesc a] -> WithDesc [a]
+combineWithDesc = uncurry WithDesc . first merge . unzip . map getWithDesc
+  where
+    merge = mconcat . intersperse ", "

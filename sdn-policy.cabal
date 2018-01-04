@@ -83,10 +83,17 @@ library
 executable demo
   hs-source-dirs:      trial
   main-is:             Main.hs
+  other-modules:       Options
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   build-depends:       base
                      , data-default
+                     , formatting
+                     , lens
+                     , mtl
+                     , optparse-applicative
                      , sdn-policy
+                     , text-format
+                     , time-units
                      , time-warp
                      , QuickCheck
                      , universum
