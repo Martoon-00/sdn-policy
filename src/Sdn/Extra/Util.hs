@@ -11,7 +11,7 @@
 module Sdn.Extra.Util where
 
 import           Control.Lens           (Iso, Iso', LensRules, iso, lensField, lensRules,
-                                         mappingNamer)
+                                         makeLenses, mappingNamer)
 import           Control.TimeWarp.Rpc   (MonadRpc (..), NetworkAddress, RpcRequest (..),
                                          mkRequest)
 import qualified Control.TimeWarp.Rpc   as Rpc
@@ -134,8 +134,12 @@ instance Buildable Microsecond where
         deciRound d = fromIntegral @Int @Double (round (fromIntegral @_ @Double t / d)) / 10
 
 -- | Something with description.
-data WithDesc a = WithDesc Text a
-    deriving (Functor)
+data WithDesc a = WithDesc
+    { _descText :: Text
+    , dropDesc  :: a
+    } deriving (Functor)
+
+makeLenses ''WithDesc
 
 -- | Alias for 'WithDesc'.
 (?:) :: Text -> a -> WithDesc a

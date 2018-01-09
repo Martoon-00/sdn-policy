@@ -38,7 +38,6 @@ ballots:
   #     once: execute
   ## this starts two ballots, one at 1-st and another at 3-rd second of
   ## topology lifetime.
-  # once: execute
 
 proposals:
   ## There are several types of policies to propose.
@@ -69,6 +68,7 @@ proposals:
     - weight: 1
       policy: bad
 
+delays: null
 recovery:
   delay:
     sec: 3

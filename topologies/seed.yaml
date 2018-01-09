@@ -1,0 +1,16 @@
+type: classic
+members:
+  acceptors: 3
+  learners: 1
+proposals:
+  once: good
+ballots:
+  once: execute
+delays: null
+recovery:
+  delay:
+    sec: 3
+lifetime: 5
+
+## One can specify integer number as seed for repeatable executions.
+seed: 2342342

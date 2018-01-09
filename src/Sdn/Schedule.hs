@@ -10,6 +10,7 @@ module Sdn.Schedule
     , runSchedule_
 
     , GenSeed (..)
+    , getGenSeed
     , splitGenSeed
 
     -- * schedules

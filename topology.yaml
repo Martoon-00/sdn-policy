@@ -6,16 +6,19 @@ members:
   acceptors: 3
   learners: 1
 
-# schedules. see `topologies/schedules.yaml` for fine-tuning examples.
+# schedules. See `topologies/schedules.yaml` for fine-tuning examples.
 proposals:
   once: good
 ballots:
   once: execute
+
+# emulated network delays. See `topologies/delays.yaml` for examples.
+delays: null
 
 # how much time to wait before checking for need in recovery ballot
 # used in fast version only.
 recovery:
   delay: 3
 
-# how soon to shutdown. see also `topologies/time.yaml`.
+# how soon to shutdown. See also `topologies/time.yaml`.
 lifetime: 5

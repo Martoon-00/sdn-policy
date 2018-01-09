@@ -1,0 +1,34 @@
+type: fast
+members:
+  acceptors: 3
+  learners: 1
+proposals:
+  once: good
+ballots:
+  once: execute
+
+
+delays:
+  ## Here one can specify rule to evaluate delays in message delivery.
+  ## No delays are passed as
+  # steady # or 'null'
+  ##
+  ## Also constant delay can be specified:
+  # ms: 333
+  ## Or a time range:
+  # min:
+  #   ms: 10
+  # max:
+  #   sec: 1
+  ## in this case, for each message delay is picked randomly according to uniform distribution.
+  ## This means, that messages may come not in FIFO order, but algorithm is still supposed
+  ## to work in such conditions.
+  ##
+  ## Support for more complex rules in config to be provided:
+  # - temporal/delayed rules
+  # - per-node rules
+  # - messages loss
+
+recovery:
+  delay: 3
+lifetime: 5

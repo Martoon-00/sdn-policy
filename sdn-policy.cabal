@@ -91,6 +91,7 @@ executable demo
                      , lens
                      , mtl
                      , optparse-applicative
+                     , random
                      , sdn-policy
                      , text-format
                      , time-units

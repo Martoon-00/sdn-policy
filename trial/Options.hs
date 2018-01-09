@@ -13,6 +13,7 @@ module Options where
 
 import           Control.Lens         (Setter')
 import           Control.Monad.Writer (WriterT (..))
+import qualified Control.TimeWarp.Rpc as D
 import qualified Data.Text.Buildable
 import           Data.Time.Units      (Microsecond, convertUnit)
 import           Data.Yaml            (FromJSON (..), Value (..), decodeFileEither,
@@ -20,12 +21,13 @@ import           Data.Yaml            (FromJSON (..), Value (..), decodeFileEith
 import qualified Data.Yaml            as Yaml
 import           Formatting           (bprint, build, builder, sformat, stext, (%))
 import qualified Options.Applicative  as Opt
+import           System.Random        (mkStdGen)
 import           Test.QuickCheck      (Gen, arbitrary, frequency)
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra            (WithDesc (..), combineWithDesc, getWithDesc,
-                                       rightSpaced, (?:))
+import           Sdn.Extra            (WithDesc (..), combineWithDesc, descText,
+                                       getWithDesc, rightSpaced, (?:))
 import           Sdn.Protocol
 import           Sdn.Schedule         (Schedule)
 import qualified Sdn.Schedule         as S
@@ -95,6 +97,7 @@ data TopologySettingsBuilder = TopologySettingsBuilder
     { tsbMembers          :: Members
     , tsbProposalSchedule :: ScheduleBuilder Policy
     , tsbBallotsSchedule  :: ScheduleBuilder ()
+    , tsbSeed             :: S.GenSeed
     , tsbLifetime         :: Microsecond
     , tsbCustomSettings   :: CustomTopologySettingsBuilder
     } deriving (Generic)
@@ -148,15 +151,20 @@ buildTopologySettings TopologySettingsBuilder{..} =
     topologyMembers = tsbMembers
     topologyProposalSchedule = buildSchedule tsbProposalSchedule
     topologyBallotsSchedule = buildSchedule tsbBallotsSchedule
-    topologySeed = S.RandomSeed  -- TODO: specify
+    topologySeed = tsbSeed
     topologyLifetime = convertUnit tsbLifetime
 
 data ProtocolOptions = ProtocolOptions
     { poTopologySettings :: TopologySettingsBuilder
+    , poDelays           :: WithDesc D.Delays
     }
 
 instance Buildable ProtocolOptions where
-    build = bprint build . poTopologySettings
+    build ProtocolOptions{..} =
+        bprint (build
+               %"\n  network delays: "%stext)
+            poTopologySettings
+            (poDelays ^. descText)
 
 -- * Parser
 
@@ -202,8 +210,9 @@ instance FromJSON (WithDesc $ Gen Policy) where
         ]
       where
         weightenedArbitraryPolicies :: Value -> Yaml.Parser $ WithDesc (Gen Policy)
-        weightenedArbitraryPolicies = withArray "weightened policies" $ \a -> do
-            fmap frequency . combineWithDesc . toList <$> mapM weightenedArbitraryPolicy a
+        weightenedArbitraryPolicies = withArray "weightened policies" $ \a ->
+            (descText %~ bracketsSurround) . fmap frequency . combineWithDesc . toList
+            <$> mapM weightenedArbitraryPolicy a
         weightenedArbitraryPolicy :: Value -> Yaml.Parser $ WithDesc (Int, Gen Policy)
         weightenedArbitraryPolicy = withObject "weightened policy" $ \o -> do
             weight <- fromMaybe 1 <$> o .:? "weight"
@@ -211,6 +220,7 @@ instance FromJSON (WithDesc $ Gen Policy) where
             pure (  sformat (build%"w "%stext) weight policyDesc
                  ?: (weight, policy)
                  )
+        bracketsSurround = sformat ("("%stext%")")
 
 instance FromJSON (WithDesc $ Gen a) => FromJSON (ScheduleBuilder a) where
     parseJSON = choose1
@@ -243,11 +253,38 @@ instance FromJSON (WithDesc $ Gen a) => FromJSON (ScheduleBuilder a) where
         parallelParser = withArray "parallel schedule" $ \a -> do
             fmap InParallel $ mapM parseJSON (toList a)
 
+instance FromJSON (WithDesc D.Delays) where
+    parseJSON = choose1
+        [ steadyParser
+        , constParser
+        , uniformParser
+        -- TODO: more complex delays
+        ]
+      where
+        steadyParser = fmap (WithDesc "steady") . \case
+            Null -> pure D.steady
+            String "steady" -> pure D.steady
+            _ -> fail "Can't parse steady delay"
+        constParser v = parseJSON v <&> \value ->
+            ("const " <> pretty value)
+            ?: D.constant @Microsecond value
+        uniformParser = withObject "uniform delay" $ \o -> do
+            lower <- o .: "min"
+            upper <- o .: "max"
+            return $ sformat (build%" - "%build) lower upper
+                  ?: D.uniform @Microsecond (lower, upper)
+
+instance FromJSON S.GenSeed where
+    parseJSON = fmap mkSeed . optional . withObject "seed" (\o -> o .: "seed")
+      where
+        mkSeed = maybe S.RandomSeed (S.FixedSeed . mkStdGen)
+
 instance FromJSON TopologySettingsBuilder where
-    parseJSON = withObject "topology settings" $ \o -> do
+    parseJSON v = flip (withObject "topology settings") v $ \o -> do
         tsbMembers <- o .: "members"
         tsbProposalSchedule <- o .: "proposals"
         tsbBallotsSchedule <- o .: "ballots"
+        tsbSeed <- parseJSON v
         tsbLifetime <- o .: "lifetime"
         tsbCustomSettings <- customParser o
         return TopologySettingsBuilder{..}
@@ -266,6 +303,7 @@ instance FromJSON TopologySettingsBuilder where
 instance FromJSON ProtocolOptions where
     parseJSON v = do
         poTopologySettings <- parseJSON v
+        poDelays <- withObject "delay" (\o -> o .: "delays") v
         return ProtocolOptions{..}
 
 configPathParser :: Opt.Parser FilePath

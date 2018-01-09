@@ -6,6 +6,7 @@ proposals:
   once: good
 ballots:
   once: execute
+delays: null
 recovery:
   delay:
     sec: 3
