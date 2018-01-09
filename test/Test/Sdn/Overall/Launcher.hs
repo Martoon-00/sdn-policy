@@ -1,4 +1,5 @@
-{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE Rank2Types           #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- | Test launcher of protocol.
 
@@ -28,35 +29,30 @@ import           Test.Sdn.Overall.Properties
 
 
 data TestLaunchParams pv = TestLaunchParams
-    { testLauncher   :: forall m. TopologyLauncher pv m
-    , testSettings   :: TopologySettings
+    { testSettings   :: TopologySettings pv
     , testDelays     :: D.Delays
     , testProperties :: forall m. MonadIO m => [ProtocolProperty pv m]
+    , testStub       :: Proxy pv
     }
 
-defTestLaunchParams :: (forall m. TopologyLauncher pv m) -> TestLaunchParams pv
-defTestLaunchParams launcher =
-    TestLaunchParams
-    { testLauncher = launcher
-        -- ^ use Classic Paxos protocol
-    , testSettings = def
-        -- ^ default topology settings allow to execute
-        -- 1 ballot with 1 policy proposed
-    , testDelays = D.steady
-        -- ^ no message delays
-    , testProperties = basicProperties
-        -- ^ set of reasonable properties for any good consensus launch
-    }
-
-instance Default (TestLaunchParams Classic) where
-    def = defTestLaunchParams launchClassicPaxos
-
-instance Default (TestLaunchParams Fast) where
-    def = defTestLaunchParams launchFastPaxos
+instance Default (CustomTopologySettings pv) =>
+         Default (TestLaunchParams pv) where
+    def =
+        TestLaunchParams
+        { testSettings = def
+            -- ^ default topology settings allow to execute
+            -- 1 ballot with 1 policy proposed
+        , testDelays = D.steady
+            -- ^ no message delays
+        , testProperties = basicProperties
+            -- ^ set of reasonable properties for any good consensus launch
+        , testStub = Proxy
+            -- ^ Just for convenience of 'def' usage
+        }
 
 testLaunch
     :: forall pv.
-       ProtocolVersion pv
+       HasVersionTopologyActions pv
     => TestLaunchParams pv -> Property
 testLaunch TestLaunchParams{..} =
     forAll (Blind <$> chooseAny) $ \(Blind seed) -> do
@@ -64,7 +60,7 @@ testLaunch TestLaunchParams{..} =
                 split (mkStdGen seed)
             launch :: MonadTopology m => m (TopologyMonitor pv m)
             launch =
-                testLauncher testSettings{ topologySeed = S.FixedSeed gen2 }
+                launchPaxos testSettings{ topologySeed = S.FixedSeed gen2 }
             runEmulation =
                 runTimedT .
                 runPureRpc testDelays gen1 .

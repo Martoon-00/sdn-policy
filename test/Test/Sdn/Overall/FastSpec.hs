@@ -41,7 +41,6 @@ spec = do
               : basicProperties
             }
 
-
     describe "recovery" $ do
         prop "1 ballot, many conflicting policies" $
             forAll (arbitrary `suchThat` (>= 5)) $

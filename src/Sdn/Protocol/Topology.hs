@@ -3,12 +3,12 @@
 {-# LANGUAGE Rank2Types                #-}
 {-# LANGUAGE TemplateHaskell           #-}
 {-# LANGUAGE TypeFamilies              #-}
+{-# LANGUAGE UndecidableInstances      #-}
 
 -- | Make up network layout
 
 module Sdn.Protocol.Topology where
 
-import           Control.Lens             (makeLensesFor)
 import           Control.Monad.Catch      (Handler (..), catches)
 import           Control.TimeWarp.Logging (WithNamedLogger, modifyLoggerName)
 import           Control.TimeWarp.Rpc     (Method (..), MonadRpc, serve)
@@ -44,32 +44,44 @@ type MonadTopology m =
 type TopologySchedule p = forall m. MonadTopology m => Schedule m p
 
 -- | Contains all info to build network which serves consensus algorithm.
-data TopologySettings = TopologySettings
+data TopologySettings pv = TopologySettings
     { topologyMembers          :: Members
     , topologyProposalSchedule :: TopologySchedule Policy
     , topologyBallotsSchedule  :: TopologySchedule ()
-    , topologyRecoveryDelay    :: Microsecond
     , topologySeed             :: GenSeed
     , topologyLifetime         :: Microsecond
+    , topologyCustomSettings   :: CustomTopologySettings pv
     }
 
-makeLensesFor
-    [ ("topologyMembers", "topologyMembersL")
-    , ("topologyRecoveryDelay", "topologyRecoveryDelayL")
-    , ("topologySeed", "topologySeedL")
-    , ("topologyLifetime", "topologyLifetimeL")
-    ] ''TopologySettings
+data family CustomTopologySettings :: * -> *
+
+data instance CustomTopologySettings Classic =
+    ClassicTopologySettingsPart
+data instance CustomTopologySettings Fast =
+    FastTopologySettingsPart
+    { topologyRecoveryDelay :: Microsecond
+    }
 
 -- | Example of topology.
-instance Default TopologySettings where
+instance Default (CustomTopologySettings pv) =>
+         Default (TopologySettings pv) where
     def =
         TopologySettings
         { topologyMembers = def
         , topologyProposalSchedule = generate (GoodPolicy <$> arbitrary)
         , topologyBallotsSchedule = execute
-        , topologyRecoveryDelay = interval 1 sec
         , topologySeed = RandomSeed
         , topologyLifetime = interval 999 hour
+        , topologyCustomSettings = def
+        }
+
+instance Default (CustomTopologySettings Classic) where
+    def = ClassicTopologySettingsPart
+
+instance Default (CustomTopologySettings Fast) where
+    def =
+        FastTopologySettingsPart
+        { topologyRecoveryDelay = interval 1 sec
         }
 
 -- | Provides info about topology in runtime.
@@ -131,7 +143,7 @@ listener endpoint = Method . clarifyLoggerName $ \msg -> do
         ]
 
 type TopologyLauncher pv m =
-    MonadTopology m => TopologySettings -> m (TopologyMonitor pv m)
+    MonadTopology m => TopologySettings pv -> m (TopologyMonitor pv m)
 
 data TopologyActions pv m = TopologyActions
     { proposeAction     :: HasMembers => Policy -> ProcessM Proposer pv m ()
@@ -142,8 +154,8 @@ data TopologyActions pv m = TopologyActions
     }
 
 -- | Launch Paxos algorithm.
-launchPaxos :: ProtocolVersion pv => TopologyActions pv m -> TopologyLauncher pv m
-launchPaxos TopologyActions{..} TopologySettings{..} = withMembers topologyMembers $ do
+launchPaxosWith :: ProtocolVersion pv => TopologyActions pv m -> TopologyLauncher pv m
+launchPaxosWith TopologyActions{..} TopologySettings{..} = withMembers topologyMembers $ do
     let (proposalSeed, ballotSeed) = splitGenSeed topologySeed
 
     proposerState <- newProcess Proposer . work (for topologyLifetime) $ do
@@ -190,47 +202,57 @@ launchPaxos TopologyActions{..} TopologySettings{..} = withMembers topologyMembe
             \process -> newProcess process . work (for topologyLifetime) $ do
                 serve (processPort process) listeners
 
-{-# NOINLINE launchPaxos #-}
+{-# NOINLINE launchPaxosWith #-}
 
--- | Launch Classic Paxos.
-launchClassicPaxos :: forall m. TopologyLauncher Classic m
-launchClassicPaxos = launchPaxos
-    TopologyActions
-    { proposeAction = propose
-    , startBallotAction = phase1a
-    , leaderListeners =
-        [ listener @Leader rememberProposal
-        , listener @Leader phase2a
-        ]
-    , acceptorListeners =
-        [ listener @Acceptor phase1b
-        , listener @Acceptor phase2b
-        ]
-    , learnerListeners =
-        [ listener @Learner learn
-        ]
-    }
+class ProtocolVersion pv =>
+      HasVersionTopologyActions pv where
+    versionTopologyActions
+        :: forall m.
+           MonadTopology m
+        => CustomTopologySettings pv -> TopologyActions pv m
 
--- | Launch Classic Paxos.
-launchFastPaxos :: forall m. TopologyLauncher Fast m
-launchFastPaxos topologySettings@TopologySettings{..} = launchPaxos
-    TopologyActions
-    { proposeAction = proposeFast
-    , startBallotAction = initFastBallot topologyRecoveryDelay
-    , leaderListeners =
-        [ listener @Leader rememberProposal
-        , listener @Leader phase2a
-        , listener @Leader detectConflicts
-        ]
-    , acceptorListeners =
-        [ listener @Acceptor phase1b
-        , listener @Acceptor phase2b
-        , listener @Acceptor phase2bFast
-        , listener @Acceptor acceptorRememberFastProposal
-        ]
-    , learnerListeners =
-        [ listener @Learner learn
-        , listener @Learner learnFast
-        ]
-    }
-    topologySettings
+-- | Launch version of paxos.
+launchPaxos :: HasVersionTopologyActions pv => TopologyLauncher pv m
+launchPaxos settings = launchPaxosWith (versionTopologyActions customSettings) settings
+  where
+    customSettings = topologyCustomSettings settings
+
+instance HasVersionTopologyActions Classic where
+    versionTopologyActions _ =
+        TopologyActions
+        { proposeAction = propose
+        , startBallotAction = phase1a
+        , leaderListeners =
+            [ listener @Leader rememberProposal
+            , listener @Leader phase2a
+            ]
+        , acceptorListeners =
+            [ listener @Acceptor phase1b
+            , listener @Acceptor phase2b
+            ]
+        , learnerListeners =
+            [ listener @Learner learn
+            ]
+        }
+
+instance HasVersionTopologyActions Fast where
+    versionTopologyActions FastTopologySettingsPart{..} =
+        TopologyActions
+        { proposeAction = proposeFast
+        , startBallotAction = initFastBallot topologyRecoveryDelay
+        , leaderListeners =
+            [ listener @Leader rememberProposal
+            , listener @Leader phase2a
+            , listener @Leader detectConflicts
+            ]
+        , acceptorListeners =
+            [ listener @Acceptor phase1b
+            , listener @Acceptor phase2b
+            , listener @Acceptor phase2bFast
+            , listener @Acceptor acceptorRememberFastProposal
+            ]
+        , learnerListeners =
+            [ listener @Learner learn
+            , listener @Learner learnFast
+            ]
+        }

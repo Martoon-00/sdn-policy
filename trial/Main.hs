@@ -23,9 +23,6 @@ main = do
         logInfo "Starting"
 
         -- execute consensus
-        case poType of
-            ClassicProtocol ->
-                launchClassicPaxos topologySettings >>= awaitTermination
-            FastProtocol ->
-                launchFastPaxos topologySettings >>= awaitTermination
+        TopologySettingsBox settings <- pure topologySettings
+        launchPaxos settings >>= awaitTermination
 
