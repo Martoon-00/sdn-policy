@@ -20,6 +20,7 @@ class ( QuorumFamily (VersionQuorum pv)
       ProtocolVersion pv where
     type VersionQuorum pv :: *
 
+
 -- | Tag for classic version of protocol.
 data Classic
 
@@ -29,6 +30,7 @@ instance Buildable (Proxy Classic) where
 instance ProtocolVersion Classic where
     type VersionQuorum Classic = ClassicMajorityQuorum
 
+
 -- | Tag for fast version of protocol with classic version used for recovery.
 data Fast
 
@@ -37,6 +39,7 @@ instance Buildable (Proxy Fast) where
 
 instance ProtocolVersion Fast where
     type VersionQuorum Fast = FastMajorityQuorum
+
 
 -- * Utilities
 

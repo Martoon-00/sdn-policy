@@ -105,7 +105,7 @@ phase1b (Phase1aMsg bal) = do
     msg <- withProcessState $ do
         -- promise not to accept messages of lesser ballot numbers
         -- make stored ballot id not lesser than @bal@
-        acceptorLastKnownBallotId . as %= max bal
+        acceptorLastKnownBallotId . as %= max bal  -- TODO: remove 'as'
         Phase1bMsg
             <$> use acceptorId
             <*> use (acceptorLastKnownBallotId . as)
@@ -124,7 +124,7 @@ initFastBallot recoveryDelay = do
         pure newBallotId
 
     schedule (after recoveryDelay) $
-        checkRecoveryNecessity bal
+        startRecoveryIfNecessary bal
 
     broadcastTo (processesAddresses Acceptor) (InitFastBallotMsg bal)
 
@@ -143,7 +143,7 @@ phase2a (Phase1bMsg accId bal cstruct) = do
 
         -- if some quorums appeared, recalculate Gamma and apply pending policiesToApply
         if isQuorum newVotes
-        then do
+        then do  -- TODO: don't hurry
             when (isMinQuorum newVotes) $
                 logInfo $ "Just got 1b from quorum of acceptors at " <> pretty bal
 
@@ -163,7 +163,7 @@ phase2b
     :: (MonadPhase m, HasContextOf Acceptor pv m)
     => Phase2aMsg -> m ()
 phase2b (Phase2aMsg bal cstruct) = do
-    maybeMsg <- withProcessState $ do
+    maybeMsg <- withProcessState $ do  -- TODO: add "atomically" word
         localBallotId <- use $ acceptorLastKnownBallotId . as
         localCstruct <- use acceptorCStruct
 
@@ -234,8 +234,8 @@ updateLearnedValue newLearned = do
         sformat ("New learned cstruct: "%build) new
 
 warnOnPartUpdate :: MonadLog m => Configuration -> Configuration -> m ()
-warnOnPartUpdate incoming updated = do
-    unless (updated `extends` incoming) $
+warnOnPartUpdate incoming updated = do  -- TODO: normal name
+    unless (updated `extends` incoming) $  -- TODO: and normal comment below
         logInfo $ sformat ("Incoming cstruct was (partly) dropped:\
                         \\n  incoming:  "%build%
                         "\n  new value: "%build)
@@ -281,10 +281,10 @@ delegateToRecovery accId bal cstruct = do
     let recoveryBallotId = bal
     phase2a (Phase1bMsg accId recoveryBallotId cstruct)
 
-checkRecoveryNecessity
+startRecoveryIfNecessary
     :: (MonadPhase m, HasContextOf Leader Fast m)
     => BallotId -> m ()
-checkRecoveryNecessity bal = do
+startRecoveryIfNecessary bal = do
     (needRecovery, unconfirmedPolicies) <- withProcessState $ do
         fastBallotStatus <- use $ leaderFastBallotStatus . at bal . non def
 
@@ -321,9 +321,9 @@ detectConflicts (Phase2bFastMsg bal accId cstruct) = do
     newVotes <- withProcessState $ do
         leaderFastVotes . at bal . non mempty <%= addVote accId cstruct
 
-    if (void newVotes == maxBound)
-        -- all possible votes collected - ready to checker whether recovery required
-        then checkRecoveryNecessity bal
+    if void newVotes == maxBound
+        -- all possible votes collected - ready to check whether recovery required
+        then startRecoveryIfNecessary bal
         -- if recovery already occured - delegate to phase2a of classic paxos
         else do
             fastBallotStatus <-

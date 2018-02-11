@@ -3,7 +3,7 @@
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
 
--- | Messages different processes send to each other
+-- | Messages which different processes send to each other
 
 module Sdn.Protocol.Messages where
 
