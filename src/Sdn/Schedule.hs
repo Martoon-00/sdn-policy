@@ -68,7 +68,6 @@ getGenSeed = \case
     RandomSeed -> mkStdGen <$> liftIO randomIO
     FixedSeed s -> pure s
 
--- | 'GenSeed' is not @instance RandomGen@, so custom split is needed.
 splitGenSeed :: GenSeed -> (GenSeed, GenSeed)
 splitGenSeed RandomSeed       = (RandomSeed, RandomSeed)
 splitGenSeed (FixedSeed seed) = both %~ FixedSeed $ split seed
@@ -76,17 +75,16 @@ splitGenSeed (FixedSeed seed) = both %~ FixedSeed $ split seed
 -- | Execute given job on schedule.
 runSchedule
     :: MonadSchedule m
-    => GenSeed -> Schedule m p -> (p -> m ()) -> m ()
-runSchedule seed (Schedule schedule) consumer = do
+    => StdGen -> Schedule m p -> (p -> m ()) -> m ()
+runSchedule scGen (Schedule schedule) consumer = do
     let scPush = consumer
-    scGen <- getGenSeed seed
     scCont <- newTVarIO def
     fork_ $ schedule ScheduleContext{..}
 
 -- | Execute schedule without any job passed.
 runSchedule_
     :: MonadSchedule m
-    => GenSeed -> Schedule m () -> m ()
+    => StdGen -> Schedule m () -> m ()
 runSchedule_ seed schedule = runSchedule seed schedule $ \() -> pass
 
 -- | Allows to execute schedules in parallel.

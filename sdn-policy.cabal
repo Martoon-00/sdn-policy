@@ -43,6 +43,7 @@ library
                      , formatting
                      , fmt
                      , lens
+                     , MonadRandom
                      , msgpack
                      , mtl
                      , reflection
@@ -89,6 +90,7 @@ executable demo
                      , data-default
                      , formatting
                      , lens
+                     , MonadRandom
                      , mtl
                      , optparse-applicative
                      , random

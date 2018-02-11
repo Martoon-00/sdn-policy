@@ -17,6 +17,7 @@ import           Control.TimeWarp.Timed   (Microsecond, MonadTimed, for, fork_, 
                                            work)
 import           Data.Default             (Default (..))
 import           Formatting               (build, sformat, shown, stext, (%))
+import           System.Random            (StdGen, split)
 import           Test.QuickCheck          (arbitrary)
 import           Universum
 
@@ -48,7 +49,6 @@ data TopologySettings pv = TopologySettings
     { topologyMembers          :: Members
     , topologyProposalSchedule :: TopologySchedule Policy
     , topologyBallotsSchedule  :: TopologySchedule ()
-    , topologySeed             :: GenSeed
     , topologyLifetime         :: Microsecond
     , topologyCustomSettings   :: CustomTopologySettings pv
     }
@@ -70,7 +70,6 @@ instance Default (CustomTopologySettings pv) =>
         { topologyMembers = def
         , topologyProposalSchedule = generate (GoodPolicy <$> arbitrary)
         , topologyBallotsSchedule = execute
-        , topologySeed = RandomSeed
         , topologyLifetime = interval 999 hour
         , topologyCustomSettings = def
         }
@@ -143,7 +142,7 @@ listener endpoint = Method . clarifyLoggerName $ \msg -> do
         ]
 
 type TopologyLauncher pv m =
-    MonadTopology m => TopologySettings pv -> m (TopologyMonitor pv m)
+    MonadTopology m => StdGen -> TopologySettings pv -> m (TopologyMonitor pv m)
 
 data TopologyActions pv m = TopologyActions
     { proposeAction     :: HasMembers => Policy -> ProcessM Proposer pv m ()
@@ -155,8 +154,8 @@ data TopologyActions pv m = TopologyActions
 
 -- | Launch Paxos algorithm.
 launchPaxosWith :: ProtocolVersion pv => TopologyActions pv m -> TopologyLauncher pv m
-launchPaxosWith TopologyActions{..} TopologySettings{..} = withMembers topologyMembers $ do
-    let (proposalSeed, ballotSeed) = splitGenSeed topologySeed
+launchPaxosWith TopologyActions{..} seed TopologySettings{..} = withMembers topologyMembers $ do
+    let (proposalSeed, ballotSeed) = split seed
 
     proposerState <- newProcess Proposer . work (for topologyLifetime) $ do
         -- wait for servers to bootstrap
@@ -213,7 +212,7 @@ class ProtocolVersion pv =>
 
 -- | Launch version of paxos.
 launchPaxos :: HasVersionTopologyActions pv => TopologyLauncher pv m
-launchPaxos settings = launchPaxosWith (versionTopologyActions customSettings) settings
+launchPaxos gen settings = launchPaxosWith (versionTopologyActions customSettings) gen settings
   where
     customSettings = topologyCustomSettings settings
 

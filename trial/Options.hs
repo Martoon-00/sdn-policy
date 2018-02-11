@@ -12,6 +12,7 @@
 module Options where
 
 import           Control.Lens         (Setter')
+import           Control.Monad.Random (MonadRandom)
 import           Control.Monad.Writer (WriterT (..))
 import qualified Control.TimeWarp.Rpc as D
 import qualified Data.Text.Buildable
@@ -21,7 +22,6 @@ import           Data.Yaml            (FromJSON (..), Value (..), decodeFileEith
 import qualified Data.Yaml            as Yaml
 import           Formatting           (bprint, build, builder, sformat, stext, (%))
 import qualified Options.Applicative  as Opt
-import           System.Random        (mkStdGen)
 import           Test.QuickCheck      (Gen, arbitrary, frequency)
 import           Universum
 
@@ -97,7 +97,6 @@ data TopologySettingsBuilder = TopologySettingsBuilder
     { tsbMembers          :: Members
     , tsbProposalSchedule :: ScheduleBuilder Policy
     , tsbBallotsSchedule  :: ScheduleBuilder ()
-    , tsbSeed             :: S.GenSeed
     , tsbLifetime         :: Microsecond
     , tsbCustomSettings   :: CustomTopologySettingsBuilder
     } deriving (Generic)
@@ -132,9 +131,15 @@ data TopologySettingsBox =
     forall pv. HasVersionTopologyActions pv =>
                TopologySettingsBox (TopologySettings pv)
 
-buildTopologySettings :: TopologySettingsBuilder -> TopologySettingsBox
-buildTopologySettings TopologySettingsBuilder{..} =
-    case tsbCustomSettings of
+buildTopologySettings
+    :: MonadRandom m
+    => TopologySettingsBuilder -> m TopologySettingsBox
+buildTopologySettings TopologySettingsBuilder{..} = do
+    let topologyMembers = tsbMembers
+    let topologyProposalSchedule = buildSchedule tsbProposalSchedule
+    let topologyBallotsSchedule = buildSchedule tsbBallotsSchedule
+    let topologyLifetime = convertUnit tsbLifetime
+    return $ case tsbCustomSettings of
         ClassicSettingsBuilderPart ->
             TopologySettingsBox TopologySettings
             { topologyCustomSettings = ClassicTopologySettingsPart
@@ -147,24 +152,21 @@ buildTopologySettings TopologySettingsBuilder{..} =
                 }
             , ..
             }
-  where
-    topologyMembers = tsbMembers
-    topologyProposalSchedule = buildSchedule tsbProposalSchedule
-    topologyBallotsSchedule = buildSchedule tsbBallotsSchedule
-    topologySeed = tsbSeed
-    topologyLifetime = convertUnit tsbLifetime
 
 data ProtocolOptions = ProtocolOptions
     { poTopologySettings :: TopologySettingsBuilder
     , poDelays           :: WithDesc D.Delays
+    , poSeed             :: Maybe Text
     }
 
 instance Buildable ProtocolOptions where
     build ProtocolOptions{..} =
         bprint (build
-               %"\n  network delays: "%stext)
+               %"\n  network delays: "%stext
+               %"\n  seed: "%stext)
             poTopologySettings
             (poDelays ^. descText)
+            (fromMaybe "<random>" poSeed)
 
 -- * Parser
 
@@ -274,17 +276,11 @@ instance FromJSON (WithDesc D.Delays) where
             return $ sformat (build%" - "%build) lower upper
                   ?: D.uniform @Microsecond (lower, upper)
 
-instance FromJSON S.GenSeed where
-    parseJSON = fmap mkSeed . optional . withObject "seed" (\o -> o .: "seed")
-      where
-        mkSeed = maybe S.RandomSeed (S.FixedSeed . mkStdGen)
-
 instance FromJSON TopologySettingsBuilder where
-    parseJSON v = flip (withObject "topology settings") v $ \o -> do
+    parseJSON = withObject "topology settings" $ \o -> do
         tsbMembers <- o .: "members"
         tsbProposalSchedule <- o .: "proposals"
         tsbBallotsSchedule <- o .: "ballots"
-        tsbSeed <- parseJSON v
         tsbLifetime <- o .: "lifetime"
         tsbCustomSettings <- customParser o
         return TopologySettingsBuilder{..}
@@ -303,11 +299,17 @@ instance FromJSON TopologySettingsBuilder where
 instance FromJSON ProtocolOptions where
     parseJSON v = do
         poTopologySettings <- parseJSON v
-        poDelays <- withObject "delay" (\o -> o .: "delays") v
+        poDelays <-
+            withObject "delay" (\o -> o .: "delays") v
+        poSeed <-
+            withObject "seed"
+                (\o ->               o .:? "seed"
+                 <|> show @Int <<$>> o .:? "seed") v
         return ProtocolOptions{..}
 
 configPathParser :: Opt.Parser FilePath
 configPathParser = Opt.strOption $
+    Opt.short 'c' <>
     Opt.long "config" <>
     Opt.help "Path to file describing network topology configuration" <>
     Opt.metavar "FILEPATH to YAML" <>

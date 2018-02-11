@@ -12,6 +12,7 @@ module Sdn.Extra.Util where
 
 import           Control.Lens           (Iso, Iso', LensRules, iso, lensField, lensRules,
                                          makeLenses, mappingNamer)
+import           Control.Monad.Random   (MonadRandom, getRandom)
 import           Control.TimeWarp.Rpc   (MonadRpc (..), NetworkAddress, RpcRequest (..),
                                          mkRequest)
 import qualified Control.TimeWarp.Rpc   as Rpc
@@ -27,7 +28,9 @@ import           Formatting.Internal    (Format (..))
 import qualified GHC.Exts               as Exts
 import qualified Language.Haskell.TH    as TH
 import qualified System.Console.ANSI    as ANSI
-import           Test.QuickCheck        (Gen, suchThat)
+import           Test.QuickCheck        (Gen, choose, suchThat)
+import           Test.QuickCheck.Gen    (unGen)
+import           Test.QuickCheck.Random (mkQCGen)
 import           Universum
 import           Unsafe                 (unsafeFromJust)
 
@@ -153,3 +156,15 @@ combineWithDesc :: [WithDesc a] -> WithDesc [a]
 combineWithDesc = uncurry WithDesc . first merge . unzip . map getWithDesc
   where
     merge = mconcat . intersperse ", "
+
+generateM :: MonadRandom m => Gen a -> m a
+generateM generator = do
+    seed <- getRandom
+    return $ unGen generator (mkQCGen seed) 30
+
+genSoundWord :: IsString s => Int -> Gen s
+genSoundWord k = fromString <$> doGen
+  where
+    doGen = forM [1..k] $ \i ->
+        choose ('a', 'z') `suchThat` (\c -> even i == isVowel c)
+    isVowel c = any (== c) ['a', 'y', 'o', 'e', 'i', 'u']

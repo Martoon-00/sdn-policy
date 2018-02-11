@@ -12,5 +12,5 @@ recovery:
     sec: 3
 lifetime: 5
 
-## One can specify integer number as seed for repeatable executions.
-seed: 2342342
+## One can specify string as seed for repeatable executions.
+seed: 123123

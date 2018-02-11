@@ -24,7 +24,6 @@ import           Test.QuickCheck.Property    (failed, reason, succeeded)
 
 import           Sdn.Extra
 import           Sdn.Protocol
-import qualified Sdn.Schedule                as S
 import           Test.Sdn.Overall.Properties
 
 
@@ -60,7 +59,7 @@ testLaunch TestLaunchParams{..} =
                 split (mkStdGen seed)
             launch :: MonadTopology m => m (TopologyMonitor pv m)
             launch =
-                launchPaxos testSettings{ topologySeed = S.FixedSeed gen2 }
+                launchPaxos gen2 testSettings
             runEmulation =
                 runTimedT .
                 runPureRpc testDelays gen1 .
