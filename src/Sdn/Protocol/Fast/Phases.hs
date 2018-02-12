@@ -19,7 +19,7 @@ import           Formatting                    (build, sformat, (%))
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra                     (as, listF, logInfo, throwOnFail)
+import           Sdn.Extra                     (listF, logInfo, throwOnFail)
 import qualified Sdn.Protocol.Classic.Messages as Classic
 import qualified Sdn.Protocol.Classic.Phases   as Classic
 import           Sdn.Protocol.Common.Phases
@@ -37,7 +37,7 @@ propose
     => Policy -> m ()
 propose policy = do
     logInfo $ sformat ("Proposing policy (fast): "%build) policy
-    withProcessState $
+    withProcessStateAtomically $
         proposerProposedPolicies <>= one policy
     broadcastTo (processAddresses Leader <> processesAddresses Acceptor)
                 (Fast.ProposalMsg policy)
@@ -48,8 +48,8 @@ acceptorRememberProposal
     :: (MonadPhase m, HasContextOf Acceptor Fast m)
     => Fast.ProposalMsg -> m ()
 acceptorRememberProposal (Fast.ProposalMsg policy) =
-    withProcessState $ do
-        bal <- fmap (+1) . use $ acceptorLastKnownBallotId . as
+    withProcessStateAtomically $ do
+        bal <- fmap (+1) . use $ acceptorLastKnownBallotId
         logInfo $ sformat (build%" to apply at "%build) policy bal
         acceptorFastPendingPolicies . at bal . non mempty <>= one policy
 
@@ -61,8 +61,8 @@ initBallot
 initBallot recoveryDelay = do
     logInfo "Starting new fast ballot"
 
-    bal <- withProcessState $ do
-        newBallotId <- leaderBallotId . as <+= 1
+    bal <- withProcessStateAtomically $ do
+        newBallotId <- leaderBallotId <+= 1
         pure newBallotId
 
     schedule (after recoveryDelay) $
@@ -76,8 +76,8 @@ phase2b
     :: (MonadPhase m, HasContextOf Acceptor Fast m)
     => Fast.InitBallotMsg -> m ()
 phase2b (Fast.InitBallotMsg bal) = do
-    msg <- withProcessState $ do
-        acceptorLastKnownBallotId . as %= max bal
+    msg <- withProcessStateAtomically $ do
+        acceptorLastKnownBallotId %= max bal
 
         cstruct <- use acceptorCStruct
         policiesToApply <- use $ acceptorFastPendingPolicies . at bal . non mempty
@@ -98,9 +98,9 @@ learn
     :: (MonadPhase m, HasContextOf Learner Fast m)
     => Fast.Phase2bMsg -> m ()
 learn (Fast.Phase2bMsg _ accId cstruct) = do
-    withProcessState $ do
+    withProcessStateAtomically $ do
         updated <- learnerVotes . at accId . non mempty <%= maxOrSecond cstruct
-        warnOnPartUpdate cstruct updated
+        warnOnPartialApply cstruct updated
 
         -- it's safe to learn votes from fast round even if recovery is going happen,
         -- because recovery deals with liveleness, correctness always holds.
@@ -121,7 +121,7 @@ startRecoveryIfNecessary
     :: (MonadPhase m, HasContextOf Leader Fast m)
     => BallotId -> m ()
 startRecoveryIfNecessary bal = do
-    (needRecovery, unconfirmedPolicies) <- withProcessState $ do
+    (needRecovery, unconfirmedPolicies) <- withProcessStateAtomically $ do
         fastBallotStatus <- use $ leaderFastBallotStatus . at bal . non def
 
         case fastBallotStatus of
@@ -142,7 +142,7 @@ startRecoveryIfNecessary bal = do
         logInfo $ sformat ("Unconfirmed policies: "%build)
                   unconfirmedPolicies
 
-        Votes votes <- withProcessState $ do
+        Votes votes <- withProcessStateAtomically $ do
             leaderRecoveryUsed . at bal ?= ()
             use $ leaderFastVotes . at bal . non mempty
 
@@ -154,7 +154,7 @@ detectConflicts
     :: (MonadPhase m, HasContextOf Leader Fast m)
     => Fast.Phase2bMsg -> m ()
 detectConflicts (Fast.Phase2bMsg bal accId cstruct) = do
-    newVotes <- withProcessState $ do
+    newVotes <- withProcessStateAtomically $ do
         leaderFastVotes . at bal . non mempty <%= addVote accId cstruct
 
     if void newVotes == maxBound
@@ -163,7 +163,7 @@ detectConflicts (Fast.Phase2bMsg bal accId cstruct) = do
         -- if recovery already occured - delegate to phase2a of classic paxos
         else do
             fastBallotStatus <-
-                withProcessState . use $ leaderFastBallotStatus . at bal . non def
+                withProcessStateAtomically . use $ leaderFastBallotStatus . at bal . non def
             case fastBallotStatus of
                 FastBallotInProgress -> pass
                 FastBallotSucceeded  -> pass

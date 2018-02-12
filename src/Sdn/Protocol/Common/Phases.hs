@@ -54,12 +54,13 @@ updateLearnedValue newLearned = do
 
 -- | Drop warning if we are going to merge received cstruct, but
 -- dropping some of its policies in the process.
-warnOnPartUpdate :: MonadLog m => Configuration -> Configuration -> m ()
-warnOnPartUpdate incoming updated = do  -- TODO: normal name
-    unless (updated `extends` incoming) $  -- TODO: and normal comment below
-        logInfo $ sformat ("Incoming cstruct was (partly) dropped:\
-                        \\n  incoming:  "%build%
-                        "\n  new value: "%build)
+warnOnPartialApply :: MonadLog m => Configuration -> Configuration -> m ()
+warnOnPartialApply incoming updated = do
+    unless (updated `extends` incoming) $
+        logInfo $
+        sformat ("Some policies were dropped while applying incoming cstruct:\
+                 \\n  incoming:  "%build%
+                 "\n  new value: "%build)
               incoming updated
 
 

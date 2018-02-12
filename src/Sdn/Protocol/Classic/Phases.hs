@@ -15,7 +15,7 @@ import           Formatting                    (build, sformat, (%))
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra                     (as, logInfo, submit, throwOnFail)
+import           Sdn.Extra                     (logInfo, submit, throwOnFail)
 import           Sdn.Protocol.Classic.Messages
 import           Sdn.Protocol.Common.Phases
 import           Sdn.Protocol.Context
@@ -31,7 +31,7 @@ propose
 propose policy = do
     logInfo $ sformat ("Proposing policy: "%build) policy
     -- remember policy (for testing purposes)
-    withProcessState $
+    withProcessStateAtomically $
         proposerProposedPolicies <>= one policy
     -- and send it to leader
     broadcastTo (processAddresses Leader) (ProposalMsg policy)
@@ -43,10 +43,7 @@ rememberProposal
     => ProposalMsg -> m ()
 rememberProposal (ProposalMsg policy) = do
     -- atomically modify process'es state
-    withProcessState $ do
-        -- add policy to pending policiesToApply for next ballot
-        -- We store @BallotId 'SomeRound@, 'as' allows to make it for specific round
-        -- In most cases round type may be ommited though
+    withProcessStateAtomically $ do
         bal <- use leaderBallotId
         leaderPendingPolicies . forClassic . at (bal + 1) . non mempty %= (policy :)
 
@@ -59,11 +56,11 @@ phase1a
 phase1a = do
     logInfo "Starting new ballot"
 
-    msg <- withProcessState $ do
+    msg <- withProcessStateAtomically $ do
         -- increment ballot id
         leaderBallotId += 1
         -- make up an "1a" message
-        Phase1aMsg <$> use (leaderBallotId . as)
+        Phase1aMsg <$> use leaderBallotId
 
     broadcastTo (processesAddresses Acceptor) msg
 
@@ -72,13 +69,13 @@ phase1b
        (MonadPhase m, HasContextOf Acceptor pv m)
     => Phase1aMsg -> m ()
 phase1b (Phase1aMsg bal) = do
-    msg <- withProcessState $ do
+    msg <- withProcessStateAtomically $ do
         -- promise not to accept messages of lesser ballot numbers
         -- make stored ballot id not lesser than @bal@
-        acceptorLastKnownBallotId . as %= max bal  -- TODO: remove 'as'
+        acceptorLastKnownBallotId %= max bal
         Phase1bMsg
             <$> use acceptorId
-            <*> use (acceptorLastKnownBallotId . as)
+            <*> use acceptorLastKnownBallotId
             <*> use acceptorCStruct
 
     submit (processAddress Leader) msg
@@ -90,7 +87,7 @@ phase2a
        (MonadPhase m, HasContextOf Leader pv m)
     => Phase1bMsg -> m ()
 phase2a (Phase1bMsg accId bal cstruct) = do
-    maybeMsg <- withProcessState $ do
+    maybeMsg <- withProcessStateAtomically $ do
         -- add received vote to set of votes stored locally for this ballot,
         -- initializing this set if doesn't exist yet
         newVotes <-
@@ -118,8 +115,8 @@ phase2b
     :: (MonadPhase m, HasContextOf Acceptor pv m)
     => Phase2aMsg -> m ()
 phase2b (Phase2aMsg bal cstruct) = do
-    maybeMsg <- withProcessState $ do  -- TODO: add "atomically" word
-        localBallotId <- use $ acceptorLastKnownBallotId . as
+    maybeMsg <- withProcessStateAtomically $ do
+        localBallotId <- use $ acceptorLastKnownBallotId
         localCstruct <- use acceptorCStruct
 
         -- check whether did we promise to ignore this message
@@ -127,7 +124,7 @@ phase2b (Phase2aMsg bal cstruct) = do
             || localBallotId < bal
         then do
            -- if ok, remember received info
-           acceptorLastKnownBallotId . as .= bal
+           acceptorLastKnownBallotId .= bal
            acceptorCStruct .= cstruct
 
            -- form message
@@ -146,13 +143,13 @@ learn
     :: (MonadPhase m, HasContextOf Learner pv m)
     => Phase2bMsg -> m ()
 learn (Phase2bMsg accId cstruct) = do
-    withProcessState $ do
+    withProcessStateAtomically $ do
         -- rewrite cstruct kept for this acceptor
 
         -- we should check here that new cstruct extends previous one.
         -- but the contrary is not an error, because of not-FIFO channels
         updated <- learnerVotes . at accId . non mempty <%= maxOrSecond cstruct
-        warnOnPartUpdate cstruct updated
+        warnOnPartialApply cstruct updated
 
         -- update total learned cstruct
         use learnerVotes

@@ -43,9 +43,9 @@ type MonadTransaction s m =
 
 -- | Atomically modify state stored by process.
 -- If exception is thrown in the process, no changes apply.
-withProcessState
+withProcessStateAtomically
     :: MonadTransaction s m => TransactionM s a -> m a
-withProcessState modifier = do
+withProcessStateAtomically modifier = do
     var <- pcState <$> ask
     launchPureLog (atomically . modifyTVarS var) modifier
 
