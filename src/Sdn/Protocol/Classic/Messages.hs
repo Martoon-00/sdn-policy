@@ -1,24 +1,17 @@
-{-# LANGUAGE AllowAmbiguousTypes  #-}
-{-# LANGUAGE TemplateHaskell      #-}
-{-# LANGUAGE TypeFamilies         #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies    #-}
 
--- | Messages which different processes send to each other
+-- | Messages used by Classic Paxos.
 
-module Sdn.Protocol.Messages where
+module Sdn.Protocol.Classic.Messages where
 
-import           Control.TimeWarp.Logging (LoggerName)
 import qualified Data.Text.Buildable
-import           Formatting               (bprint, build, (%))
+import           Formatting                   (bprint, build, (%))
 import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra
-
-class HasMessageShortcut msg where
-    messageShortcut :: LoggerName
-
--- * Classic
+import           Sdn.Protocol.Common.Messages (HasMessageShortcut (..))
 
 newtype ProposalMsg = ProposalMsg Policy
     deriving (Generic)
@@ -76,40 +69,4 @@ instance HasMessageShortcut Phase2bMsg where
     messageShortcut = mempty
 
 declareMessage ''Phase2bMsg
-
--- * Fast
-
-newtype ProposalFastMsg = ProposalFastMsg Policy
-    deriving (Generic)
-
-instance Buildable ProposalFastMsg where
-    build (ProposalFastMsg p) = bprint ("Fast proposal message "%build) p
-instance HasMessageShortcut ProposalFastMsg where
-    messageShortcut = "rem" <> "f"
-
-declareMessage ''ProposalFastMsg
-
-
-newtype InitFastBallotMsg = InitFastBallotMsg BallotId
-    deriving (Generic)
-
-instance Buildable InitFastBallotMsg where
-    build (InitFastBallotMsg b) = bprint (build%" initiation") b
-instance HasMessageShortcut InitFastBallotMsg where
-    messageShortcut = "2b" <> "f"
-
-declareMessage ''InitFastBallotMsg
-
-
-data Phase2bFastMsg = Phase2bFastMsg BallotId AcceptorId Configuration
-    deriving (Generic)
-
-instance Buildable Phase2bFastMsg where
-    build (Phase2bFastMsg b a c) =
-        bprint ("Phase 2b message at "%build%" from "%build%" "%build) b a c
-instance HasMessageShortcut Phase2bFastMsg where
-    messageShortcut = "f"
-
-declareMessage ''Phase2bFastMsg
-
 

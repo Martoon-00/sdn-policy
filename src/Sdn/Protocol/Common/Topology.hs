@@ -1,37 +1,35 @@
-{-# LANGUAGE AllowAmbiguousTypes       #-}
-{-# LANGUAGE NoMonomorphismRestriction #-}
-{-# LANGUAGE Rank2Types                #-}
-{-# LANGUAGE TemplateHaskell           #-}
-{-# LANGUAGE TypeFamilies              #-}
-{-# LANGUAGE UndecidableInstances      #-}
+{-# LANGUAGE AllowAmbiguousTypes  #-}
+{-# LANGUAGE Rank2Types           #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE UndecidableInstances #-}
 
--- | Make up network layout
+-- | Running bunch of processes of various roles.
 
-module Sdn.Protocol.Topology where
+module Sdn.Protocol.Common.Topology where
 
-import           Control.Monad.Catch      (Handler (..), catches)
-import           Control.TimeWarp.Logging (WithNamedLogger, modifyLoggerName)
-import           Control.TimeWarp.Rpc     (Method (..), MonadRpc, serve)
-import           Control.TimeWarp.Timed   (Microsecond, MonadTimed, for, fork_, hour,
-                                           interval, ms, sec, till, virtualTime, wait,
-                                           work)
-import           Data.Default             (Default (..))
-import           Formatting               (build, sformat, shown, stext, (%))
-import           System.Random            (StdGen, split)
-import           Test.QuickCheck          (arbitrary)
+import           Control.Monad.Catch          (Handler (..), catches)
+import           Control.TimeWarp.Logging     (WithNamedLogger, modifyLoggerName)
+import           Control.TimeWarp.Rpc         (Method (..), MonadRpc, serve)
+import           Control.TimeWarp.Timed       (Microsecond, MonadTimed, for, fork_, hour,
+                                               interval, ms, till, virtualTime, wait,
+                                               work)
+import           Data.Default                 (Default (..))
+import           Formatting                   (build, sformat, shown, stext, (%))
+import           System.Random                (StdGen, split)
+import           Test.QuickCheck              (arbitrary)
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra                (Message, MonadLog, MonadReporting, coloredF,
-                                           gray, logError, logInfo, loggerNameT,
-                                           resetColoring, withColor)
+import           Sdn.Extra                    (Message, MonadLog, MonadReporting,
+                                               coloredF, gray, logError, logInfo,
+                                               loggerNameT, resetColoring, withColor)
+import           Sdn.Protocol.Common.Messages
 import           Sdn.Protocol.Context
-import           Sdn.Protocol.Messages
-import           Sdn.Protocol.Phases
 import           Sdn.Protocol.Processes
 import           Sdn.Protocol.Versions
 import           Sdn.Schedule
 
+-- | Constraints for running a topology.
 type MonadTopology m =
     ( MonadIO m
     , MonadCatch m
@@ -55,13 +53,6 @@ data TopologySettings pv = TopologySettings
 
 data family CustomTopologySettings :: * -> *
 
-data instance CustomTopologySettings Classic =
-    ClassicTopologySettingsPart
-data instance CustomTopologySettings Fast =
-    FastTopologySettingsPart
-    { topologyRecoveryDelay :: Microsecond
-    }
-
 -- | Example of topology.
 instance Default (CustomTopologySettings pv) =>
          Default (TopologySettings pv) where
@@ -72,15 +63,6 @@ instance Default (CustomTopologySettings pv) =>
         , topologyBallotsSchedule = execute
         , topologyLifetime = interval 999 hour
         , topologyCustomSettings = def
-        }
-
-instance Default (CustomTopologySettings Classic) where
-    def = ClassicTopologySettingsPart
-
-instance Default (CustomTopologySettings Fast) where
-    def =
-        FastTopologySettingsPart
-        { topologyRecoveryDelay = interval 1 sec
         }
 
 -- | Provides info about topology in runtime.
@@ -94,7 +76,7 @@ data TopologyMonitor pv m = TopologyMonitor
 -- | Monad in which process (and phases) are supposed to work.
 type ProcessM p pv m = ReaderT (ProcessContext $ ProcessState p pv) m
 
--- | Create single newProcess.
+-- | Create single process.
 newProcess
     :: forall p pv m.
        ( MonadIO m
@@ -144,6 +126,7 @@ listener endpoint = Method . clarifyLoggerName $ \msg -> do
 type TopologyLauncher pv m =
     MonadTopology m => StdGen -> TopologySettings pv -> m (TopologyMonitor pv m)
 
+-- | How processes of various roles are supposed to work.
 data TopologyActions pv m = TopologyActions
     { proposeAction     :: HasMembers => Policy -> ProcessM Proposer pv m ()
     , startBallotAction :: HasMembers => ProcessM Leader pv m ()
@@ -203,8 +186,10 @@ launchPaxosWith TopologyActions{..} seed TopologySettings{..} = withMembers topo
 
 {-# NOINLINE launchPaxosWith #-}
 
+-- | Version-custom topology settings.
 class ProtocolVersion pv =>
       HasVersionTopologyActions pv where
+    -- | On which messages and how should each process respond.
     versionTopologyActions
         :: forall m.
            MonadTopology m
@@ -216,42 +201,4 @@ launchPaxos gen settings = launchPaxosWith (versionTopologyActions customSetting
   where
     customSettings = topologyCustomSettings settings
 
-instance HasVersionTopologyActions Classic where
-    versionTopologyActions _ =
-        TopologyActions
-        { proposeAction = propose
-        , startBallotAction = phase1a
-        , leaderListeners =
-            [ listener @Leader rememberProposal
-            , listener @Leader phase2a
-            ]
-        , acceptorListeners =
-            [ listener @Acceptor phase1b
-            , listener @Acceptor phase2b
-            ]
-        , learnerListeners =
-            [ listener @Learner learn
-            ]
-        }
 
-instance HasVersionTopologyActions Fast where
-    versionTopologyActions FastTopologySettingsPart{..} =
-        TopologyActions
-        { proposeAction = proposeFast
-        , startBallotAction = initFastBallot topologyRecoveryDelay
-        , leaderListeners =
-            [ listener @Leader rememberProposal
-            , listener @Leader phase2a
-            , listener @Leader detectConflicts
-            ]
-        , acceptorListeners =
-            [ listener @Acceptor phase1b
-            , listener @Acceptor phase2b
-            , listener @Acceptor phase2bFast
-            , listener @Acceptor acceptorRememberFastProposal
-            ]
-        , learnerListeners =
-            [ listener @Learner learn
-            , listener @Learner learnFast
-            ]
-        }
