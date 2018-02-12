@@ -25,9 +25,10 @@ import           Sdn.Base
 import           Sdn.Extra                    (Message, MonadLog, MonadReporting,
                                                coloredF, gray, logError, logInfo,
                                                loggerNameT, resetColoring, withColor)
+import qualified Sdn.Protocol.Classic.Phases  as Classic
 import           Sdn.Protocol.Common.Messages
 import           Sdn.Protocol.Context
-import           Sdn.Protocol.Phases
+import qualified Sdn.Protocol.Fast.Phases     as Fast
 import           Sdn.Protocol.Processes
 import           Sdn.Protocol.Versions
 import           Sdn.Schedule
@@ -219,39 +220,39 @@ launchPaxos gen settings = launchPaxosWith (versionTopologyActions customSetting
 instance HasVersionTopologyActions Classic where
     versionTopologyActions _ =
         TopologyActions
-        { proposeAction = propose
-        , startBallotAction = phase1a
+        { proposeAction = Classic.propose
+        , startBallotAction = Classic.phase1a
         , leaderListeners =
-            [ listener @Leader rememberProposal
-            , listener @Leader phase2a
+            [ listener @Leader Classic.rememberProposal
+            , listener @Leader Classic.phase2a
             ]
         , acceptorListeners =
-            [ listener @Acceptor phase1b
-            , listener @Acceptor phase2b
+            [ listener @Acceptor Classic.phase1b
+            , listener @Acceptor Classic.phase2b
             ]
         , learnerListeners =
-            [ listener @Learner learn
+            [ listener @Learner Classic.learn
             ]
         }
 
 instance HasVersionTopologyActions Fast where
     versionTopologyActions FastTopologySettingsPart{..} =
         TopologyActions
-        { proposeAction = proposeFast
-        , startBallotAction = initFastBallot topologyRecoveryDelay
+        { proposeAction = Fast.propose
+        , startBallotAction = Fast.initBallot topologyRecoveryDelay
         , leaderListeners =
-            [ listener @Leader rememberProposal
-            , listener @Leader phase2a
-            , listener @Leader detectConflicts
+            [ listener @Leader Classic.rememberProposal
+            , listener @Leader Classic.phase2a
+            , listener @Leader Fast.detectConflicts
             ]
         , acceptorListeners =
-            [ listener @Acceptor phase1b
-            , listener @Acceptor phase2b
-            , listener @Acceptor phase2bFast
-            , listener @Acceptor acceptorRememberFastProposal
+            [ listener @Acceptor Classic.phase1b
+            , listener @Acceptor Classic.phase2b
+            , listener @Acceptor Fast.phase2b
+            , listener @Acceptor Fast.acceptorRememberProposal
             ]
         , learnerListeners =
-            [ listener @Learner learn
-            , listener @Learner learnFast
+            [ listener @Learner Classic.learn
+            , listener @Learner Fast.learn
             ]
         }

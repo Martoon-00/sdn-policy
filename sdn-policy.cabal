@@ -31,10 +31,12 @@ library
                        Sdn.Protocol.Context
                        Sdn.Protocol.Classic
                        Sdn.Protocol.Classic.Messages
+                       Sdn.Protocol.Classic.Phases
                        Sdn.Protocol.Common.Messages
+                       Sdn.Protocol.Common.Phases
                        Sdn.Protocol.Fast
                        Sdn.Protocol.Fast.Messages
-                       Sdn.Protocol.Phases
+                       Sdn.Protocol.Fast.Phases
                        Sdn.Protocol.Processes
                        Sdn.Protocol.Topology
                        Sdn.Protocol.Versions

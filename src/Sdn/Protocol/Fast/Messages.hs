@@ -13,7 +13,7 @@ import           Sdn.Base
 import           Sdn.Extra
 import           Sdn.Protocol.Common.Messages (HasMessageShortcut (..))
 
--- Some messages from Classic Paxos are also used
+-- Some messages from Classic Paxos are also used, but not mentioned here.
 
 newtype ProposalFastMsg = ProposalFastMsg Policy
     deriving (Generic)
