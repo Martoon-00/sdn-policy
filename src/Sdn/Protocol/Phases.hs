@@ -2,21 +2,23 @@
 
 module Sdn.Protocol.Phases where
 
-import           Control.Lens           (at, non, (%=), (+=), (.=), (<%=), (<+=), (<>=),
-                                         (?=))
-import           Control.TimeWarp.Rpc   (MonadRpc)
-import           Control.TimeWarp.Timed (Microsecond, MonadTimed (..), after, schedule)
-import           Data.Default           (def)
-import qualified Data.Map               as M
-import qualified Data.Set               as S
-import           Formatting             (build, sformat, (%))
+import           Control.Lens                  (at, non, (%=), (+=), (.=), (<%=), (<+=),
+                                                (<>=), (?=))
+import           Control.TimeWarp.Rpc          (MonadRpc)
+import           Control.TimeWarp.Timed        (Microsecond, MonadTimed (..), after,
+                                                schedule)
+import           Data.Default                  (def)
+import qualified Data.Map                      as M
+import qualified Data.Set                      as S
+import           Formatting                    (build, sformat, (%))
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra              (MonadLog, MonadReporting, as, listF, logError,
-                                         logInfo, submit, throwOnFail)
+import           Sdn.Extra                     (MonadLog, MonadReporting, as, listF,
+                                                logError, logInfo, submit, throwOnFail)
+import           Sdn.Protocol.Classic.Messages
 import           Sdn.Protocol.Context
-import           Sdn.Protocol.Messages
+import           Sdn.Protocol.Fast.Messages
 import           Sdn.Protocol.Processes
 import           Sdn.Protocol.Versions
 

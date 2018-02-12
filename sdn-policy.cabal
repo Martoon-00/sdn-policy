@@ -29,7 +29,11 @@ library
                        Sdn.Extra.Util
 
                        Sdn.Protocol.Context
-                       Sdn.Protocol.Messages
+                       Sdn.Protocol.Classic
+                       Sdn.Protocol.Classic.Messages
+                       Sdn.Protocol.Common.Messages
+                       Sdn.Protocol.Fast
+                       Sdn.Protocol.Fast.Messages
                        Sdn.Protocol.Phases
                        Sdn.Protocol.Processes
                        Sdn.Protocol.Topology

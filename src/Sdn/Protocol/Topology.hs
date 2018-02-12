@@ -9,24 +9,24 @@
 
 module Sdn.Protocol.Topology where
 
-import           Control.Monad.Catch      (Handler (..), catches)
-import           Control.TimeWarp.Logging (WithNamedLogger, modifyLoggerName)
-import           Control.TimeWarp.Rpc     (Method (..), MonadRpc, serve)
-import           Control.TimeWarp.Timed   (Microsecond, MonadTimed, for, fork_, hour,
-                                           interval, ms, sec, till, virtualTime, wait,
-                                           work)
-import           Data.Default             (Default (..))
-import           Formatting               (build, sformat, shown, stext, (%))
-import           System.Random            (StdGen, split)
-import           Test.QuickCheck          (arbitrary)
+import           Control.Monad.Catch          (Handler (..), catches)
+import           Control.TimeWarp.Logging     (WithNamedLogger, modifyLoggerName)
+import           Control.TimeWarp.Rpc         (Method (..), MonadRpc, serve)
+import           Control.TimeWarp.Timed       (Microsecond, MonadTimed, for, fork_, hour,
+                                               interval, ms, sec, till, virtualTime, wait,
+                                               work)
+import           Data.Default                 (Default (..))
+import           Formatting                   (build, sformat, shown, stext, (%))
+import           System.Random                (StdGen, split)
+import           Test.QuickCheck              (arbitrary)
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra                (Message, MonadLog, MonadReporting, coloredF,
-                                           gray, logError, logInfo, loggerNameT,
-                                           resetColoring, withColor)
+import           Sdn.Extra                    (Message, MonadLog, MonadReporting,
+                                               coloredF, gray, logError, logInfo,
+                                               loggerNameT, resetColoring, withColor)
+import           Sdn.Protocol.Common.Messages
 import           Sdn.Protocol.Context
-import           Sdn.Protocol.Messages
 import           Sdn.Protocol.Phases
 import           Sdn.Protocol.Processes
 import           Sdn.Protocol.Versions
