@@ -4,5 +4,9 @@ module Sdn.Protocol
     ( module X
     ) where
 
-import           Sdn.Protocol.Topology as X
-import           Sdn.Protocol.Versions as X
+import           Sdn.Protocol.Classic.Topology as X
+import           Sdn.Protocol.Common.Topology  as X
+import           Sdn.Protocol.Context          as X
+import           Sdn.Protocol.Fast.Topology    as X
+import           Sdn.Protocol.Processes        as X
+import           Sdn.Protocol.Versions         as X

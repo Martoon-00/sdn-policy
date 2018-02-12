@@ -32,13 +32,15 @@ library
                        Sdn.Protocol.Classic
                        Sdn.Protocol.Classic.Messages
                        Sdn.Protocol.Classic.Phases
+                       Sdn.Protocol.Classic.Topology
                        Sdn.Protocol.Common.Messages
                        Sdn.Protocol.Common.Phases
+                       Sdn.Protocol.Common.Topology
                        Sdn.Protocol.Fast
                        Sdn.Protocol.Fast.Messages
                        Sdn.Protocol.Fast.Phases
+                       Sdn.Protocol.Fast.Topology
                        Sdn.Protocol.Processes
-                       Sdn.Protocol.Topology
                        Sdn.Protocol.Versions
   build-depends:       base >= 4.7 && < 5
                      , ansi-terminal
