@@ -15,38 +15,38 @@ import           Sdn.Protocol.Common.Messages (HasMessageShortcut (..))
 
 -- Some messages from Classic Paxos are also used, but not mentioned here.
 
-newtype ProposalFastMsg = ProposalFastMsg Policy
+newtype ProposalMsg = ProposalMsg Policy
     deriving (Generic)
 
-instance Buildable ProposalFastMsg where
-    build (ProposalFastMsg p) = bprint ("Fast proposal message "%build) p
-instance HasMessageShortcut ProposalFastMsg where
+instance Buildable ProposalMsg where
+    build (ProposalMsg p) = bprint (" proposal message "%build) p
+instance HasMessageShortcut ProposalMsg where
     messageShortcut = "rem" <> "f"
 
-declareMessage ''ProposalFastMsg
+declareMessage ''ProposalMsg
 
 
-newtype InitFastBallotMsg = InitFastBallotMsg BallotId
+newtype InitBallotMsg = InitBallotMsg BallotId
     deriving (Generic)
 
-instance Buildable InitFastBallotMsg where
-    build (InitFastBallotMsg b) = bprint (build%" initiation") b
-instance HasMessageShortcut InitFastBallotMsg where
+instance Buildable InitBallotMsg where
+    build (InitBallotMsg b) = bprint (build%" initiation") b
+instance HasMessageShortcut InitBallotMsg where
     messageShortcut = "2b" <> "f"
 
-declareMessage ''InitFastBallotMsg
+declareMessage ''InitBallotMsg
 
 
-data Phase2bFastMsg = Phase2bFastMsg BallotId AcceptorId Configuration
+data Phase2bMsg = Phase2bMsg BallotId AcceptorId Configuration
     deriving (Generic)
 
-instance Buildable Phase2bFastMsg where
-    build (Phase2bFastMsg b a c) =
+instance Buildable Phase2bMsg where
+    build (Phase2bMsg b a c) =
         bprint ("Phase 2b message at "%build%" from "%build%" "%build) b a c
-instance HasMessageShortcut Phase2bFastMsg where
+instance HasMessageShortcut Phase2bMsg where
     messageShortcut = "f"
 
-declareMessage ''Phase2bFastMsg
+declareMessage ''Phase2bMsg
 
 
 

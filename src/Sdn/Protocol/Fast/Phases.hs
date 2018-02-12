@@ -20,11 +20,11 @@ import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra                     (as, listF, logInfo, throwOnFail)
-import           Sdn.Protocol.Classic.Messages
-import           Sdn.Protocol.Classic.Phases   (phase2a)
+import qualified Sdn.Protocol.Classic.Messages as Classic
+import qualified Sdn.Protocol.Classic.Phases   as Classic
 import           Sdn.Protocol.Common.Phases
 import           Sdn.Protocol.Context
-import           Sdn.Protocol.Fast.Messages
+import qualified Sdn.Protocol.Fast.Messages    as Fast
 import           Sdn.Protocol.Processes
 import           Sdn.Protocol.Versions
 
@@ -40,14 +40,14 @@ propose policy = do
     withProcessState $
         proposerProposedPolicies <>= one policy
     broadcastTo (processAddresses Leader <> processesAddresses Acceptor)
-                (ProposalFastMsg policy)
+                (Fast.ProposalMsg policy)
 
 -- * Remembering proposals
 
 acceptorRememberProposal
     :: (MonadPhase m, HasContextOf Acceptor Fast m)
-    => ProposalFastMsg -> m ()
-acceptorRememberProposal (ProposalFastMsg policy) =
+    => Fast.ProposalMsg -> m ()
+acceptorRememberProposal (Fast.ProposalMsg policy) =
     withProcessState $ do
         bal <- fmap (+1) . use $ acceptorLastKnownBallotId . as
         logInfo $ sformat (build%" to apply at "%build) policy bal
@@ -68,14 +68,14 @@ initBallot recoveryDelay = do
     schedule (after recoveryDelay) $
         startRecoveryIfNecessary bal
 
-    broadcastTo (processesAddresses Acceptor) (InitFastBallotMsg bal)
+    broadcastTo (processesAddresses Acceptor) (Fast.InitBallotMsg bal)
 
 -- * Phase 2
 
 phase2b
     :: (MonadPhase m, HasContextOf Acceptor Fast m)
-    => InitFastBallotMsg -> m ()
-phase2b (InitFastBallotMsg bal) = do
+    => Fast.InitBallotMsg -> m ()
+phase2b (Fast.InitBallotMsg bal) = do
     msg <- withProcessState $ do
         acceptorLastKnownBallotId . as %= max bal
 
@@ -88,7 +88,7 @@ phase2b (InitFastBallotMsg bal) = do
         acceptorCStruct .= cstruct'
 
         accId <- use acceptorId
-        pure $ Phase2bFastMsg bal accId cstruct'
+        pure $ Fast.Phase2bMsg bal accId cstruct'
 
     broadcastTo (processAddresses Leader <> processesAddresses Learner) msg
 
@@ -96,8 +96,8 @@ phase2b (InitFastBallotMsg bal) = do
 
 learn
     :: (MonadPhase m, HasContextOf Learner Fast m)
-    => Phase2bFastMsg -> m ()
-learn (Phase2bFastMsg _ accId cstruct) = do
+    => Fast.Phase2bMsg -> m ()
+learn (Fast.Phase2bMsg _ accId cstruct) = do
     withProcessState $ do
         updated <- learnerVotes . at accId . non mempty <%= maxOrSecond cstruct
         warnOnPartUpdate cstruct updated
@@ -115,7 +115,7 @@ delegateToRecovery
     => AcceptorId -> BallotId -> Configuration -> m ()
 delegateToRecovery accId bal cstruct = do
     let recoveryBallotId = bal
-    phase2a (Phase1bMsg accId recoveryBallotId cstruct)
+    Classic.phase2a (Classic.Phase1bMsg accId recoveryBallotId cstruct)
 
 startRecoveryIfNecessary
     :: (MonadPhase m, HasContextOf Leader Fast m)
@@ -152,8 +152,8 @@ startRecoveryIfNecessary bal = do
 
 detectConflicts
     :: (MonadPhase m, HasContextOf Leader Fast m)
-    => Phase2bFastMsg -> m ()
-detectConflicts (Phase2bFastMsg bal accId cstruct) = do
+    => Fast.Phase2bMsg -> m ()
+detectConflicts (Fast.Phase2bMsg bal accId cstruct) = do
     newVotes <- withProcessState $ do
         leaderFastVotes . at bal . non mempty <%= addVote accId cstruct
 
