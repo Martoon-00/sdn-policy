@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE Rank2Types                 #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TypeFamilies               #-}
@@ -10,29 +11,30 @@
 
 module Sdn.Extra.Util where
 
-import           Control.Lens           (Iso, Iso', LensRules, iso, lensField, lensRules,
-                                         makeLenses, mappingNamer)
-import           Control.Monad.Random   (MonadRandom, getRandom)
-import           Control.TimeWarp.Rpc   (MonadRpc (..), NetworkAddress, RpcRequest (..),
-                                         mkRequest)
-import qualified Control.TimeWarp.Rpc   as Rpc
-import           Control.TimeWarp.Timed (Microsecond, MonadTimed (..), fork_)
-import           Data.Coerce            (coerce)
-import           Data.MessagePack       (MessagePack)
+import           Control.Lens            (Iso, Iso', LensRules, iso, lensField, lensRules,
+                                          makeLenses, mappingNamer)
+import           Control.Monad.Random    (MonadRandom, getRandom)
+import           Control.Monad.STM.Class (MonadSTM (..))
+import           Control.TimeWarp.Rpc    (MonadRpc (..), NetworkAddress, RpcRequest (..),
+                                          mkRequest)
+import qualified Control.TimeWarp.Rpc    as Rpc
+import           Control.TimeWarp.Timed  (Microsecond, MonadTimed (..), fork_)
+import           Data.Coerce             (coerce)
+import           Data.MessagePack        (MessagePack)
 import qualified Data.Text.Buildable
-import           Data.Text.Lazy.Builder (Builder)
-import           Data.Time.Units        (Millisecond, Second)
-import           Formatting             (Format, bprint, build, formatToString, later,
-                                         shortest, shown, string, (%))
-import           Formatting.Internal    (Format (..))
-import qualified GHC.Exts               as Exts
-import qualified Language.Haskell.TH    as TH
-import qualified System.Console.ANSI    as ANSI
-import           Test.QuickCheck        (Gen, choose, suchThat)
-import           Test.QuickCheck.Gen    (unGen)
-import           Test.QuickCheck.Random (mkQCGen)
+import           Data.Text.Lazy.Builder  (Builder)
+import           Data.Time.Units         (Millisecond, Second)
+import           Formatting              (Format, bprint, build, formatToString, later,
+                                          shortest, shown, string, (%))
+import           Formatting.Internal     (Format (..))
+import qualified GHC.Exts                as Exts
+import qualified Language.Haskell.TH     as TH
+import qualified System.Console.ANSI     as ANSI
+import           Test.QuickCheck         (Gen, choose, suchThat)
+import           Test.QuickCheck.Gen     (unGen)
+import           Test.QuickCheck.Random  (mkQCGen)
 import           Universum
-import           Unsafe                 (unsafeFromJust)
+import           Unsafe                  (unsafeFromJust)
 
 -- | Declare instance for one-way message.
 declareMessage :: TH.Name -> TH.Q [TH.Dec]
@@ -71,11 +73,11 @@ listF delim buildElem =
          one "[ " <> (intersperse delim $ bprint buildElem <$> values) <> one " ]"
 
 -- | Extended modifier for 'TVar'.
-modifyTVarS :: TVar s -> StateT s STM a -> STM a
+modifyTVarS :: (Monad m, MonadSTM m) => TVar s -> StateT s m a -> m a
 modifyTVarS var modifier = do
-    st <- readTVar var
+    st <- liftSTM $ readTVar var
     (res, st') <- runStateT modifier st
-    writeTVar var st'
+    liftSTM $ writeTVar var st'
     return res
 
 -- | Lens which looks inside the list-like structure
@@ -168,3 +170,11 @@ genSoundWord k = fromString <$> doGen
     doGen = forM [1..k] $ \i ->
         choose ('a', 'z') `suchThat` (\c -> even i == isVowel c)
     isVowel c = any (== c) ['a', 'y', 'o', 'e', 'i', 'u']
+
+zoom :: Monad m => Lens' s a -> StateT a m r -> StateT s m r
+zoom l st = do
+    s <- get
+    let a = s ^. l
+    (r, a') <- lift $ runStateT st a
+    modify (l .~ a')
+    return r

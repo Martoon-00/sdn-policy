@@ -31,7 +31,7 @@ data ProcessContext s = ProcessContext
     }
 
 -- | Envorinment for transaction modifying process state.
-type TransactionM s a = PureLog (StateT s STM) a
+type TransactionM s a = StateT s (PureLog STM) a
 
 -- | Constraints for transaction.
 type MonadTransaction s m =
@@ -47,7 +47,7 @@ withProcessStateAtomically
     :: MonadTransaction s m => TransactionM s a -> m a
 withProcessStateAtomically modifier = do
     var <- pcState <$> ask
-    launchPureLog (atomically . modifyTVarS var) modifier
+    launchPureLog atomically $ modifyTVarS var modifier
 
 data ForBothRoundTypes a = ForBothRoundTypes
     { _forClassic :: a

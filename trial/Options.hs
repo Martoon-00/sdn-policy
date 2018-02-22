@@ -162,7 +162,7 @@ data ProtocolOptions = ProtocolOptions
 instance Buildable ProtocolOptions where
     build ProtocolOptions{..} =
         bprint (build
-               %"\n  network delays: "%stext
+               %"\n  network condition: "%stext
                %"\n  seed: "%stext)
             poTopologySettings
             (poDelays ^. descText)

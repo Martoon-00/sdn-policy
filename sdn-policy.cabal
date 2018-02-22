@@ -52,6 +52,7 @@ library
                      , fmt
                      , lens
                      , MonadRandom
+                     , monad-stm
                      , msgpack
                      , mtl
                      , reflection

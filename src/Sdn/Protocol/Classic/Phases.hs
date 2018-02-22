@@ -15,7 +15,7 @@ import           Formatting                    (build, sformat, (%))
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra                     (logInfo, submit, throwOnFail)
+import           Sdn.Extra                     (logInfo, submit, throwOnFail, zoom)
 import           Sdn.Protocol.Classic.Messages
 import           Sdn.Protocol.Common.Phases
 import           Sdn.Protocol.Context
@@ -90,20 +90,25 @@ phase2a (Phase1bMsg accId bal cstruct) = do
     maybeMsg <- withProcessStateAtomically $ do
         -- add received vote to set of votes stored locally for this ballot,
         -- initializing this set if doesn't exist yet
-        newVotes <-
-            leaderVotes . at bal . non mempty <%= addVote accId cstruct
+        (oldVotes, newVotes) <- zoom (leaderVotes . at bal . non mempty) $ do
+            oldVotes <- get
+            newVotes <- identity <%= addVote accId cstruct
+            return (oldVotes, newVotes)
 
-        -- if some quorums appeared, recalculate Gamma and apply pending policiesToApply
-        if isQuorum newVotes
-        then do  -- TODO: don't hurry
-            when (isMinQuorum newVotes) $
-                logInfo $ "Just got 1b from quorum of acceptors at " <> pretty bal
+        when (isMinQuorum newVotes) $
+            logInfo $ "Just got 1b from quorum of acceptors at " <> pretty bal
 
-            combined <- throwOnFail ProtocolError $ combination newVotes
+        -- evaluate old and new Gamma
+        oldCombined <- throwOnFail ProtocolError $ combination oldVotes
+        newCombined <- throwOnFail ProtocolError $ combination newVotes
+
+        -- if there is something new, recalculate Gamma and apply pending policiesToApply
+        if isMinQuorum newVotes || oldCombined /= newCombined
+        then do
             policiesToApply <- use $ leaderPendingPolicies . forClassic . at bal . non mempty
-            let cstructWithNewPolicies = foldr acceptOrRejectCommand combined policiesToApply
+            let cstructWithNewPolicies = foldr acceptOrRejectCommand newCombined policiesToApply
 
-            logInfo $ "Broadcasting cstruct: " <> show cstructWithNewPolicies
+            logInfo $ "Broadcasting new cstruct: " <> show cstructWithNewPolicies
             pure $ Just (Phase2aMsg bal cstructWithNewPolicies)
         else pure Nothing
 
