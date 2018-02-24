@@ -3,14 +3,20 @@
 
 -- | Messages used by Classic Paxos.
 
-module Sdn.Protocol.Classic.Messages where
+module Sdn.Protocol.Classic.Messages
+    ( ProposalMsg (..)
+    , Phase1aMsg (..)
+    , Phase1bMsg (..)
+    , Phase2aMsg (..)
+    , Phase2bMsg (..)
+    ) where
 
 import qualified Data.Text.Buildable
 import           Formatting                   (bprint, build, (%))
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra
+import           Sdn.Extra                    (declareMessage)
 import           Sdn.Protocol.Common.Messages (HasMessageShortcut (..))
 
 newtype ProposalMsg = ProposalMsg Policy

@@ -130,6 +130,7 @@ instance Command Configuration PolicyEntry where
     glb = checkingAgreement S.union
     lub = S.intersection
     extends = flip S.isSubsetOf
+    difference = toList ... S.difference
 
     -- for each policy check, whether there is a quorum containing
     -- its acceptance or rejection

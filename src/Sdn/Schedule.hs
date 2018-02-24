@@ -20,14 +20,17 @@ module Sdn.Schedule
     -- * schedule combinators
     , periodic
     , repeating
+    , repeatingWhile
+    , repeatingUntil
     , times
+    , executeWhile
     , limited
     , delayed
     ) where
 
 import           Control.Lens           (both)
-import           Control.TimeWarp.Timed (MonadTimed, after, for, fork_, invoke, wait)
-import           Data.Default           (Default (..))
+import           Control.TimeWarp.Timed (MonadTimed, after, currentTime, for, fork_,
+                                         invoke, wait)
 import           Data.Time.Units        (Microsecond)
 import           System.Random          (StdGen, mkStdGen, next, randomIO, split)
 import           Test.QuickCheck.Gen    (Gen, unGen)
@@ -39,8 +42,9 @@ import           Sdn.Extra.Util         (modifyTVarS)
 -- | Whether executing job should be continued.
 newtype WhetherContinue = WhetherContinue Bool
 
-instance Default WhetherContinue where
-    def = WhetherContinue True
+instance Monoid WhetherContinue where
+    mempty = WhetherContinue True
+    WhetherContinue b1 `mappend` WhetherContinue b2 = WhetherContinue (b1 && b2)
 
 -- | Constraints required for executing schedules.
 type MonadSchedule m =
@@ -50,7 +54,7 @@ type MonadSchedule m =
 
 data ScheduleContext m p = ScheduleContext
     { scPush :: p -> m ()
-    , scCont :: TVar WhetherContinue
+    , scCont :: m WhetherContinue
     , scGen  :: StdGen
     }
 
@@ -78,7 +82,7 @@ runSchedule
     => StdGen -> Schedule m p -> (p -> m ()) -> m ()
 runSchedule scGen (Schedule schedule) consumer = do
     let scPush = consumer
-    scCont <- newTVarIO def
+    let scCont = pure mempty
     fork_ $ schedule ScheduleContext{..}
 
 -- | Execute schedule without any job passed.
@@ -86,6 +90,7 @@ runSchedule_
     :: MonadSchedule m
     => StdGen -> Schedule m () -> m ()
 runSchedule_ seed schedule = runSchedule seed schedule $ \() -> pass
+
 
 -- | Allows to execute schedules in parallel.
 -- I prefered to have this logic in 'Monoid' rather than
@@ -126,7 +131,7 @@ instance MonadTrans Schedule where
 -- | Just fires once, generating arbitrary job data.
 --
 -- Use combinators to define timing.
-generate :: Gen p -> Schedule m p
+generate :: Monad m => Gen p -> Schedule m p
 generate generator = do
     Schedule $ \ScheduleContext{..} ->
         let (seed, _) = next scGen
@@ -140,24 +145,29 @@ execute = pass
 checkCont :: MonadSchedule m => Schedule m ()
 checkCont =
     Schedule $ \ScheduleContext{..} -> do
-        WhetherContinue further <- readTVarIO scCont
+        WhetherContinue further <- scCont
         when further $ scPush ()
 
 checkingCont :: MonadSchedule m => Schedule m a -> Schedule m a
 checkingCont sch = sch <* checkCont
 
+-- | Execute action till condition holds, no more than given number of times,
+-- with given period.
+-- Action is not executed immediatelly, rather delay is awaited first.
+-- Use @execute <> periodicCounting ...@ to execute action immediatelly as well.
 periodicCounting
     :: MonadSchedule m
-    => Maybe Word -> Microsecond -> Schedule m ()
-periodicCounting mnum period =
+    => Maybe Word -> m Bool -> Microsecond -> Schedule m ()
+periodicCounting mnum condM period =
     Schedule $ \ScheduleContext{..} ->
         let loop (Just 0) _ = return ()
             loop mrem gen = do
-                WhetherContinue further <- readTVarIO scCont
-                when further $ do
+                wait (for period)
+                WhetherContinue further <- scCont
+                further2 <- condM
+                when (further && further2) $ do
                     let mrem' = fmap pred mrem
                     scPush ()
-                    wait (for period)
                     loop mrem' gen
         in  fork_ $ loop mnum scGen
 
@@ -165,28 +175,41 @@ periodicCounting mnum period =
 periodic
     :: MonadSchedule m
     => Microsecond -> Schedule m ()
-periodic = periodicCounting Nothing
+periodic = periodicCounting Nothing (pure True)
 
 -- | Execute given number of times with specified delay.
 repeating
     :: MonadSchedule m
     => Word -> Microsecond -> Schedule m ()
-repeating = periodicCounting . Just
+repeating num = periodicCounting (Just num) (pure True)
 
--- | Perform schedule several times at once.
+-- | Execute with given delay while condition holds.
+repeatingWhile :: MonadSchedule m => m Bool -> Microsecond -> Schedule m ()
+repeatingWhile condM = periodicCounting Nothing condM
+
+-- | Execute with given delay while condition doesn't hold.
+repeatingUntil :: MonadSchedule m => m Bool -> Microsecond -> Schedule m ()
+repeatingUntil condM = repeatingWhile (not <$> condM)
+
+  -- | Perform schedule several times at once.
 times :: MonadSchedule m => Word -> Schedule m ()
 times k = repeating k 0
+
+-- | Execute given schedule while continue holds.
+executeWhile
+    :: MonadSchedule m
+    => m Bool -> Schedule m p -> Schedule m p
+executeWhile condM (Schedule schedule) =
+    Schedule $ \ctx ->
+        schedule ctx{ scCont = (<>) <$> scCont ctx <*> (WhetherContinue <$> condM) }
 
 -- | Stop starting jobs after given amount of time.
 limited
     :: MonadSchedule m
     => Microsecond -> Schedule m p -> Schedule m p
-limited duration (Schedule schedule) =
-    Schedule $ \ctx -> do
-        fork_ $ do
-            wait (for duration)
-            atomically $ writeTVar (scCont ctx) (WhetherContinue False)
-        schedule ctx
+limited duration schedule = do
+    start <- lift currentTime
+    executeWhile (currentTime <&> ( < start + duration)) schedule
 
 -- | Postpone execution.
 delayed

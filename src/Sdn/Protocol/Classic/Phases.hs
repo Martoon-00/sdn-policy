@@ -10,13 +10,14 @@ module Sdn.Protocol.Classic.Phases
     , learn
     ) where
 
-import           Control.Lens                  (at, non, (%=), (+=), (.=), (<%=), (<>=))
+import           Control.Lens                  (at, non, (%=), (.=), (<%=), (<+=), (<>=))
 import           Formatting                    (build, sformat, (%))
 import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra                     (logInfo, submit, throwOnFail, zoom)
 import           Sdn.Protocol.Classic.Messages
+import           Sdn.Protocol.Common.Messages
 import           Sdn.Protocol.Common.Phases
 import           Sdn.Protocol.Context
 import           Sdn.Protocol.Processes
@@ -31,8 +32,9 @@ propose
 propose policy = do
     logInfo $ sformat ("Proposing policy: "%build) policy
     -- remember policy (for testing purposes)
-    withProcessStateAtomically $
+    withProcessStateAtomically $ do
         proposerProposedPolicies <>= one policy
+        proposerUnconfirmedPolicies <>= one policy
     -- and send it to leader
     broadcastTo (processAddresses Leader) (ProposalMsg policy)
 
@@ -44,8 +46,7 @@ rememberProposal
 rememberProposal (ProposalMsg policy) = do
     -- atomically modify process'es state
     withProcessStateAtomically $ do
-        bal <- use leaderBallotId
-        leaderPendingPolicies . forClassic . at (bal + 1) . non mempty %= (policy :)
+        leaderProposedPolicies . forClassic . pendingProposedCommands %= (policy :)
 
 -- * Phase 1
 
@@ -58,7 +59,10 @@ phase1a = do
 
     msg <- withProcessStateAtomically $ do
         -- increment ballot id
-        leaderBallotId += 1
+        newBallotId <- leaderBallotId <+= 1
+        -- fixate pending policies as attached to just started ballot
+        _ <- zoom (leaderProposedPolicies . forClassic) $
+             dumpProposedCommands newBallotId
         -- make up an "1a" message
         Phase1aMsg <$> use leaderBallotId
 
@@ -76,7 +80,7 @@ phase1b (Phase1aMsg bal) = do
         Phase1bMsg
             <$> use acceptorId
             <*> use acceptorLastKnownBallotId
-            <*> use acceptorCStruct
+            <*> use (acceptorCStruct . forClassic)
 
     submit (processAddress Leader) msg
 
@@ -105,7 +109,7 @@ phase2a (Phase1bMsg accId bal cstruct) = do
         -- if there is something new, recalculate Gamma and apply pending policiesToApply
         if isMinQuorum newVotes || oldCombined /= newCombined
         then do
-            policiesToApply <- use $ leaderPendingPolicies . forClassic . at bal . non mempty
+            policiesToApply <- use $ leaderProposedPolicies . forClassic . at bal . non mempty
             let cstructWithNewPolicies = foldr acceptOrRejectCommand newCombined policiesToApply
 
             logInfo $ "Broadcasting new cstruct: " <> show cstructWithNewPolicies
@@ -122,7 +126,7 @@ phase2b
 phase2b (Phase2aMsg bal cstruct) = do
     maybeMsg <- withProcessStateAtomically $ do
         localBallotId <- use $ acceptorLastKnownBallotId
-        localCstruct <- use acceptorCStruct
+        localCstruct <- use $ acceptorCStruct . forClassic
 
         -- check whether did we promise to ignore this message
         if localBallotId == bal && (cstruct `extends` localCstruct)
@@ -130,7 +134,7 @@ phase2b (Phase2aMsg bal cstruct) = do
         then do
            -- if ok, remember received info
            acceptorLastKnownBallotId .= bal
-           acceptorCStruct .= cstruct
+           acceptorCStruct . forClassic .= cstruct
 
            -- form message
            accId <- use acceptorId
@@ -148,7 +152,7 @@ learn
     :: (MonadPhase m, HasContextOf Learner pv m)
     => Phase2bMsg -> m ()
 learn (Phase2bMsg accId cstruct) = do
-    withProcessStateAtomically $ do
+    newLearnedPolicies <- withProcessStateAtomically $ do
         -- rewrite cstruct kept for this acceptor
 
         -- we should check here that new cstruct extends previous one.
@@ -157,7 +161,13 @@ learn (Phase2bMsg accId cstruct) = do
         warnOnPartialApply cstruct updated
 
         -- update total learned cstruct
-        use learnerVotes
+        learnedDifference <-
+            use learnerVotes
             >>= throwOnFail ProtocolError . combination
             >>= updateLearnedValue
+
+        return $ map acceptanceCmd learnedDifference
+
+    whenNotNull newLearnedPolicies $ \policies ->
+        submit (processAddress Proposer) (CommittedMsg policies)
 

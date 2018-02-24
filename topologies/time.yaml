@@ -4,6 +4,8 @@ members:
   learners: 1
 proposals:
   once: good
+reproposals:
+  once: execute
 ballots:
   once: execute
 delays: null

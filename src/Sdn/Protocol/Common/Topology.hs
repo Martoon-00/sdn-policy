@@ -24,10 +24,11 @@ import           Sdn.Extra                    (Message, MonadLog, MonadReporting
                                                coloredF, gray, logError, logInfo,
                                                loggerNameT, resetColoring, withColor)
 import           Sdn.Protocol.Common.Messages
+import           Sdn.Protocol.Common.Phases   (confirmCommitted, isPolicyUnconfirmed)
 import           Sdn.Protocol.Context
 import           Sdn.Protocol.Processes
 import           Sdn.Protocol.Versions
-import           Sdn.Schedule
+import qualified Sdn.Schedule                 as S
 
 -- | Constraints for running a topology.
 type MonadTopology m =
@@ -40,15 +41,26 @@ type MonadTopology m =
     , MonadRpc m
     )
 
-type TopologySchedule p = forall m. MonadTopology m => Schedule m p
+type TopologySchedule p = forall m. MonadTopology m => S.Schedule m p
 
 -- | Contains all info to build network which serves consensus algorithm.
 data TopologySettings pv = TopologySettings
-    { topologyMembers          :: Members
-    , topologyProposalSchedule :: TopologySchedule Policy
-    , topologyBallotsSchedule  :: TopologySchedule ()
-    , topologyLifetime         :: Microsecond
-    , topologyCustomSettings   :: CustomTopologySettings pv
+    { topologyMembers            :: Members
+      -- ^ Participants of given topology.
+    , topologyProposalSchedule   :: TopologySchedule Policy
+      -- ^ Given schedule of ballots,
+      -- schedule according to which policies are generated and proposed.
+    , topologyProposerInsistance :: TopologySchedule () -> TopologySchedule ()
+      -- ^ Schedule for repeating proposals of single policy.
+      -- It will automatically stop executing when proposer finds out that
+      -- policy is learned.
+    , topologyBallotsSchedule    :: TopologySchedule ()
+      -- ^ Schedule of ballots.
+    , topologyLifetime           :: Microsecond
+      -- ^ How long network should exist.
+      -- Once the hour comes, all actions are halted.
+    , topologyCustomSettings     :: CustomTopologySettings pv
+      -- ^ Settings related to particular version of consensus algorithm.
     }
 
 data family CustomTopologySettings :: * -> *
@@ -59,8 +71,10 @@ instance Default (CustomTopologySettings pv) =>
     def =
         TopologySettings
         { topologyMembers = def
-        , topologyProposalSchedule = generate (GoodPolicy <$> arbitrary)
-        , topologyBallotsSchedule = execute
+        , topologyProposalSchedule = S.generate (GoodPolicy <$> arbitrary)
+        , topologyProposerInsistance =
+            \balSch -> balSch
+        , topologyBallotsSchedule = S.execute
         , topologyLifetime = interval 999 hour
         , topologyCustomSettings = def
         }
@@ -96,7 +110,9 @@ newProcess process action = do
         action
     return $ readTVar stateBox
 
--- | Create single messages listener for server.
+-- | Construct single messages listener for process.
+-- This makes all incoming messages logged, and processes
+-- errors occured in listener.
 listener
     :: forall p pv msg m.
        ( MonadCatch m
@@ -136,22 +152,31 @@ data TopologyActions pv m = TopologyActions
     }
 
 -- | Launch Paxos algorithm.
+-- This function gathers all actions and listeners together in a small network.
 launchPaxosWith :: ProtocolVersion pv => TopologyActions pv m -> TopologyLauncher pv m
 launchPaxosWith TopologyActions{..} seed TopologySettings{..} = withMembers topologyMembers $ do
     let (proposalSeed, ballotSeed) = split seed
 
     proposerState <- newProcess Proposer . work (for topologyLifetime) $ do
-        -- wait for servers to bootstrap
-        runSchedule_ proposalSeed $ do
-            delayed (interval 10 ms)
-            policy <- limited topologyLifetime topologyProposalSchedule
+        S.runSchedule_ proposalSeed . S.limited topologyLifetime $ do
+            -- wait for servers to bootstrap
+            S.delayed (interval 10 ms)
+            policy <- topologyProposalSchedule
+            let repetitions =
+                    S.executeWhile (isPolicyUnconfirmed policy) $
+                    topologyProposerInsistance topologyBallotsSchedule
+            S.execute <> repetitions
             lift $ proposeAction policy
+
+        serve (processPort Proposer)
+            [ listener @Proposer confirmCommitted
+            ]
 
     leaderState <- newProcess Leader . work (for topologyLifetime) $ do
         -- wait for first proposal before start
-        runSchedule_ ballotSeed $ do
-            delayed (interval 20 ms)
-            limited topologyLifetime topologyBallotsSchedule
+        S.runSchedule_ ballotSeed $ do
+            S.delayed (interval 20 ms)
+            S.limited topologyLifetime topologyBallotsSchedule
             lift startBallotAction
 
         serve (processPort Leader) leaderListeners
@@ -174,6 +199,8 @@ launchPaxosWith TopologyActions{..} seed TopologySettings{..} = withMembers topo
 
     return TopologyMonitor{..}
   where
+    -- launch required number of servers, for processes of given type,
+    -- serving given listeners
     startListeningProcessesOf
         :: (HasMembers, MonadTopology m, Process p, Integral i, ProtocolVersion pv)
         => (i -> p)

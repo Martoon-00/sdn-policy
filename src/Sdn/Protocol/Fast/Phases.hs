@@ -9,8 +9,8 @@ module Sdn.Protocol.Fast.Phases
     , detectConflicts
     ) where
 
-import           Control.Lens                  (at, non, (%=), (.=), (<%=), (<+=), (<>=),
-                                                (?=))
+import           Control.Lens                  (at, ix, non, zoom, (.=), (<%=), (<+=),
+                                                (<<%=), (<>=), (?=))
 import           Control.TimeWarp.Timed        (Microsecond, after, schedule)
 import           Data.Default                  (def)
 import qualified Data.Map                      as M
@@ -19,9 +19,11 @@ import           Formatting                    (build, sformat, (%))
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra                     (listF, logInfo, throwOnFail)
+import           Sdn.Extra                     (exists, listF, logInfo, submit,
+                                                throwOnFail)
 import qualified Sdn.Protocol.Classic.Messages as Classic
 import qualified Sdn.Protocol.Classic.Phases   as Classic
+import           Sdn.Protocol.Common.Messages
 import           Sdn.Protocol.Common.Phases
 import           Sdn.Protocol.Context
 import qualified Sdn.Protocol.Fast.Messages    as Fast
@@ -37,8 +39,9 @@ propose
     => Policy -> m ()
 propose policy = do
     logInfo $ sformat ("Proposing policy (fast): "%build) policy
-    withProcessStateAtomically $
+    withProcessStateAtomically $ do
         proposerProposedPolicies <>= one policy
+        proposerUnconfirmedPolicies <>= one policy
     broadcastTo (processAddresses Leader <> processesAddresses Acceptor)
                 (Fast.ProposalMsg policy)
 
@@ -49,9 +52,16 @@ acceptorRememberProposal
     => Fast.ProposalMsg -> m ()
 acceptorRememberProposal (Fast.ProposalMsg policy) =
     withProcessStateAtomically $ do
-        bal <- fmap (+1) . use $ acceptorLastKnownBallotId
-        logInfo $ sformat (build%" to apply at "%build) policy bal
-        acceptorFastPendingPolicies . at bal . non mempty <>= one policy
+        committed <- exists $ acceptorCStruct . forFast . (ix (Accepted policy) <> ix (Rejected policy))
+
+        -- this is worth checking as soon as proposer may be insistent
+        if committed
+        then
+            logInfo $ sformat ("Policy "%build%" has already been committed") policy
+        else do
+            bal <- fmap (+1) . use $ acceptorLastKnownBallotId
+            logInfo $ sformat (build%" to apply at "%build) policy bal
+            acceptorFastProposedPolicies . pendingProposedCommands <>= one policy
 
 -- * Ballot initiation
 
@@ -77,20 +87,27 @@ phase2b
     => Fast.InitBallotMsg -> m ()
 phase2b (Fast.InitBallotMsg bal) = do
     msg <- withProcessStateAtomically $ do
-        acceptorLastKnownBallotId %= max bal
+        lastKnownBal <- acceptorLastKnownBallotId <<%= max bal
 
-        cstruct <- use acceptorCStruct
-        policiesToApply <- use $ acceptorFastPendingPolicies . at bal . non mempty
-        logInfo $ sformat ("List of fast pending policies at "%build
-                          %":\n    "%listF ", " build)
-                  bal policiesToApply
-        let cstruct' = foldr acceptOrRejectCommand cstruct policiesToApply
-        acceptorCStruct .= cstruct'
+        if bal <= lastKnownBal
+        then logInfo "Already heard about this ballot, ignoring"
+             $> Nothing
+        else do
+            cstruct <- use $ acceptorCStruct . forFast
+            policiesToApply <-
+                zoom acceptorFastProposedPolicies $
+                dumpProposedCommands bal
+            logInfo $ sformat ("List of fast pending policies at "%build
+                            %":\n    "%listF ", " build)
+                    bal policiesToApply
+            let cstruct' = foldr acceptOrRejectCommand cstruct policiesToApply
+            acceptorCStruct . forFast .= cstruct'
 
-        accId <- use acceptorId
-        pure $ Fast.Phase2bMsg bal accId cstruct'
+            accId <- use acceptorId
+            pure . Just $ Fast.Phase2bMsg bal accId cstruct'
 
-    broadcastTo (processAddresses Leader <> processesAddresses Learner) msg
+    whenJust msg $
+        broadcastTo (processAddresses Leader <> processesAddresses Learner)
 
 -- * Learning
 
@@ -98,15 +115,21 @@ learn
     :: (MonadPhase m, HasContextOf Learner Fast m)
     => Fast.Phase2bMsg -> m ()
 learn (Fast.Phase2bMsg _ accId cstruct) = do
-    withProcessStateAtomically $ do
+    newLearnedPolicies <- withProcessStateAtomically $ do
         updated <- learnerVotes . at accId . non mempty <%= maxOrSecond cstruct
         warnOnPartialApply cstruct updated
 
         -- it's safe to learn votes from fast round even if recovery is going happen,
         -- because recovery deals with liveleness, correctness always holds.
-        use learnerVotes
+        learnedDifference <-
+            use learnerVotes
              >>= throwOnFail ProtocolError . intersectingCombination
              >>= updateLearnedValue
+
+        return $ map acceptanceCmd learnedDifference
+
+    whenNotNull newLearnedPolicies $ \policies ->
+        submit (processAddress Proposer) (CommittedMsg policies)
 
 -- * Recovery detection and initialition
 

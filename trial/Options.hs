@@ -71,8 +71,9 @@ data ScheduleBuilder a
 buildSchedule :: ScheduleBuilder a -> (forall m. S.MonadSchedule m => Schedule m a)
 buildSchedule = \case
     Execute _ gen -> S.generate gen
-    Periodically (convertUnit -> delay) times sb ->
-        maybe S.periodic S.repeating times delay >> buildSchedule sb
+    Periodically (convertUnit -> delay) times sb -> do
+        maybe S.periodic S.repeating times delay
+        buildSchedule sb
     Delayed (convertUnit -> time) sb ->
         S.delayed time >> buildSchedule sb
     Times n sb ->
@@ -94,11 +95,12 @@ instance Buildable (ScheduleBuilder a) where
             mconcat $ intersperse " + " $ map (bprint $ "("%build%")") sbs
 
 data TopologySettingsBuilder = TopologySettingsBuilder
-    { tsbMembers          :: Members
-    , tsbProposalSchedule :: ScheduleBuilder Policy
-    , tsbBallotsSchedule  :: ScheduleBuilder ()
-    , tsbLifetime         :: Microsecond
-    , tsbCustomSettings   :: CustomTopologySettingsBuilder
+    { tsbMembers            :: Members
+    , tsbProposalSchedule   :: ScheduleBuilder Policy
+    , tsbProposerInsistance :: ScheduleBuilder ()
+    , tsbBallotsSchedule    :: ScheduleBuilder ()
+    , tsbLifetime           :: Microsecond
+    , tsbCustomSettings     :: CustomTopologySettingsBuilder
     } deriving (Generic)
 
 data CustomTopologySettingsBuilder
@@ -111,11 +113,13 @@ instance Buildable TopologySettingsBuilder where
     build TopologySettingsBuilder{..} =
         bprint ( "  members: \n"%build%
                "\n  proposal schedule: "%build%
+               "\n  re-proposals: "%build%
                "\n  ballots schedule: "%build%
                "\n  lifetime: "%build%
                "\n  type: "%builder)
             tsbMembers
             tsbProposalSchedule
+            tsbProposerInsistance
             tsbBallotsSchedule
             tsbLifetime
             custom
@@ -137,6 +141,8 @@ buildTopologySettings
 buildTopologySettings TopologySettingsBuilder{..} = do
     let topologyMembers = tsbMembers
     let topologyProposalSchedule = buildSchedule tsbProposalSchedule
+    let topologyProposerInsistance :: TopologySchedule () -> TopologySchedule ()
+        topologyProposerInsistance _ = buildSchedule tsbProposerInsistance
     let topologyBallotsSchedule = buildSchedule tsbBallotsSchedule
     let topologyLifetime = convertUnit tsbLifetime
     return $ case tsbCustomSettings of
@@ -280,6 +286,7 @@ instance FromJSON TopologySettingsBuilder where
     parseJSON = withObject "topology settings" $ \o -> do
         tsbMembers <- o .: "members"
         tsbProposalSchedule <- o .: "proposals"
+        tsbProposerInsistance <- o .: "reproposals"
         tsbBallotsSchedule <- o .: "ballots"
         tsbLifetime <- o .: "lifetime"
         tsbCustomSettings <- customParser o

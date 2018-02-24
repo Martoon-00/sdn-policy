@@ -1,15 +1,24 @@
 -- | Utilities for various phases of Paxos.
 
-module Sdn.Protocol.Common.Phases where
+module Sdn.Protocol.Common.Phases
+    ( MonadPhase
+    , updateLearnedValue
+    , warnOnPartialApply
+    , confirmCommitted
+    , isPolicyUnconfirmed
+    ) where
 
-import           Control.Lens           ((.=))
-import           Control.TimeWarp.Rpc   (MonadRpc)
-import           Control.TimeWarp.Timed (MonadTimed (..))
-import           Formatting             (build, sformat, (%))
+import           Control.Lens                 (at, (%=), (.=))
+import           Control.TimeWarp.Rpc         (MonadRpc)
+import           Control.TimeWarp.Timed       (MonadTimed (..))
+import qualified Data.Set                     as S
+import           Formatting                   (build, sformat, (%))
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra              (MonadLog, MonadReporting, logError, logInfo)
+import           Sdn.Extra                    (MonadLog, MonadReporting, logError,
+                                               logInfo, presence)
+import           Sdn.Protocol.Common.Messages
 import           Sdn.Protocol.Context
 import           Sdn.Protocol.Processes
 
@@ -24,10 +33,11 @@ type MonadPhase m =
     , HasMembers
     )
 
--- ** Learning
+-- * Learning
 
 -- | Update learned value with all checks and cautions.
-updateLearnedValue :: Configuration -> TransactionM (ProcessState Learner pv) ()
+updateLearnedValue :: Configuration
+                   -> TransactionM (ProcessState Learner pv) [Acceptance Policy]
 updateLearnedValue newLearned = do
     prevLearned <- use learnerLearned
 
@@ -42,6 +52,8 @@ updateLearnedValue newLearned = do
     -- report if the interesting happened
     when (newLearned /= prevLearned) $
         reportNewLearnedCStruct newLearned
+
+    return (newLearned `difference` prevLearned)
   where
     reportErrorBadLearnedCStruct prev new =
         logError $
@@ -63,4 +75,19 @@ warnOnPartialApply incoming updated = do
                  "\n  new value: "%build)
               incoming updated
 
+-- | Remember that given policies were committed.
+confirmCommitted
+    :: (MonadPhase m, HasContextOf Proposer pv m)
+    => CommittedMsg -> m ()
+confirmCommitted (CommittedMsg policies) = do
+    withProcessStateAtomically $ do
+        for_ policies $ \policy ->
+            proposerUnconfirmedPolicies %= S.delete policy
 
+-- | Helper to check whether policy is in list of unconfirmed policies.
+isPolicyUnconfirmed
+    :: (MonadPhase m, HasContextOf Proposer pv m)
+    => Policy -> m Bool
+isPolicyUnconfirmed policy = do
+    withProcessStateAtomically $
+        use $ proposerUnconfirmedPolicies . at policy . presence

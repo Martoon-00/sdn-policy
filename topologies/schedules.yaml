@@ -68,6 +68,9 @@ proposals:
     - weight: 1
       policy: bad
 
+reproposals:
+  once: execute
+
 delays: null
 recovery:
   delay:

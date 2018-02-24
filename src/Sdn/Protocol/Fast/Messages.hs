@@ -3,7 +3,11 @@
 
 -- | Special messages used in Fast Paxos
 
-module Sdn.Protocol.Fast.Messages where
+module Sdn.Protocol.Fast.Messages
+    ( ProposalMsg (..)
+    , InitBallotMsg (..)
+    , Phase2bMsg (..)
+    ) where
 
 import qualified Data.Text.Buildable
 import           Formatting                   (bprint, build, (%))

@@ -11,8 +11,9 @@
 
 module Sdn.Extra.Util where
 
-import           Control.Lens            (Iso, Iso', LensRules, iso, lensField, lensRules,
-                                          makeLenses, mappingNamer)
+import           Control.Lens            (Getting, Iso, Iso', LensRules, has, involuted,
+                                          iso, lens, lensField, lensRules, makeLenses,
+                                          mappingNamer)
 import           Control.Monad.Random    (MonadRandom, getRandom)
 import           Control.Monad.STM.Class (MonadSTM (..))
 import           Control.TimeWarp.Rpc    (MonadRpc (..), NetworkAddress, RpcRequest (..),
@@ -20,20 +21,21 @@ import           Control.TimeWarp.Rpc    (MonadRpc (..), NetworkAddress, RpcRequ
 import qualified Control.TimeWarp.Rpc    as Rpc
 import           Control.TimeWarp.Timed  (Microsecond, MonadTimed (..), fork_)
 import           Data.Coerce             (coerce)
-import           Data.MessagePack        (MessagePack)
+import           Data.MessagePack        (MessagePack (..))
 import qualified Data.Text.Buildable
 import           Data.Text.Lazy.Builder  (Builder)
 import           Data.Time.Units         (Millisecond, Second)
 import           Formatting              (Format, bprint, build, formatToString, later,
                                           shortest, shown, string, (%))
 import           Formatting.Internal     (Format (..))
+import           GHC.Exts                (IsList (..))
 import qualified GHC.Exts                as Exts
 import qualified Language.Haskell.TH     as TH
 import qualified System.Console.ANSI     as ANSI
 import           Test.QuickCheck         (Gen, choose, suchThat)
 import           Test.QuickCheck.Gen     (unGen)
 import           Test.QuickCheck.Random  (mkQCGen)
-import           Universum
+import           Universum               hiding (toList)
 import           Unsafe                  (unsafeFromJust)
 
 -- | Declare instance for one-way message.
@@ -63,14 +65,22 @@ submit = fork_ ... Rpc.submit
 
 -- | Builder for list.
 listF
-    :: (Container l, Buildable (Element l))
-    => Builder -> Format Builder (Element l -> Builder) -> Format r (l -> r)
+    :: IsList l
+    => Builder -> Format Builder (Item l -> Builder) -> Format r (l -> r)
 listF delim buildElem =
     later $ \(toList -> values) ->
     if null values
     then "[]"
     else mconcat $
          one "[ " <> (intersperse delim $ bprint buildElem <$> values) <> one " ]"
+
+pairF
+    :: Builder
+    -> Format Builder (a -> Builder)
+    -> Format Builder (b -> Builder)
+    -> Format r ((a, b) -> r)
+pairF delim buildA buildB =
+    later $ \(a, b) -> bprint buildA a <> delim <> bprint buildB b
 
 -- | Extended modifier for 'TVar'.
 modifyTVarS :: (Monad m, MonadSTM m) => TVar s -> StateT s m a -> m a
@@ -178,3 +188,18 @@ zoom l st = do
     (r, a') <- lift $ runStateT st a
     modify (l .~ a')
     return r
+
+exists :: Monad m => Getting Any s a -> StateT s m Bool
+exists l = has l <$> get
+
+presence :: Lens' (Maybe ()) Bool
+presence = lens (maybe False (\() -> True))
+                (\_ b -> if b then Just () else Nothing)
+
+absence :: Lens' (Maybe ()) Bool
+absence = presence . involuted not
+
+instance MessagePack a => MessagePack (NonEmpty a) where
+    toObject = toObject . toList
+    fromObject = maybe (fail "MessagePack NonEmpty: got empty list") pure
+             <=< fmap nonEmpty . fromObject

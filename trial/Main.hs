@@ -18,13 +18,14 @@ main = do
     options@ProtocolOptions{..} <- getProtocolOptions
     putText ""
     putText $ "Executing with following options:\n" <> pretty options
+    putText ""
 
     -- construct seed in appropriate form to use in protocol
     seed <- case poSeed of
         Just s  -> pure s
         Nothing -> do
             seed <- generateM $ genSoundWord 5
-            putText $ "\nUsing " <> show seed <> " as seed"
+            putText $ "Using " <> show seed <> " as seed\n"
             return seed
     let gen = read $ toString seed
         (gen1, gen2) = split gen

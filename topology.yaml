@@ -9,6 +9,10 @@ members:
 # schedules. See `topologies/schedules.yaml` for fine-tuning examples.
 proposals:
   once: good
+reproposals:
+  period:
+    sec: 3
+  schedule: execute
 ballots:
   once: execute
 

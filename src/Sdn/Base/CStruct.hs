@@ -113,6 +113,10 @@ class (SuperConflict cmd cstruct, Default cstruct, Buildable cstruct) =>
     -- | @extends c1 c2@ is true iff @glb c c2 = c1@ for some @c@.
     extends :: cstruct -> cstruct -> Bool
 
+    -- | @difference c1 c2@ returns all commands in @c1@ which are
+    -- not present in @c2@.
+    difference :: cstruct -> cstruct -> [cmd]
+
     -- | Returns cstruct with all commands, which are present in votes
     -- from all acceptors of some quorum.
     -- Fails if resulting cstruct is contradictory.

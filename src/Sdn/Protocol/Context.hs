@@ -8,11 +8,12 @@
 module Sdn.Protocol.Context where
 
 import           Control.Concurrent.STM (STM)
-import           Control.Lens           (makeLenses)
+import           Control.Lens           (At (..), Index, IxValue, Ixed (..), at,
+                                         makeLenses, (.=), (<<.=))
 import           Control.TimeWarp.Rpc   (MonadRpc, NetworkAddress)
 import           Control.TimeWarp.Timed (MonadTimed)
 import           Data.Default           (Default (def))
-import qualified Data.Map               as M
+import qualified Data.Set               as S
 import qualified Data.Text.Buildable
 import           Data.Text.Lazy.Builder (Builder)
 import           Formatting             (Format, bprint, build, later, (%))
@@ -20,7 +21,7 @@ import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra              (Message, MonadLog, MonadReporting, PureLog,
-                                         launchPureLog, listF, modifyTVarS, submit)
+                                         launchPureLog, listF, modifyTVarS, pairF, submit)
 import           Sdn.Protocol.Versions
 
 -- * General
@@ -61,6 +62,9 @@ instance Monoid a => Monoid (ForBothRoundTypes a) where
     ForBothRoundTypes a1 b1 `mappend` ForBothRoundTypes a2 b2
         = ForBothRoundTypes (a1 <> a2) (b1 <> b2)
 
+instance Default a => Default (ForBothRoundTypes a) where
+    def = ForBothRoundTypes def def
+
 type PerBallot a = Map BallotId a
 type PerBallots a = ForBothRoundTypes $ PerBallot a
 
@@ -68,17 +72,57 @@ type PerBallots a = ForBothRoundTypes $ PerBallot a
 ballotMapF
     :: Buildable BallotId
     => Format Builder (a -> Builder) -> Format r (PerBallot a -> r)
-ballotMapF f =
-    later $ \m ->
-    mconcat $ M.toList m <&> \(id, v) -> bprint (build % ": " %f) id v
+ballotMapF f = listF "\n  " (pairF ": " build f)
+
+-- | This is where commands from proposer are stored.
+-- We need to cache all policies proposed upon specified ballot.
+data ProposedCommands a = ProposedCommands
+    { _ballotProposedCommands  :: PerBallot [a]
+      -- ^ Commands proposed upon given ballots.
+    , _pendingProposedCommands :: [a]
+      -- ^ Proposed commands to attach to next ballot.
+    }
+
+makeLenses ''ProposedCommands
+
+instance Default (ProposedCommands a) where
+    def = ProposedCommands mempty mempty
+
+instance Buildable a => Buildable (ProposedCommands a) where
+    build ProposedCommands{..} =
+        bprint ("pending: "%listF ", " build%"\n"
+               %"fixed: "%ballotMapF (listF ", " build))
+            _pendingProposedCommands
+            _ballotProposedCommands
+
+instance Ixed (ProposedCommands a) where
+instance At (ProposedCommands a) where
+    at i = ballotProposedCommands . at i
+type instance Index (ProposedCommands a) = Index (PerBallot [a])
+type instance IxValue (ProposedCommands a) = IxValue (PerBallot [a])
+
+rememberProposedCommandsAt :: BallotId -> ProposedCommands a -> ProposedCommands a
+rememberProposedCommandsAt ballotId = execState $ do
+    pending <- pendingProposedCommands <<.= []
+    ballotProposedCommands . at ballotId .= Just pending
+
+dumpProposedCommands :: MonadState (ProposedCommands a) m => BallotId -> m [a]
+dumpProposedCommands ballotId =
+    use pendingProposedCommands <* modify (rememberProposedCommandsAt ballotId)
 
 -- * Per-process contexts
 -- ** Proposer
 
+data PolicyConfirmation
+    = UnconfirmedSince BallotId
+    | Confirmed
+
 -- | State held by proposer.
 data ProposerState pv = ProposerState
-    { _proposerProposedPolicies :: [Policy]
-      -- ^ Policies ever proposed (for testing purposes)
+    { _proposerProposedPolicies    :: [Policy]
+      -- ^ Policies ever proposed with their condition.
+    , _proposerUnconfirmedPolicies :: S.Set Policy
+      -- ^ Policies not yet reported as committed by any learned.
     }
 
 makeLenses ''ProposerState
@@ -86,11 +130,13 @@ makeLenses ''ProposerState
 instance Buildable (ProposerState pv) where
     build ProposerState{..} =
         bprint
-            ("\n    proposed policies:\n    "%listF "\n    , " build)
+            ("\n    proposed policies:\n    "%listF "\n    , " build
+            %"\n    unconfirmed policies:\n    "%listF "\n    , " build)
             _proposerProposedPolicies
+            _proposerUnconfirmedPolicies
 
 instance Default (ProposerState pv) where
-    def = ProposerState mempty
+    def = ProposerState mempty mempty
 
 -- ** Leader
 
@@ -111,8 +157,8 @@ instance Default FastBallotStatus where
 data LeaderState pv = LeaderState
     { _leaderBallotId         :: BallotId
       -- ^ Number of current ballot
-    , _leaderPendingPolicies  :: PerBallots [Policy]
-      -- ^ Policies ever proposed on this fast ballot, used in recovery
+    , _leaderProposedPolicies :: ForBothRoundTypes $ ProposedCommands Policy
+      -- ^ Policies ever proposed on this classic / fast ballot, in latter case used in recovery
     , _leaderVotes            :: Map BallotId $ Votes ClassicMajorityQuorum Configuration
       -- ^ CStructs received in 2b messages
     , _leaderFastVotes        :: Map BallotId $ Votes FastMajorityQuorum Configuration
@@ -134,28 +180,28 @@ instance ProtocolVersion pv =>
          Buildable (LeaderState pv) where
     build LeaderState {..} =
         bprint
-            ("\n    current ballod id: " %build %
-             "\n    pending policies: " %bothRoundsF (ballotMapF $ listF ", " build) %
+            ("\n    current ballod id: " %build%
+             "\n    proposed policies: " %bothRoundsF build%
              "\n    votes: " %ballotMapF build)
             _leaderBallotId
-            _leaderPendingPolicies
+            _leaderProposedPolicies
             _leaderVotes
 
 -- | Initial state of the leader.
 instance Default (LeaderState pv) where
-    def = LeaderState def mempty mempty mempty mempty mempty
+    def = LeaderState def def mempty mempty mempty mempty
 
 -- ** Acceptor
 
 -- | State kept by acceptor.
 data AcceptorState pv = AcceptorState
-    { _acceptorId                  :: AcceptorId
+    { _acceptorId                   :: AcceptorId
       -- ^ Identificator of this acceptor, should be read-only
-    , _acceptorLastKnownBallotId   :: BallotId
+    , _acceptorLastKnownBallotId    :: BallotId
       -- ^ Last heard ballotId from leader
-    , _acceptorCStruct             :: Configuration
+    , _acceptorCStruct              :: ForBothRoundTypes Configuration
       -- ^ Gathered CStruct so far
-    , _acceptorFastPendingPolicies :: Map BallotId [Policy]
+    , _acceptorFastProposedPolicies :: ProposedCommands Policy
       -- ^ Policies proposed upon each fast ballot
     }
 
@@ -166,14 +212,16 @@ instance ProtocolVersion pv => Buildable (AcceptorState pv) where
         bprint
             ("\n    my id: "%build%
              "\n    last known ballot id: "%build%
-             "\n    cstruct: "%build)
+             "\n    cstruct: "%bothRoundsF build%
+             "\n    proposed policies at fast ballots: "%build)
             _acceptorId
             _acceptorLastKnownBallotId
             _acceptorCStruct
+            _acceptorFastProposedPolicies
 
 -- | Initial state of acceptor.
 defAcceptorState :: forall pv. AcceptorId -> (AcceptorState pv)
-defAcceptorState id = AcceptorState id def mempty mempty
+defAcceptorState id = AcceptorState id def mempty def
 
 -- ** Learner
 

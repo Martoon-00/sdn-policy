@@ -4,6 +4,8 @@ members:
   learners: 1
 proposals:
   once: good
+reproposals:
+  once: execute
 ballots:
   once: execute
 delays: null
@@ -13,4 +15,4 @@ recovery:
 lifetime: 5
 
 ## One can specify string as seed for repeatable executions.
-seed: 123123
+seed: nyan
