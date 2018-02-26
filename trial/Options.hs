@@ -163,6 +163,7 @@ data ProtocolOptions = ProtocolOptions
     { poTopologySettings :: TopologySettingsBuilder
     , poDelays           :: WithDesc D.Delays
     , poSeed             :: Maybe Text
+    , poQuick            :: Bool
     }
 
 instance Buildable ProtocolOptions where
@@ -337,6 +338,8 @@ instance FromJSON ProtocolOptions where
             withObject "seed"
                 (\o ->               o .:? "seed"
                  <|> show @Int <<$>> o .:? "seed") v
+        poQuick <-
+            withObject "quick" (\o -> fromMaybe False <$> o .:? "quick") v
         return ProtocolOptions{..}
 
 configPathParser :: Opt.Parser FilePath

@@ -26,3 +26,6 @@ recovery:
 
 # how soon to shutdown. See also `topologies/time.yaml`.
 lifetime: 5
+
+# play in rewind mode
+quick: false

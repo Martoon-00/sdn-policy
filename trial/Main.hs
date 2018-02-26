@@ -1,8 +1,11 @@
+{-# LANGUAGE Rank2Types #-}
+
 module Main where
 
 import           Control.TimeWarp.Logging (logInfo, usingLoggerName)
-import           Control.TimeWarp.Rpc     (runPureRpc)
-import           Control.TimeWarp.Timed   (for, sec, wait)
+import           Control.TimeWarp.Rpc     (MonadRpc, runDelaysLayer, runMsgPackRpc,
+                                           runPureRpc)
+import           Control.TimeWarp.Timed   (MonadTimed, for, sec, wait)
 import           Prelude                  (read)
 import           System.Random            (split)
 import           Universum
@@ -27,14 +30,20 @@ main = do
             seed <- generateM $ genSoundWord 5
             putText $ "Using " <> show seed <> " as seed\n"
             return seed
-    let gen = read $ toString seed
-        (gen1, gen2) = split gen
+    let genesisGen = read $ toString seed
+        (gen1, gen2) = split genesisGen
 
     -- convert settings
     TopologySettingsBox settings <- buildTopologySettings poTopologySettings
 
+    let runNetwork :: (forall m. (MonadIO m, MonadTimed m, MonadRpc m, MonadCatch m) => m ()) -> IO ()
+        runNetwork =
+            if poQuick
+            then runPureRpc
+            else runMsgPackRpc
+
     -- initialize environment
-    runPureRpc (dropDesc poDelays) gen1 . runNoErrorReporting . usingLoggerName mempty $ do
+    runNetwork $ runDelaysLayer (dropDesc poDelays) gen1 . runNoErrorReporting . usingLoggerName mempty $ do
         wait (for 1 sec)
         logInfo "Starting"
 

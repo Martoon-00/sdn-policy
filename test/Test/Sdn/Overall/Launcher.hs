@@ -11,7 +11,7 @@ module Test.Sdn.Overall.Launcher
 import           Universum
 
 import           Control.TimeWarp.Logging    (setLoggerName, usingLoggerName)
-import           Control.TimeWarp.Rpc        (runPureRpc)
+import           Control.TimeWarp.Rpc        (runDelaysLayer, runPureRpc)
 import qualified Control.TimeWarp.Rpc        as D
 import           Control.TimeWarp.Timed      (runTimedT)
 import           Data.Default
@@ -62,7 +62,8 @@ testLaunch TestLaunchParams{..} =
                 launchPaxos gen2 testSettings
             runEmulation =
                 runTimedT .
-                runPureRpc testDelays gen1 .
+                runPureRpc .
+                runDelaysLayer testDelays gen1 .
                 usingLoggerName mempty
             failProp err = do
                 lift . runEmulation . runNoErrorReporting . setLoggerName mempty $

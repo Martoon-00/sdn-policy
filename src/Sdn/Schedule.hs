@@ -29,8 +29,8 @@ module Sdn.Schedule
     ) where
 
 import           Control.Lens           (both)
-import           Control.TimeWarp.Timed (MonadTimed, after, currentTime, for, fork_,
-                                         invoke, wait)
+import           Control.TimeWarp.Timed (MonadTimed, after, for, fork_, invoke,
+                                         virtualTime, wait)
 import           Data.Time.Units        (Microsecond)
 import           System.Random          (StdGen, mkStdGen, next, randomIO, split)
 import           Test.QuickCheck.Gen    (Gen, unGen)
@@ -208,8 +208,8 @@ limited
     :: MonadSchedule m
     => Microsecond -> Schedule m p -> Schedule m p
 limited duration schedule = do
-    start <- lift currentTime
-    executeWhile (currentTime <&> ( < start + duration)) schedule
+    start <- lift virtualTime
+    executeWhile (virtualTime <&> ( < start + duration)) schedule
 
 -- | Postpone execution.
 delayed
