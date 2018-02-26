@@ -14,6 +14,7 @@ module Sdn.Extra.Util where
 import           Control.Lens            (Getting, Iso, Iso', LensRules, has, involuted,
                                           iso, lens, lensField, lensRules, makeLenses,
                                           mappingNamer)
+import           Control.Monad.Catch     (handleAll)
 import           Control.Monad.Random    (MonadRandom, getRandom)
 import           Control.Monad.STM.Class (MonadSTM (..))
 import           Control.TimeWarp.Rpc    (MonadRpc (..), NetworkAddress, RpcRequest (..),
@@ -61,7 +62,9 @@ type Message msg = (RpcRequest msg, Response msg ~ ())
 submit
     :: (MonadCatch m, MonadTimed m, MonadRpc m, Message msg)
     => NetworkAddress -> msg -> m ()
-submit = fork_ ... Rpc.submit
+submit =
+    -- using small timeout, because 'timeout' in TimedT is inefficient
+    fork_ . handleAll (\_ -> pass) ... Rpc.sendTimeout (20 :: Second)
 
 -- | Builder for list.
 listF
@@ -155,6 +158,14 @@ data WithDesc a = WithDesc
     } deriving (Functor)
 
 makeLenses ''WithDesc
+
+instance Monoid a => Monoid (WithDesc a) where
+    mempty = WithDesc "" mempty
+    WithDesc t1 a1 `mappend` WithDesc t2 a2 = WithDesc (t1 <> "; " <> t2) (a1 <> a2)
+
+instance Applicative WithDesc where
+    pure = WithDesc ""
+    WithDesc t1 f <*> WithDesc t2 a = WithDesc (t1 <> " " <> t2) (f a)
 
 -- | Alias for 'WithDesc'.
 (?:) :: Text -> a -> WithDesc a

@@ -26,10 +26,21 @@ delays:
   ## This means, that messages may come not in FIFO order, but algorithm is still supposed
   ## to work in such conditions.
   ##
+  ## Delays could be specified for some acceptors, e.g.:
+  # acceptors:
+  #   - 1
+  #   - 2
+  # delay: blackout # induces all messages loss
+  ##
+  ## They also could be bounded in time:
+  # temporal:
+  #   sec: 3
+  # postponed:
+  #   sec: 5
+  # delay: blackout
+  ##
   ## Support for more complex rules in config to be provided:
-  # - temporal/delayed rules
-  # - per-node rules
-  # - messages loss
+  # - per-any-node rules
 
 recovery:
   delay: 3

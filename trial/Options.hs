@@ -27,7 +27,7 @@ import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra            (WithDesc (..), combineWithDesc, descText,
-                                       getWithDesc, rightSpaced, (?:))
+                                       getWithDesc, listF, rightSpaced, (?:))
 import           Sdn.Protocol
 import           Sdn.Schedule         (Schedule)
 import qualified Sdn.Schedule         as S
@@ -266,7 +266,10 @@ instance FromJSON (WithDesc D.Delays) where
         [ steadyParser
         , constParser
         , uniformParser
-        -- TODO: more complex delays
+        , blackoutParser
+        , memberParser
+        , timedParser
+        , alternativeParser
         ]
       where
         steadyParser = fmap (WithDesc "steady") . \case
@@ -281,6 +284,28 @@ instance FromJSON (WithDesc D.Delays) where
             upper <- o .: "max"
             return $ sformat (build%" - "%build) lower upper
                   ?: D.uniform @Microsecond (lower, upper)
+        blackoutParser = fmap (WithDesc "blackout") . \case
+            String "blackout" -> pure D.blackout
+            _ -> fail "Can't parse blackout delay"
+        memberParser = withObject "for member" $ \o -> do
+            -- TODO: more complex participants specification
+            acceptorIds <- AcceptorId <<$>> o .: "acceptors"
+            WithDesc desc delay <- o .: "delay"
+            return $ sformat ("for acceptors "%listF ", " build%" "%stext) acceptorIds desc
+                  ?: D.forAddressesList (processAddress . Acceptor <$> acceptorIds) delay
+        timedParser = withObject "temporal / delayd" $ \o -> do
+            duration <- o .:? "temporal"
+            postponed <- o .:? "postponed"
+            delay <- o .: "delay"
+            let mkDuration d = sformat ("lasting for "%build) d ?: D.temporal d
+            let mkPostponed d = sformat ("postponed for "%build) d ?: D.postponed d
+            return $
+                maybe identity (\d -> (mkPostponed d <*>)) postponed $
+                maybe identity (\d -> (mkDuration d <*>)) duration $
+                delay
+        alternativeParser = withArray "alternative delays" $ \a -> do
+            fmap mconcat $ mapM parseJSON (toList a)
+
 
 instance FromJSON TopologySettingsBuilder where
     parseJSON = withObject "topology settings" $ \o -> do

@@ -191,7 +191,3 @@ detectConflicts (Fast.Phase2bMsg bal accId cstruct) = do
                 FastBallotInProgress -> pass
                 FastBallotSucceeded  -> pass
                 FastBallotInRecovery -> delegateToRecovery accId bal cstruct
-
-
-
-
