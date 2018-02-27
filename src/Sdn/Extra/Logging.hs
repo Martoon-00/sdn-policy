@@ -103,6 +103,7 @@ class Monad m => MonadLog m where
 
 instance MonadLog m => MonadLog (ReaderT r m)
 instance MonadLog m => MonadLog (StateT r m)
+instance MonadLog m => MonadLog (MaybeT m)
 
 logBuffer :: TBM.TBMChan LogEntry
 logBuffer = unsafePerformIO $ do
@@ -133,6 +134,7 @@ class Monad m => MonadReporting m where
 
 instance MonadReporting m => MonadReporting (ReaderT __ m) where
 instance MonadReporting m => MonadReporting (StateT __ m) where
+instance MonadReporting m => MonadReporting (MaybeT m) where
 instance MonadReporting m => MonadReporting (LoggerNameBox m) where
 
 -- ** Error reporting enabled

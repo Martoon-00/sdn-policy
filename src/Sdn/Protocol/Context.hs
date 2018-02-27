@@ -9,7 +9,7 @@ module Sdn.Protocol.Context where
 
 import           Control.Concurrent.STM (STM)
 import           Control.Lens           (At (..), Index, IxValue, Ixed (..), at,
-                                         makeLenses, (.=), (<<.=))
+                                         makeLenses, makePrisms, (.=), (<<.=))
 import           Control.TimeWarp.Rpc   (MonadRpc, NetworkAddress)
 import           Control.TimeWarp.Timed (MonadTimed)
 import           Data.Default           (Default (def))
@@ -147,6 +147,8 @@ data FastBallotStatus
     | FastBallotSucceeded   -- fast ballot terminated without need in recovery
     | FastBallotInRecovery  -- recovery has been initiated
     deriving (Eq, Show)
+
+makePrisms ''FastBallotStatus
 
 instance Default FastBallotStatus where
     def = FastBallotInProgress

@@ -161,13 +161,23 @@ checkingConsistency x
     | otherwise       = pure x
 
 -- | Try to add command to cstruct; on fail add denial of that command.
+-- Returns acceptance/denial of command which fit and new cstruct.
 acceptOrRejectCommand
     :: Command cstruct (Acceptance cmd)
-    => cmd -> cstruct -> cstruct
+    => cmd -> cstruct -> (Acceptance cmd, cstruct)
 acceptOrRejectCommand cmd cstruct =
     fromMaybe (error "failed to add command rejection") $
-        addCommand (Accepted cmd) cstruct
-    <|> addCommand (Rejected cmd) cstruct
+        try Accepted <|> try Rejected
+  where
+    try acceptance =
+        let acmd = acceptance cmd
+        in  (acmd, ) <$> addCommand acmd cstruct
+
+-- | 'State' version of 'acceptOrRejectCommand'.
+acceptOrRejectCommandS
+    :: (Monad m, Command cstruct (Acceptance cmd))
+    => cmd -> StateT cstruct m (Acceptance cmd)
+acceptOrRejectCommandS = state . acceptOrRejectCommand
 
 -- | Take list of lists of cstructs, 'lub's inner lists and then 'gdb's results.
 -- None of given 'cstruct's should be empty.

@@ -26,8 +26,8 @@ import           Test.QuickCheck      (Gen, arbitrary, frequency)
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra            (WithDesc (..), combineWithDesc, descText,
-                                       getWithDesc, listF, rightSpaced, (?:))
+import           Sdn.Extra            (WithDesc (..), descText, getWithDesc, listF,
+                                       rightSpaced, (?:))
 import           Sdn.Protocol
 import           Sdn.Schedule         (Schedule)
 import qualified Sdn.Schedule         as S
@@ -220,7 +220,7 @@ instance FromJSON (WithDesc $ Gen Policy) where
       where
         weightenedArbitraryPolicies :: Value -> Yaml.Parser $ WithDesc (Gen Policy)
         weightenedArbitraryPolicies = withArray "weightened policies" $ \a ->
-            (descText %~ bracketsSurround) . fmap frequency . combineWithDesc . toList
+            (descText %~ bracketsSurround) . fmap frequency . sequenceA . toList
             <$> mapM weightenedArbitraryPolicy a
         weightenedArbitraryPolicy :: Value -> Yaml.Parser $ WithDesc (Int, Gen Policy)
         weightenedArbitraryPolicy = withObject "weightened policy" $ \o -> do

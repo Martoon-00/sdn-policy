@@ -172,19 +172,17 @@ instance Applicative WithDesc where
 (?:) = WithDesc
 infix 1 ?:
 
+-- | Unwrap 'WithDesc'
 getWithDesc :: WithDesc a -> (Text, a)
 getWithDesc (WithDesc t a) = (t, a)
 
-combineWithDesc :: [WithDesc a] -> WithDesc [a]
-combineWithDesc = uncurry WithDesc . first merge . unzip . map getWithDesc
-  where
-    merge = mconcat . intersperse ", "
-
+-- | Run QuickCheck generator taking seed from monad context.
 generateM :: MonadRandom m => Gen a -> m a
 generateM generator = do
     seed <- getRandom
     return $ unGen generator (mkQCGen seed) 30
 
+-- | Examples: "qurek", "manek".
 genSoundWord :: IsString s => Int -> Gen s
 genSoundWord k = fromString <$> doGen
   where
@@ -192,21 +190,27 @@ genSoundWord k = fromString <$> doGen
         choose ('a', 'z') `suchThat` (\c -> even i == isVowel c)
     isVowel c = any (== c) ['a', 'y', 'o', 'e', 'i', 'u']
 
-zoom :: Monad m => Lens' s a -> StateT a m r -> StateT s m r
+-- | 'zoom' specified to 'MonadState'.
+zoom :: MonadState s m => Lens' s a -> StateT a m r -> m r
 zoom l st = do
     s <- get
     let a = s ^. l
-    (r, a') <- lift $ runStateT st a
+    (r, a') <- runStateT st a
     modify (l .~ a')
     return r
 
+-- | 'MonadState'-ic version of 'has'.
 exists :: Monad m => Getting Any s a -> StateT s m Bool
 exists l = has l <$> get
 
+-- | Whether value is present.
+-- Helper for accessing elements in 'Set'.
 presence :: Lens' (Maybe ()) Bool
 presence = lens (maybe False (\() -> True))
                 (\_ b -> if b then Just () else Nothing)
 
+-- | Whether value is absent.
+-- Helper for accessing elements in 'Set'.
 absence :: Lens' (Maybe ()) Bool
 absence = presence . involuted not
 
@@ -214,3 +218,7 @@ instance MessagePack a => MessagePack (NonEmpty a) where
     toObject = toObject . toList
     fromObject = maybe (fail "MessagePack NonEmpty: got empty list") pure
              <=< fmap nonEmpty . fromObject
+
+-- | Alias for 'mzero'.
+exit :: MonadPlus m => m a
+exit = mzero

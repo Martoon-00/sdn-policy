@@ -4,11 +4,12 @@ module Sdn.Protocol.Common.Phases
     ( MonadPhase
     , updateLearnedValue
     , warnOnPartialApply
+    , learnCStruct
     , confirmCommitted
     , isPolicyUnconfirmed
     ) where
 
-import           Control.Lens                 (at, (%=), (.=))
+import           Control.Lens                 (at, non, (%=), (.=), (<%=))
 import           Control.TimeWarp.Rpc         (MonadRpc)
 import           Control.TimeWarp.Timed       (MonadTimed (..))
 import qualified Data.Set                     as S
@@ -17,10 +18,11 @@ import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra                    (MonadLog, MonadReporting, logError,
-                                               logInfo, presence)
+                                               logInfo, presence, submit, throwOnFail)
 import           Sdn.Protocol.Common.Messages
 import           Sdn.Protocol.Context
 import           Sdn.Protocol.Processes
+import           Sdn.Protocol.Versions
 
 -- | Common constraints for all phases.
 type MonadPhase m =
@@ -74,6 +76,38 @@ warnOnPartialApply incoming updated = do
                  \\n  incoming:  "%build%
                  "\n  new value: "%build)
               incoming updated
+
+-- | Learning phase of algorithm.
+learnCStruct
+    :: (MonadPhase m, HasContextOf Learner pv m)
+    => (Votes (VersionQuorum pv) Configuration -> Either Text Configuration)
+    -> AcceptorId
+    -> Configuration
+    -> m ()
+learnCStruct combinator accId cstruct = do
+    newLearnedPolicies <- withProcessStateAtomically $ do
+        -- rewrite cstruct kept for this acceptor
+
+        -- we should check here that new cstruct extends previous one.
+        -- but the contrary is not an error, because of not-FIFO channels
+        updated <- learnerVotes . at accId . non mempty <%= maxOrSecond cstruct
+        warnOnPartialApply cstruct updated
+
+        -- update total learned cstruct
+        -- it should be safe (i.e. it does not induce commands losses)
+        -- to learn votes even from fast round if recovery is going
+        -- to happen then, because recovery deals with liveleness, correctness
+        -- always holds.
+        learnedDifference <-
+            use learnerVotes
+            >>= throwOnFail ProtocolError . combinator
+            >>= updateLearnedValue
+
+        return $ map acceptanceCmd learnedDifference
+
+    whenNotNull newLearnedPolicies $ \policies ->
+        submit (processAddress Proposer) (CommittedMsg policies)
+
 
 -- | Remember that given policies were committed.
 confirmCommitted
