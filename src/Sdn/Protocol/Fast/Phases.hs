@@ -41,7 +41,7 @@ propose policy = do
     withProcessStateAtomically $ do
         proposerProposedPolicies <>= one policy
         proposerUnconfirmedPolicies <>= one policy
-    broadcastTo (processAddresses Leader <> processesAddresses Acceptor)
+    broadcastTo (processesAddresses Acceptor)
                 (Fast.ProposalMsg policy)
 
 -- * Remembering proposals
