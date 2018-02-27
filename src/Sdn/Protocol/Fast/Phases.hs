@@ -29,8 +29,6 @@ import qualified Sdn.Protocol.Fast.Messages    as Fast
 import           Sdn.Protocol.Processes
 import           Sdn.Protocol.Versions
 
--- Some Phases of Classic Paxos are also used, but not mentioned here.
-
 -- * Proposal
 
 propose

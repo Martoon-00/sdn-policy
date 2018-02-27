@@ -24,8 +24,8 @@ comparing to protocols which perform some conflict resolution in place.
 
 Most intersting modules are:
 
-* [Phases](./src/Sdn/Protocol/Phases.hs) module - logic which lies beyond each phrase of protocol
-* [Topology](./src/Sdn/Protocol/Topology.hs) module - functions which construct a network with appropriate processes
+* [Classic](./src/Sdn/Protocol/Classic/)
+* [Fast](./src/Sdn/Protocol/Fast/)
 
 - [x] Classic Generalized Paxos
 - [x] Fast Generalized Paxos (where profit from commuting policies comes into play)
