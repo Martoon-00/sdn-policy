@@ -35,6 +35,19 @@ type MonadPhase m =
     , HasMembers
     )
 
+-- * Common
+
+-- | Drop warning if we are going to merge received cstruct, but
+-- dropping some of its policies in the process.
+warnOnPartialApply :: MonadLog m => Configuration -> Configuration -> m ()
+warnOnPartialApply incoming updated = do
+    unless (updated `extends` incoming) $
+        logInfo $
+        sformat ("Some policies were dropped while applying incoming cstruct:\
+                 \\n  incoming:  "%build%
+                 "\n  new value: "%build)
+              incoming updated
+
 -- * Learning
 
 -- | Update learned value with all checks and cautions.
@@ -65,17 +78,6 @@ updateLearnedValue newLearned = do
     reportNewLearnedCStruct new =
         logInfo $
         sformat ("New learned cstruct: "%build) new
-
--- | Drop warning if we are going to merge received cstruct, but
--- dropping some of its policies in the process.
-warnOnPartialApply :: MonadLog m => Configuration -> Configuration -> m ()
-warnOnPartialApply incoming updated = do
-    unless (updated `extends` incoming) $
-        logInfo $
-        sformat ("Some policies were dropped while applying incoming cstruct:\
-                 \\n  incoming:  "%build%
-                 "\n  new value: "%build)
-              incoming updated
 
 -- | Learning phase of algorithm.
 learnCStruct
@@ -108,6 +110,7 @@ learnCStruct combinator accId cstruct = do
     whenNotNull newLearnedPolicies $ \policies ->
         submit (processAddress Proposer) (CommittedMsg policies)
 
+-- * Confirmation to proposal
 
 -- | Remember that given policies were committed.
 confirmCommitted
