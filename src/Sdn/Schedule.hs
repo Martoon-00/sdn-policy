@@ -26,9 +26,10 @@ module Sdn.Schedule
     , executeWhile
     , limited
     , delayed
+    , maskExecutions
     ) where
 
-import           Control.Lens           (both)
+import           Control.Lens           (both, ix)
 import           Control.TimeWarp.Timed (MonadTimed, after, for, fork_, invoke,
                                          virtualTime, wait)
 import           Data.Time.Units        (Microsecond)
@@ -53,10 +54,15 @@ type MonadSchedule m =
     )
 
 data ScheduleContext m p = ScheduleContext
-    { scPush :: p -> m ()
+    { scNext :: p -> m ()
     , scCont :: m WhetherContinue
     , scGen  :: StdGen
     }
+
+scYield :: Monad m => ScheduleContext m p -> p -> m ()
+scYield ScheduleContext{..} p = do
+    WhetherContinue further <- scCont
+    when further $ scNext p
 
 -- | Schedule allows to periodically execute some job,
 -- providing it with data @p@ which may vary from time to time.
@@ -81,7 +87,7 @@ runSchedule
     :: MonadSchedule m
     => StdGen -> Schedule m p -> (p -> m ()) -> m ()
 runSchedule scGen (Schedule schedule) consumer = do
-    let scPush = consumer
+    let scNext = consumer
     let scCont = pure mempty
     fork_ $ schedule ScheduleContext{..}
 
@@ -105,7 +111,7 @@ instance MonadTimed m => Monoid (Schedule m p) where
 
 instance Functor (Schedule m) where
     fmap f (Schedule s) = Schedule $ \ctx ->
-        s ctx{ scPush = scPush ctx . f }
+        s ctx{ scNext = scNext ctx . f }
 
 instance MonadIO m => Applicative (Schedule m) where
     pure = return
@@ -119,13 +125,13 @@ instance MonadIO m => Monad (Schedule m) where
         let push p = do
                gen' <- atomically . modifyTVarS genBox $ state split
                case f p of Schedule s2 -> s2 ctx{ scGen = gen' }
-        s1 ctx{ scPush = push, scGen = gen2 }
+        s1 ctx{ scNext = push, scGen = gen2 }
 
 instance MonadIO m => MonadIO (Schedule m) where
     liftIO = lift . liftIO
 
 instance MonadTrans Schedule where
-    lift job = Schedule $ \ctx -> job >>= scPush ctx
+    lift job = Schedule $ \ctx -> job >>= scYield ctx
 
 
 -- | Just fires once, generating arbitrary job data.
@@ -133,23 +139,14 @@ instance MonadTrans Schedule where
 -- Use combinators to define timing.
 generate :: Monad m => Gen p -> Schedule m p
 generate generator = do
-    Schedule $ \ScheduleContext{..} ->
+    Schedule $ \ctx@ScheduleContext{..} ->
         let (seed, _) = next scGen
-        in  scPush $ unGen generator (mkQCGen seed) 30
+        in  scYield ctx $ unGen generator (mkQCGen seed) 30
 
 -- | Just fires once, for jobs without any data.
 -- Synonym to @return ()@.
 execute :: MonadIO m => Schedule m ()
 execute = pass
-
-checkCont :: MonadSchedule m => Schedule m ()
-checkCont =
-    Schedule $ \ScheduleContext{..} -> do
-        WhetherContinue further <- scCont
-        when further $ scPush ()
-
-checkingCont :: MonadSchedule m => Schedule m a -> Schedule m a
-checkingCont sch = sch <* checkCont
 
 -- | Execute action till condition holds, no more than given number of times,
 -- with given period.
@@ -159,15 +156,14 @@ periodicCounting
     :: MonadSchedule m
     => Maybe Word -> m Bool -> Microsecond -> Schedule m ()
 periodicCounting mnum condM period =
-    Schedule $ \ScheduleContext{..} ->
+    Schedule $ \ctx@ScheduleContext{..} ->
         let loop (Just 0) _ = return ()
             loop mrem gen = do
-                wait (for period)
-                WhetherContinue further <- scCont
-                further2 <- condM
-                when (further && further2) $ do
+                further <- condM
+                when further $ do
                     let mrem' = fmap pred mrem
-                    scPush ()
+                    scYield ctx ()
+                    wait (for period)
                     loop mrem' gen
         in  fork_ $ loop mnum scGen
 
@@ -216,5 +212,23 @@ delayed
     :: MonadSchedule m
     => Microsecond -> Schedule m ()
 delayed duration =
-    checkingCont . Schedule $ \ScheduleContext{..} ->
-        invoke (after duration) $ scPush ()
+    Schedule $ \ctx ->
+        invoke (after duration) $ scYield ctx ()
+
+-- | Skip several executions. More preciesly
+--
+-- * 'True' corresponds to performing execution;
+--
+-- * 'False' - to skipping execution;
+--
+-- * End of list - to skipping all further executions.
+maskExecutions :: (MonadSchedule m, MonadIO n) => [Bool] -> n (Schedule m ())
+maskExecutions initMask = do
+    st <- newTVarIO initMask
+    return $ Schedule $ \ctx -> do
+        whetherExecute <- atomically . modifyTVarS st $ do
+            m <- preuse $ ix 0
+            modify $ drop 1
+            return $ fromMaybe False m
+        when whetherExecute $
+            scYield ctx ()

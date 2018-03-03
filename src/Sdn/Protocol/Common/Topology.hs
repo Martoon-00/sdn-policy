@@ -72,8 +72,9 @@ instance Default (CustomTopologySettings pv) =>
         TopologySettings
         { topologyMembers = def
         , topologyProposalSchedule = S.generate (GoodPolicy <$> arbitrary)
-        , topologyProposerInsistance =
-            \balSch -> balSch
+        , topologyProposerInsistance = \ballotSchedule -> do
+            every3rd <- S.maskExecutions (cycle [True, False, False])
+            ballotSchedule <* every3rd
         , topologyBallotsSchedule = S.execute
         , topologyLifetime = interval 999 hour
         , topologyCustomSettings = def
@@ -158,13 +159,16 @@ launchPaxosWith TopologyActions{..} seed TopologySettings{..} = withMembers topo
     let (proposalSeed, ballotSeed) = split seed
 
     proposerState <- newProcess Proposer . work (for topologyLifetime) $ do
+        skipFirst <- S.maskExecutions (False : repeat True)
+
         S.runSchedule_ proposalSeed . S.limited topologyLifetime $ do
             -- wait for servers to bootstrap
             S.delayed (interval 10 ms)
             policy <- topologyProposalSchedule
-            let repetitions =
-                    S.executeWhile (isPolicyUnconfirmed policy) $
+            let repetitions = do
                     topologyProposerInsistance topologyBallotsSchedule
+                    skipFirst
+                    S.executeWhile (isPolicyUnconfirmed policy) pass
             S.execute <> repetitions
             lift $ proposeAction policy
 
