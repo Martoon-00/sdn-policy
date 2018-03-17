@@ -12,6 +12,7 @@ module Sdn.Protocol.Common.Phases
 import           Control.Lens                 (at, non, (%=), (.=), (<%=))
 import           Control.TimeWarp.Rpc         (MonadRpc)
 import           Control.TimeWarp.Timed       (MonadTimed (..))
+import           Data.Default                 (def)
 import qualified Data.Set                     as S
 import           Formatting                   (build, sformat, (%))
 import           Universum
@@ -92,7 +93,7 @@ learnCStruct combinator accId cstruct = do
 
         -- we should check here that new cstruct extends previous one.
         -- but the contrary is not an error, because of not-FIFO channels
-        updated <- learnerVotes . at accId . non mempty <%= maxOrSecond cstruct
+        updated <- learnerVotes . at accId . non def <%= maxOrSecond cstruct
         warnOnPartialApply cstruct updated
 
         -- update total learned cstruct

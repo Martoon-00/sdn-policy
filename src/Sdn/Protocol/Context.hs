@@ -223,7 +223,7 @@ instance ProtocolVersion pv => Buildable (AcceptorState pv) where
 
 -- | Initial state of acceptor.
 defAcceptorState :: forall pv. AcceptorId -> (AcceptorState pv)
-defAcceptorState id = AcceptorState id def mempty def
+defAcceptorState id = AcceptorState id def def def
 
 -- ** Learner
 
@@ -247,7 +247,7 @@ instance Buildable (LearnerState pv) where
 
 -- | Initial state of the learner.
 instance Default (LearnerState pv) where
-    def = LearnerState mempty mempty
+    def = LearnerState mempty def
 
 -- * Misc
 

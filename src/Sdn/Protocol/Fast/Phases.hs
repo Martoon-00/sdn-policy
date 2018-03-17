@@ -146,7 +146,7 @@ startRecoveryIfNecessary bal = do
 
         when needRecovery $ do
             logInfo $ sformat ("Need in recovery just was checked (for ballot "%build%")") bal
-            logInfo $ sformat ("Unconfirmed policies: "%build)
+            logInfo $ sformat ("Unconfirmed policies: "%listF "," build)
                     unconfirmedPolicies
             logInfo $ sformat ("Recovery is "%rightSpaced stext%" needed")
                       (if needRecovery then "" else "not")
@@ -167,8 +167,8 @@ startRecoveryIfNecessary bal = do
     -- find policies which haven't gathered a quorum of votes
     evalUnconfirmedPolicies votes = do
         combined <- throwOnFail ProtocolError $ intersectingCombination votes
-        let mentionedPolicyEntries = fold votes
-            unconfirmedPolicies = mentionedPolicyEntries `S.difference` combined
+        let mentionedPolicyEntries = fold $ fmap unConfiguration votes
+            unconfirmedPolicies = mentionedPolicyEntries `S.difference` unConfiguration combined
         return unconfirmedPolicies
 
 

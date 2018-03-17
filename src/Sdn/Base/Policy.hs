@@ -1,17 +1,22 @@
 {-# LANGUAGE AllowAmbiguousTypes        #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 -- | Policies arangement.
 
 module Sdn.Base.Policy where
 
-import           Control.Lens        (Iso', iso, _Wrapped')
+import           Control.Lens        (At (..), Index, Iso', IxValue, Ixed (..),
+                                      Wrapped (..), iso, mapping, _Wrapped')
+import           Data.Default        (Default (..))
 import qualified Data.Map            as M
 import           Data.MessagePack    (MessagePack (..))
 import qualified Data.Set            as S
 import           Data.String         (IsString)
 import qualified Data.Text.Buildable
 import           Formatting          (bprint, build, sformat, (%))
+import qualified GHC.Exts            as Exts
 import           Test.QuickCheck     (Arbitrary (..), getNonNegative, oneof, resize)
 import           Universum
 
@@ -72,24 +77,62 @@ type PolicyEntry = Acceptance Policy
 
 -- | For our simplified model with abstract policies, cstruct is just set of
 -- policies.
-type Configuration = S.Set PolicyEntry
+data Configuration = Configuration
+    { unConfiguration :: S.Set PolicyEntry
+    } deriving (Eq, Show)
 
-mkConfig :: [PolicyEntry] -> Maybe (S.Set PolicyEntry)
+instance Wrapped Configuration where
+    type Unwrapped Configuration = S.Set PolicyEntry
+    _Wrapped' = iso unConfiguration Configuration
+
+instance Exts.IsList Configuration where
+    type Item Configuration = Exts.Item (Unwrapped Configuration)
+    toList = Exts.toList . unConfiguration
+    fromList = Configuration . Exts.fromList
+
+type instance Element Configuration = Element (Unwrapped Configuration)
+
+instance Container Configuration where
+    null = null . unpack
+    toList = toList . unpack
+
+instance NontrivialContainer Configuration where
+    foldr f s l = foldr f s (unpack l)
+    foldl f s l = foldl f s (unpack l)
+    foldl' f s l = foldl' f s (unpack l)
+    length = length . unpack
+    elem e l = elem e (unpack l)
+    maximum = maximum . unpack
+    minimum = minimum . unpack
+
+instance Default Configuration where
+    def = Configuration def
+
+mkConfig :: [PolicyEntry] -> Maybe Configuration
 mkConfig policies =
-    let res = S.fromList policies
+    let res = Configuration $ S.fromList policies
     in  guard (consistent res) $> res
 
 instance Buildable Configuration where
-    build = bprint (listF ", " build) . toList
+    build = bprint (listF ", " build) . toList . unConfiguration
 
 instance MessagePack Configuration where
-    toObject = toObject . S.toList
-    fromObject = fmap S.fromList . fromObject
+    toObject = toObject . S.toList . unConfiguration
+    fromObject = fmap (Configuration . S.fromList) . fromObject
+
+instance Ixed Configuration where
+    ix i = _Wrapped' . ix i
+
+instance At Configuration where
+    at i = _Wrapped' . at i
+
+type instance Index Configuration = Index (Unwrapped Configuration)
+type instance IxValue Configuration = IxValue (Unwrapped Configuration)
 
 -- | Policy conflicts with cstruct if it conflicts with at least one of the
 -- policies of cstruct.
 instance Conflict PolicyEntry Configuration where
-    policy `conflicts` policiesHeap =
+    policy `conflicts` Configuration policiesHeap =
         any (conflicts policy) policiesHeap
 
 -- | Symmetric to instance above.
@@ -99,12 +142,12 @@ instance Conflict Configuration PolicyEntry where
 -- | CStructs conflict if there are a couple of policies in them which
 -- conflict.
 instance Conflict Configuration Configuration where
-    policies1 `conflicts` policies2 =
+    policies1 `conflicts` Configuration policies2 =
         any (conflicts policies1) policies2
 
 -- | Transpose votes about configurations.
 perPolicy :: Iso' (Votes qf Configuration) (M.Map PolicyEntry $ Votes qf ())
-perPolicy = _Wrapped' . iso toPolicyMap fromPolicyMap
+perPolicy = _Wrapped' . mapping _Wrapped' . iso toPolicyMap fromPolicyMap
   where
     toPolicyMap
         :: Map AcceptorId (Set PolicyEntry)
@@ -126,21 +169,22 @@ perPolicy = _Wrapped' . iso toPolicyMap fromPolicyMap
         ]
 
 instance Command Configuration PolicyEntry where
-    addCommand = checkingAgreement S.insert
-    glb = checkingAgreement S.union
-    lub = S.intersection
-    extends = flip S.isSubsetOf
-    difference = toList ... S.difference
+    addCommand = checkingAgreement $ underneath . S.insert
+    glb = checkingAgreement $ underneath2 S.union
+    lub = underneath2 S.intersection
+    Configuration c1 `extends` Configuration c2 = c2 `S.isSubsetOf` c1
+    difference = Exts.toList ... underneath2 S.difference
 
     -- for each policy check, whether there is a quorum containing
     -- its acceptance or rejection
     combination (votes :: Votes qf Configuration) =
-        sanityCheck . M.keysSet $ M.filter (isQuorum @qf) (votes ^. perPolicy)
+        sanityCheck . Configuration . M.keysSet $
+        M.filter (isQuorum @qf) (votes ^. perPolicy)
       where
         sanityCheck = first ("combination: " <> ) . checkingConsistency
 
     intersectingCombination (votes :: Votes qf Configuration) =
-        sanityCheck . M.keysSet $
+        sanityCheck . Configuration . M.keysSet $
         M.filter (isQuorumsSubIntersection @qf votes) (votes ^. perPolicy)
       where
          sanityCheck =

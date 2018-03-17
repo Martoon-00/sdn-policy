@@ -11,9 +11,9 @@
 
 module Sdn.Extra.Util where
 
-import           Control.Lens            (Getting, Iso, Iso', LensRules, has, involuted,
-                                          iso, lens, lensField, lensRules, makeLenses,
-                                          mappingNamer)
+import           Control.Lens            (Getting, Iso, Iso', LensRules, Wrapped (..),
+                                          from, has, involuted, iso, lens, lensField,
+                                          lensRules, makeLenses, mappingNamer, review)
 import           Control.Monad.Catch     (handleAll)
 import           Control.Monad.Random    (MonadRandom, getRandom)
 import           Control.Monad.STM.Class (MonadSTM (..))
@@ -222,3 +222,25 @@ instance MessagePack a => MessagePack (NonEmpty a) where
 -- | Alias for 'mzero'.
 exit :: MonadPlus m => m a
 exit = mzero
+
+-- | Modify under newtype.
+underneath :: Wrapped s => (Unwrapped s -> Unwrapped s) -> s -> s
+underneath = over _Wrapped'
+
+-- | Similar to 'over', but for functions which accepts 2 arguments.
+over2 :: Iso' s a -> (a -> a -> a) -> s -> s -> s
+over2 l f a b = f (a ^. l) (b ^. l) ^. from l
+
+-- | Apply function of 2 arguments under newtype.
+underneath2
+    :: Wrapped s
+    => (Unwrapped s -> Unwrapped s -> Unwrapped s) -> s -> s -> s
+underneath2 = over2 _Wrapped'
+
+-- | Like @pack@ for @Newtype@, but in terms of 'Wrapped'.
+pack :: Wrapped s => Unwrapped s -> s
+pack = review _Wrapped'
+
+-- | Like @unpack@ for @Newtype@, but in terms of 'Wrapped'.
+unpack :: Wrapped s => s -> Unwrapped s
+unpack = view _Wrapped'
