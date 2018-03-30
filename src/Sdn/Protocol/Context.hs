@@ -21,7 +21,8 @@ import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra              (Message, MonadLog, MonadReporting, PureLog,
-                                         launchPureLog, listF, modifyTVarS, pairF, submit)
+                                         RpcOptions, launchPureLog, listF, modifyTVarS,
+                                         pairF, submit)
 import           Sdn.Protocol.Versions
 
 -- * General
@@ -274,7 +275,7 @@ instance ProtocolVersion pv =>
 broadcastTo
     :: ( MonadCatch m
        , MonadTimed m
-       , MonadRpc m
+       , MonadRpc RpcOptions m
        , MonadReader (ProcessContext s) m
        , Message msg
        , HasMembers

@@ -18,8 +18,9 @@ import           Formatting                   (build, sformat, (%))
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra                    (MonadLog, MonadReporting, logError,
-                                               logInfo, presence, submit, throwOnFail)
+import           Sdn.Extra                    (MonadLog, MonadReporting, RpcOptions,
+                                               logError, logInfo, presence, submit,
+                                               throwOnFail)
 import           Sdn.Protocol.Common.Messages
 import           Sdn.Protocol.Context
 import           Sdn.Protocol.Processes
@@ -30,7 +31,7 @@ type MonadPhase m =
     ( MonadIO m
     , MonadCatch m
     , MonadTimed m
-    , MonadRpc m
+    , MonadRpc RpcOptions m
     , MonadLog m
     , MonadReporting m
     , HasMembers

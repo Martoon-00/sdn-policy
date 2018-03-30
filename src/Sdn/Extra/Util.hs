@@ -14,13 +14,12 @@ module Sdn.Extra.Util where
 import           Control.Lens            (Getting, Iso, Iso', LensRules, Wrapped (..),
                                           from, has, involuted, iso, lens, lensField,
                                           lensRules, makeLenses, mappingNamer, review)
-import           Control.Monad.Catch     (handleAll)
 import           Control.Monad.Random    (MonadRandom, getRandom)
 import           Control.Monad.STM.Class (MonadSTM (..))
 import           Control.TimeWarp.Rpc    (MonadRpc (..), NetworkAddress, RpcRequest (..),
                                           mkRequest)
 import qualified Control.TimeWarp.Rpc    as Rpc
-import           Control.TimeWarp.Timed  (Microsecond, MonadTimed (..), fork_)
+import           Control.TimeWarp.Timed  (Microsecond, MonadTimed (..))
 import           Data.Coerce             (coerce)
 import           Data.MessagePack        (MessagePack (..))
 import qualified Data.Text.Buildable
@@ -55,16 +54,15 @@ declareMessage msgType = do
         typeArgs <- replicateM (length vars) $ TH.VarT <$> TH.newName "a"
         pure $ foldl TH.AppT (TH.ConT name) typeArgs
 
+type RpcOptions = '[Rpc.RpcOptionMessagePack, Rpc.RpcOptionNoReturn]
 
-type Message msg = (RpcRequest msg, Response msg ~ ())
+type Message msg = (RpcRequest msg, Rpc.RpcConstraints RpcOptions msg)
 
--- | Send asyncronously, supposing that remote method call returns nothing.
+-- | Alias for 'Rpc.send', restricted to messages satisfying 'Message' constraint.
 submit
-    :: (MonadCatch m, MonadTimed m, MonadRpc m, Message msg)
+    :: (MonadCatch m, MonadTimed m, MonadRpc RpcOptions m, Message msg)
     => NetworkAddress -> msg -> m ()
-submit =
-    -- using small timeout, because 'timeout' in TimedT is inefficient
-    fork_ . handleAll (\_ -> pass) ... Rpc.sendTimeout (20 :: Second)
+submit = Rpc.send
 
 -- | Builder for list.
 listF

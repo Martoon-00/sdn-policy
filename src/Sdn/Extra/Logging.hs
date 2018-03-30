@@ -143,7 +143,7 @@ newtype ErrorReporting m a = ErrorReporting
     { getErrorReporting :: ReaderT (TVar [Text]) m a
     } deriving ( Functor, Applicative, Monad, MonadIO, MonadTrans
                , MonadThrow, MonadCatch
-               , MonadState __, MonadTimed, MonadRpc, WithNamedLogger, MonadLog)
+               , MonadState __, MonadTimed, MonadRpc (os :: [*]), WithNamedLogger, MonadLog)
 
 type instance ThreadId (ErrorReporting m) = ThreadId m
 
@@ -174,7 +174,7 @@ newtype NoErrorReporting m a = NoErrorReporting
     { runNoErrorReporting :: m a
     } deriving ( Functor, Applicative, Monad, MonadIO
                , MonadThrow, MonadCatch
-               , MonadState __, MonadTimed, MonadRpc, WithNamedLogger, MonadLog)
+               , MonadState __, MonadTimed, MonadRpc (os :: [*]), WithNamedLogger, MonadLog)
 
 instance MonadTrans NoErrorReporting where
     lift = NoErrorReporting

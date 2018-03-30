@@ -21,8 +21,9 @@ import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra                    (Message, MonadLog, MonadReporting,
-                                               coloredF, gray, logError, logInfo,
-                                               loggerNameT, resetColoring, withColor)
+                                               RpcOptions, coloredF, gray, logError,
+                                               logInfo, loggerNameT, resetColoring,
+                                               withColor)
 import           Sdn.Protocol.Common.Messages
 import           Sdn.Protocol.Common.Phases   (confirmCommitted, isPolicyUnconfirmed)
 import           Sdn.Protocol.Context
@@ -38,7 +39,7 @@ type MonadTopology m =
     , MonadLog m
     , MonadReporting m
     , MonadTimed m
-    , MonadRpc m
+    , MonadRpc RpcOptions m
     )
 
 type TopologySchedule p = forall m. MonadTopology m => S.Schedule m p
@@ -125,8 +126,9 @@ listener
        , HasMessageShortcut msg
        , Process p
        , HasContextOf p pv m
+       , MonadRpc RpcOptions m
        )
-    => (msg -> m ()) -> Method m
+    => (msg -> m ()) -> Method RpcOptions m
 listener endpoint = Method . clarifyLoggerName $ \msg -> do
     logInfo $ sformat (coloredF gray (stext%" "%build)) "<--" msg
     endpoint msg `catches` handlers
@@ -147,9 +149,9 @@ type TopologyLauncher pv m =
 data TopologyActions pv m = TopologyActions
     { proposeAction     :: HasMembers => Policy -> ProcessM Proposer pv m ()
     , startBallotAction :: HasMembers => ProcessM Leader pv m ()
-    , leaderListeners   :: HasMembers => [Method $ ProcessM Leader pv m]
-    , acceptorListeners :: HasMembers => [Method $ ProcessM Acceptor pv m]
-    , learnerListeners  :: HasMembers => [Method $ ProcessM Learner pv m]
+    , leaderListeners   :: HasMembers => [Method RpcOptions $ ProcessM Leader pv m]
+    , acceptorListeners :: HasMembers => [Method RpcOptions $ ProcessM Acceptor pv m]
+    , learnerListeners  :: HasMembers => [Method RpcOptions $ ProcessM Learner pv m]
     }
 
 -- | Launch Paxos algorithm.
@@ -208,7 +210,7 @@ launchPaxosWith TopologyActions{..} seed TopologySettings{..} = withMembers topo
     startListeningProcessesOf
         :: (HasMembers, MonadTopology m, Process p, Integral i, ProtocolVersion pv)
         => (i -> p)
-        -> [Method $ ProcessM p pv m]
+        -> [Method RpcOptions $ ProcessM p pv m]
         -> m [STM $ ProcessState p pv]
     startListeningProcessesOf processType listeners =
         forM (processesOf processType) $
@@ -231,5 +233,4 @@ launchPaxos :: HasVersionTopologyActions pv => TopologyLauncher pv m
 launchPaxos gen settings = launchPaxosWith (versionTopologyActions customSettings) gen settings
   where
     customSettings = topologyCustomSettings settings
-
 

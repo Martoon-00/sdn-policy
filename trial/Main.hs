@@ -1,17 +1,20 @@
-{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE DataKinds      #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE Rank2Types     #-}
 
 module Main where
 
 import           Control.TimeWarp.Logging (logInfo, usingLoggerName)
-import           Control.TimeWarp.Rpc     (MonadRpc, runDelaysLayer, runMsgPackRpc,
-                                           runPureRpc)
+import           Control.TimeWarp.Rpc     ((:<<) (..), Dict (..), MonadRpc,
+                                           runDelaysLayer, runMsgPackRpc, runPureRpc,
+                                           withExtendedRpcOptions)
 import           Control.TimeWarp.Timed   (MonadTimed, for, sec, wait)
 import           Prelude                  (read)
 import           System.Random            (split)
 import           Universum
 
 import           Options
-import           Sdn.Extra                (dropDesc, genSoundWord, generateM,
+import           Sdn.Extra                (RpcOptions, dropDesc, genSoundWord, generateM,
                                            runNoErrorReporting)
 import           Sdn.Protocol
 
@@ -36,17 +39,16 @@ main = do
     -- convert settings
     TopologySettingsBox settings <- buildTopologySettings poTopologySettings
 
-    let runNetwork :: (forall m. (MonadIO m, MonadTimed m, MonadRpc m, MonadCatch m) => m ()) -> IO ()
-        runNetwork =
-            if poQuick
-            then runPureRpc
-            else runMsgPackRpc
-
     -- initialize environment
-    runNetwork $ runDelaysLayer (dropDesc poDelays) gen1 . runNoErrorReporting . usingLoggerName mempty $ do
-        wait (for 1 sec)
-        logInfo "Starting"
+    let stuff :: (forall m. (MonadIO m, MonadTimed m, MonadRpc RpcOptions m, MonadCatch m) => m ())
+        stuff = runDelaysLayer (dropDesc poDelays) gen1 . runNoErrorReporting . usingLoggerName mempty $ do
+            wait (for 1 sec)
+            logInfo "Starting"
 
-        -- execute consensus
-        launchPaxos gen2 settings >>= awaitTermination
+            -- execute consensus
+            monitor <- launchPaxos gen2 settings
+            awaitTermination monitor
 
+    if poQuick
+    then runPureRpc $ withExtendedRpcOptions (Evi Dict) stuff
+    else runMsgPackRpc $ withExtendedRpcOptions (Evi Dict) stuff
