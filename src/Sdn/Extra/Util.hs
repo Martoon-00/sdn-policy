@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE FunctionalDependencies     #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE Rank2Types                 #-}
@@ -29,8 +30,8 @@ import           Data.MessagePack         (MessagePack (..))
 import qualified Data.Text.Buildable
 import           Data.Text.Lazy.Builder   (Builder)
 import           Data.Time.Units          (Millisecond, Second)
-import           Formatting               (Format, bprint, build, later, shortest, string,
-                                           (%))
+import           Formatting               (Format, bprint, build, later, sformat,
+                                           shortest, string, (%))
 import           Formatting.Internal      (Format (..))
 import           GHC.Exts                 (IsList (..))
 import qualified GHC.Exts                 as Exts
@@ -208,6 +209,17 @@ zoom l st = do
     modify (l .~ a')
     return r
 
+-- | Like 'zoom', but accepts a 'Traversal\'' and does nothing if value is not present.
+zoomOnPresense :: MonadState s m => Traversal' s a -> StateT a m r -> m (Maybe r)
+zoomOnPresense l st = do
+    s <- get
+    case s ^? l of
+        Nothing -> return Nothing
+        Just a -> do
+            (r, a') <- runStateT st a
+            modify (l .~ a')
+            return (Just r)
+
 -- | 'MonadState'-ic version of 'has'.
 exists :: MonadState s m => Getting Any s a -> m Bool
 exists l = has l <$> get
@@ -285,3 +297,25 @@ instance MonadTrans (MonadicMark mark) where
 type family DeclaredMark markType (m :: * -> *) where
     DeclaredMark markType (MonadicMark (markType a) m) = a
     DeclaredMark markType (t m) = DeclaredMark markType m
+
+class Decomposable c d | c -> d, d -> c where
+    decomposed :: Iso' c d
+    decomposed = iso decompose compose
+
+    decompose :: c -> d
+    decompose = view decomposed
+
+    compose :: d -> c
+    compose = review decomposed
+
+takeNoMoreThanOne :: Buildable e => Text -> [e] -> Either Text (Maybe e)
+takeNoMoreThanOne desc options = case toList options of
+    [] -> pure Nothing
+    [x] -> pure (Just x)
+    alts -> Left $
+            sformat ("Too many alternatives ("%build%"): "%listF ", " build)
+                desc alts
+
+whenJust' :: Applicative m => Maybe a -> (a -> m b) -> m (Maybe b)
+whenJust' Nothing _  = pure Nothing
+whenJust' (Just x) f = Just <$> f x

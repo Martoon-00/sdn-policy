@@ -16,13 +16,21 @@ import           Universum
 
 import           Sdn.Base.Quorum
 import           Sdn.Base.Settings
-import           Sdn.Extra.Util       (DeclaredMark, MonadicMark (..), listF)
+import           Sdn.Extra.Util       (DeclaredMark, Decomposable (..), MonadicMark (..),
+                                       listF)
 
 -- * Conflict
 
 -- | "Conflict" relationship between two entities.
 -- It's enough to define one of 'conflict' and 'agree' functions.
 class Conflict a b where
+    -- | Whether entities conflict, with reason
+    conflictReason :: a -> b -> Either Text ()
+    conflictReason a b =
+        if a `conflicts` b
+        then Left "some conflict"
+        else Right ()
+
     -- | Whether entities conflict.
     conflicts :: a -> b -> Bool
     conflicts a b = not (agrees a b)
@@ -53,7 +61,12 @@ type SuperConflict a b =
 data AcceptanceType
     = AcceptedT
     | RejectedT
-    deriving (Eq, Ord, Enum)
+    deriving (Eq, Show, Ord, Enum)
+
+instance Buildable AcceptanceType where
+    build = \case
+        AcceptedT -> "accepted"
+        RejectedT -> "rejected"
 
 -- | Acception or denial of command.
 data Acceptance cmd
@@ -63,15 +76,20 @@ data Acceptance cmd
 
 makePrisms ''Acceptance
 
+instance Decomposable (Acceptance cmd) (AcceptanceType, cmd) where
+    decompose = \case
+        Accepted cmd -> (AcceptedT, cmd)
+        Rejected cmd -> (RejectedT, cmd)
+
+    compose (acc, cmd) = case acc of
+        AcceptedT -> Accepted cmd
+        RejectedT -> Rejected cmd
+
 acceptanceCmd :: Acceptance cmd -> cmd
-acceptanceCmd = \case
-    Accepted cmd -> cmd
-    Rejected cmd -> cmd
+acceptanceCmd = snd . decompose
 
 acceptanceType :: Acceptance cmd -> AcceptanceType
-acceptanceType = \case
-    Accepted _ -> AcceptedT
-    Rejected _ -> RejectedT
+acceptanceType = fst . decompose
 
 type family UnAcceptance cmd where
     UnAcceptance (Acceptance a) = a
@@ -113,11 +131,11 @@ class ( SuperConflict (Cmd cstruct) cstruct
     type Cmd cstruct :: *
 
     -- | Add command to CStruct, if no conflict arise.
-    addCommand :: Cmd cstruct -> cstruct -> Maybe cstruct
+    addCommand :: Cmd cstruct -> cstruct -> Either Text cstruct
 
     -- | Calculate Greatest Lower Bound of two cstructs.
     -- Fails, if two cstructs have conflicting commands.
-    glb :: cstruct -> cstruct -> Maybe cstruct
+    glb :: cstruct -> cstruct -> Either Text cstruct
 
     -- | Calculate Least Upper Bound of two cstructs.
     -- This function is always defined.
@@ -155,7 +173,7 @@ liftCommand
     :: (CStruct cstruct, Cmd cstruct ~ Acceptance cmd)
     => Acceptance cmd -> cstruct
 liftCommand cmd =
-    fromMaybe (error "Can't make up cstruct from single command") $
+    fromRight (error "Can't make up cstruct from single command") $
     addCommand cmd def
 
 -- | Whether sctruct contains command, accepted or rejected.
@@ -166,8 +184,8 @@ contains cstruct cmd =
 
 -- | Utility function, which unsures that arguments being combined does not
 -- conflict.
-checkingAgreement :: Conflict a b => (a -> b -> c) -> a -> b -> Maybe c
-checkingAgreement f a b = guard (agrees a b) $> f a b
+checkingAgreement :: Conflict a b => (a -> b -> c) -> a -> b -> Either Text c
+checkingAgreement f a b = conflictReason a b $> f a b
 
 checkingConsistency
     :: (Conflict a a, Buildable a, MonadError Text m)
@@ -182,8 +200,11 @@ acceptOrRejectCommand
     :: CStructA cstruct cmd
     => cmd -> cstruct -> (Acceptance cmd, cstruct)
 acceptOrRejectCommand cmd cstruct =
-    fromMaybe (error "failed to add command rejection") $
-        try Accepted <|> try Rejected
+    case try Accepted of
+        Right x -> x
+        Left _ -> case try Rejected of
+            Right x -> x
+            Left _  -> error "failed to add command rejection"
   where
     try acceptance =
         let acmd = acceptance cmd
@@ -203,12 +224,13 @@ mergeCStructs
 mergeCStructs cstructs =
     let gamma = map (foldr1 lub . toList) cstructs
         combined = foldrM glb def gamma
-    in  maybe (errorContradictory gamma) pure combined
+    in  either (errorContradictory gamma) pure combined
   where
-    errorContradictory gamma =
+    errorContradictory gamma err =
         throwError $
-        sformat ("mergeCStructs: got contradictory Gamma: "%listF "\n  ," build)
-            gamma
+        sformat ("mergeCStructs: got contradictory Gamma: "%listF "\n  ," build
+                %"\n  : "%build)
+            gamma err
 
 -- | Takes first argument only if it is extension of second one.
 maxOrSecond :: CStruct cstruct => cstruct -> cstruct -> cstruct

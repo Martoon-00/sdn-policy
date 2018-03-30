@@ -1,5 +1,6 @@
-{-# LANGUAGE Rank2Types   #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE Rank2Types          #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 -- | Utilities for various phases of Paxos.
 
@@ -7,7 +8,8 @@ module Sdn.Protocol.Common.Phases
     ( MonadPhase
     , LearningCallback (..)
     , updateLearnedValue
-    , warnOnPartialApply
+    , warnOnPartialCStructApply
+    , warnOnPartialCommandsApply
     , learnCStruct
     , confirmCommitted
     , isPolicyUnconfirmed
@@ -23,7 +25,7 @@ import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra                    (MonadLog, MonadReporting, RpcOptions,
-                                               logError, logInfo, presence, submit,
+                                               listF, logError, logInfo, presence, submit,
                                                throwOnFail)
 import           Sdn.Protocol.Common.Messages
 import           Sdn.Protocol.Context
@@ -45,18 +47,31 @@ type MonadPhase cstruct m =
 
 -- * Common
 
--- | Drop warning if we are going to merge received cstruct, but
+-- | Drop a warning if we are going to merge received cstruct, but
 -- dropping some of its policies in the process.
-warnOnPartialApply
+warnOnPartialCStructApply
     :: (MonadLog m, CStruct cstruct)
     => cstruct -> cstruct -> m ()
-warnOnPartialApply incoming updated = do
+warnOnPartialCStructApply incoming updated = do
     unless (updated `extends` incoming) $
         logInfo $
         sformat ("Some policies were dropped while applying incoming cstruct:\
                  \\n  incoming:  "%build%
                  "\n  new value: "%build)
               incoming updated
+
+-- | Drop a warning if some of commands were not applied.
+warnOnPartialCommandsApply
+    :: forall cstruct m.
+       (MonadLog m, PracticalCStruct cstruct)
+    => [Cmd cstruct] -> [Cmd cstruct] -> m ()
+warnOnPartialCommandsApply incoming update = do
+    unless (S.fromList update /= S.fromList incoming) $
+        logInfo $
+        sformat ("Some policies were dropped while applying incoming cstruct:\
+                 \\n  incoming:  "%listF ", " build%
+                 "\n  new value: "%listF ", " build)
+              incoming update
 
 -- * Learning
 
@@ -113,8 +128,9 @@ learnCStruct (LearningCallback callback) combinator accId (cstruct :: cstruct) =
 
         -- we should check here that new cstruct extends previous one.
         -- but the contrary is not an error, because of not-FIFO channels
-        updated <- learnerVotes . at accId . non def <%= maxOrSecond cstruct
-        warnOnPartialApply cstruct updated
+        let replaceOrRemainOld = maxOrSecond
+        updated <- learnerVotes . at accId . non def <%= replaceOrRemainOld cstruct
+        warnOnPartialCStructApply cstruct updated
 
         -- update total learned cstruct
         -- it should be safe (i.e. it does not induce commands losses)

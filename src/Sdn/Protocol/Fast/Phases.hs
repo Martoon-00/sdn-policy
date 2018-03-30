@@ -1,27 +1,25 @@
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE Rank2Types          #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 -- | Phases of Fast Paxos.
 
 module Sdn.Protocol.Fast.Phases
     ( propose
-    , acceptorRememberProposal
-    , initBallot
     , phase2b
     , learn
     , detectConflicts
     ) where
 
-import           Control.Lens                  (at, has, ix, non, (%=), (.=), (<%=),
-                                                (<+=), (<>=))
-import           Control.TimeWarp.Timed        (Microsecond, after, schedule)
-import           Data.Default                  (def)
+import           Control.Lens                  (at, non, (.=), (<>=))
 import qualified Data.Map                      as M
-import           Formatting                    (build, sformat, stext, (%))
+import           Formatting                    (build, sformat, (%))
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra                     (exists, exit, listF, logInfo, presence,
-                                                rightSpaced, zoom)
+import           Sdn.Extra                     (compose, decompose, listF, logInfo,
+                                                presence, takeNoMoreThanOne, throwOnFail,
+                                                whenJust', zoom, zoomOnPresense)
 import qualified Sdn.Protocol.Classic.Messages as Classic
 import qualified Sdn.Protocol.Classic.Phases   as Classic
 import           Sdn.Protocol.Common.Phases
@@ -42,83 +40,64 @@ propose policy = do
         proposerProposedPolicies <>= one policy
         proposerUnconfirmedPolicies <>= one policy
     broadcastTo (processesAddresses Acceptor)
-                (Fast.ProposalMsg @cstruct policy)
-
--- * Remembering proposals
-
-acceptorRememberProposal
-    :: (MonadPhase cstruct m, HasContextOf Acceptor Fast m)
-    => Fast.ProposalMsg cstruct -> m ()
-acceptorRememberProposal (Fast.ProposalMsg policy) =
-    withProcessStateAtomically $ do
-        committed <- exists $ acceptorCStruct . forFast . (ix (Accepted policy) <> ix (Rejected policy))
-
-        -- proposer may be insistent,
-        -- this check allows to avoid performing extra actions
-        if committed
-        then
-            logInfo $ sformat ("Policy "%build%" has already been committed") policy
-        else do
-            bal <- fmap (+1) . use $ acceptorLastKnownBallotId
-            logInfo $ sformat (build%" to apply at "%build) policy bal
-            acceptorFastProposedPolicies . pendingProposedCommands %= (policy :)
-
--- * Ballot initiation
-
-initBallot
-    :: (MonadPhase cstruct m, HasContextOf Leader Fast m)
-    => Microsecond -> m ()
-initBallot recoveryDelay = do
-    logInfo "Starting new fast ballot"
-
-    newBalId <- withProcessStateAtomically $ do
-        leaderBallotId <+= 1
-
-    schedule (after recoveryDelay) $
-        startRecoveryIfNecessary newBalId
-
-    broadcastTo (processesAddresses Acceptor) (Fast.InitBallotMsg newBalId)
+                (Fast.ProposalMsg @cstruct $ one policy)
 
 -- * Phase 2
 
 phase2b
-    :: (MonadPhase cstruct m, HasContextOf Acceptor Fast m)
-    => Fast.InitBallotMsg -> m ()
-phase2b (Fast.InitBallotMsg bal) = do
-    msg <- withProcessStateAtomically $ runMaybeT $ do
-        lastKnownBal <- use acceptorLastKnownBallotId
-        when (bal <= lastKnownBal) $ do
-             logInfo "Already heard about this ballot, ignoring"
-             exit
-
-        acceptorLastKnownBallotId .= bal
-
-        policiesToApply <-
-            zoom acceptorFastProposedPolicies $
-            dumpProposedCommands bal
+    :: forall cstruct m.
+       (MonadPhase cstruct m, HasContextOf Acceptor Fast m)
+    => Fast.ProposalMsg cstruct -> m ()
+phase2b (Fast.ProposalMsg policiesToApply) = do
+    msg <- withProcessStateAtomically $ do
         appliedPolicies <-
             zoom (acceptorCStruct . forFast) $
             mapM acceptOrRejectCommandS policiesToApply
 
         logInfo $
-            sformat ("List of fast applied policies at "%build
-                    %":\n    "%listF ", " build)
-                bal appliedPolicies
+            sformat ("List of fast applied policies:"
+                    %"\n    "%listF ", " build)
+                appliedPolicies
 
         accId <- use acceptorId
-        newCStruct <- use $ acceptorCStruct . forFast
-        pure $ Fast.Phase2bMsg bal accId newCStruct
+        pure $ Fast.Phase2bMsg @cstruct accId appliedPolicies
 
-    whenJust msg $
-        broadcastTo (processAddresses Leader <> processesAddresses Learner)
+    broadcastTo (processAddresses Leader <> processesAddresses Learner) msg
 
 -- * Learning
 
 learn
-    :: (MonadPhase cstruct m, HasContextOf Learner Fast m)
+    :: forall cstruct m.
+       (MonadPhase cstruct m, HasContextOf Learner Fast m)
     => LearningCallback m -> Fast.Phase2bMsg cstruct -> m ()
-learn callback (Fast.Phase2bMsg _ accId cstruct) =
-    learnCStruct callback intersectingCombination accId cstruct
+learn callback (Fast.Phase2bMsg accId (toList -> cstructDiff)) = do
+    -- TODO perf: use foldlM
+    voteUpdates <- fmap catMaybes $ forM cstructDiff $ \policyAcceptance ->
+        withProcessStateAtomically $
+        rememberVoteForPolicy @cstruct learnerFastVotes accId policyAcceptance
+
+    fixatedValues <- forM voteUpdates $ \(policy, _, votesForPolicy) -> do
+        let perValueVotes = transposeVotes votesForPolicy
+
+        mValueFixated <-
+            throwOnFail ProtocolError $
+            takeNoMoreThanOne "fixated value" $
+            M.keys $ M.filter isQuorum perValueVotes
+
+        whenJust' mValueFixated $ \acceptance -> do
+            let policyAcceptance = compose (acceptance, policy)
+            logInfo $ sformat ("Policy "%build%" has been fixated")
+                      policyAcceptance
+
+            withProcessStateAtomically $
+                use learnerLearned
+                    >>= throwOnFail ProtocolError . glb (liftCommand policyAcceptance)
+                    >>= (learnerLearned .= )
+
+            return policyAcceptance
+
+    whenNotNull (catMaybes fixatedValues) $
+        runLearningCallback callback
 
 -- * Recovery detection and initialition
 
@@ -131,68 +110,98 @@ delegateToRecovery accId bal cstruct = do
     let recoveryBallotId = bal
     Classic.phase2a (Classic.Phase1bMsg accId recoveryBallotId cstruct)
 
-startRecoveryIfNecessary
-    :: (MonadPhase cstruct m, HasContextOf Leader Fast m)
-    => BallotId -> m ()
-startRecoveryIfNecessary bal = do
-    mVotesSoFar <- withProcessStateAtomically $ runMaybeT $ do
-        -- skip check if ballot status is ok or recovery already happened
-        fastBallotStatus <- use $ leaderFastBallotStatus . at bal . non def
-        unless (_FastBallotInProgress `has` fastBallotStatus) $ do
-            exit
+rememberVoteForPolicy
+    :: forall cstruct qf s.
+       PracticalCStruct cstruct
+    => Traversal' s (PerCmdVotes qf cstruct)
+    -> AcceptorId
+    -> Cmd cstruct
+    -> TransactionM s (Maybe (RawCmd cstruct, Votes qf AcceptanceType, Votes qf AcceptanceType))
+    -- TODO: distinguish old & new
+rememberVoteForPolicy atVotesL accId policyAcceptance =
+    let (acceptance, policy) = decompose policyAcceptance
+    in  zoomOnPresense (atVotesL . at policy . non mempty) $ do
+            curValue <- use $ at accId
+            when (curValue /= Nothing && curValue /= Just acceptance) $
+                    throwM $ ProtocolError "Rebinded vote"
 
-        -- check need in recovery
-        votes <- use $ leaderFastVotes . at bal . non mempty
-        unconfirmedPolicies <- evalUnconfirmedPolicies votes
-        let needRecovery = not $ null unconfirmedPolicies
+            oldVotes <- get
+            at accId .= Just acceptance
+            newVotes <- get
+            return (policy, oldVotes, newVotes)
 
-        when needRecovery $ do
-            logInfo $ sformat ("Need in recovery just was checked (for ballot "%build%")") bal
-            logInfo $ sformat ("Unconfirmed policies: "%listF "," build)
-                    unconfirmedPolicies
-            logInfo $ sformat ("Recovery is "%rightSpaced stext%" needed")
-                      (if needRecovery then "" else "not")
+data PolicyChoiceStatus
+    = TooFewVotes
+    | OnlyPossible AcceptanceType
+    | PolicyFixated AcceptanceType
+    | Undecidable
+    deriving (Eq, Show)
 
-        -- update state
-        leaderFastBallotStatus . at bal . non def .=
-            if needRecovery then FastBallotInRecovery else FastBallotSucceeded
-        when needRecovery $
-            leaderRecoveryUsed . at bal . presence .= True
+decideOnPolicyStatus
+    :: (HasMembers, QuorumFamily qf)
+    => Votes qf AcceptanceType -> Either Text PolicyChoiceStatus
+decideOnPolicyStatus votesForPolicy = do
+    let perValueVotes = transposeVotes votesForPolicy
 
-        use $ leaderFastVotes . at bal . non mempty
+    -- TODO: another quorum can go here
+    let heardFromQuorum = isQuorum votesForPolicy
 
-    whenJust mVotesSoFar $ \(Votes votes) ->
-        -- artificially execute next available phase of recovery (classic) round
-        forM_ (M.toList votes) $ \(accId, cstruct) ->
-             delegateToRecovery accId bal cstruct
-  where
-    -- find policies which haven't gathered a quorum of votes
-    evalUnconfirmedPolicies _votes = do
-        -- combined <- throwOnFail ProtocolError $ intersectingCombination votes
-        -- let mentionedPolicyEntries = fold votes
-        --     unconfirmedPolicies = mentionedPolicyEntries `difference` combined
-        -- return unconfirmedPolicies
-        --
-        -- NO CONFLICTS EVER! MEME
-        -- FIXME:
-        return ([] :: [Int])
+    mValueFixated <-
+        takeNoMoreThanOne "fixated value" $
+        M.keys $ M.filter isQuorum perValueVotes
+    mValueCouldBeChosen <-
+        takeNoMoreThanOne "possibly chosen value" $
+        M.keys $ M.filter excludesOtherQuorum perValueVotes
 
+    if | Just acceptance <- mValueFixated ->
+        return $ PolicyFixated acceptance
+
+       | Just acceptance <- mValueCouldBeChosen ->
+        return $ OnlyPossible acceptance
+
+       | heardFromQuorum ->
+        return Undecidable
+
+       | otherwise ->
+        return TooFewVotes
 
 detectConflicts
-    :: (MonadPhase cstruct m, HasContextOf Leader Fast m)
+    :: forall cstruct m.
+       (MonadPhase cstruct m, HasContextOf Leader Fast m)
     => Fast.Phase2bMsg cstruct -> m ()
-detectConflicts (Fast.Phase2bMsg bal accId cstruct) = do
-    newVotes <- withProcessStateAtomically $ do
-        leaderFastVotes . at bal . non mempty <%= addVote accId cstruct
+detectConflicts (Fast.Phase2bMsg accId (toList -> cstructDiff)) = do
+    voteUpdates <- fmap catMaybes . forM cstructDiff $ \policyAcceptance ->
+        withProcessStateAtomically $
+        rememberVoteForPolicy @cstruct leaderFastVotes accId policyAcceptance
 
-    if void newVotes == maxBound
-        -- all possible votes collected - ready to check whether recovery required
-        then startRecoveryIfNecessary bal
-        -- if recovery already occured - delegate to phase2a of classic paxos
-        else do
-            fastBallotStatus <-
-                withProcessStateAtomically $ use $ leaderFastBallotStatus . at bal . non def
-            case fastBallotStatus of
-                FastBallotInProgress -> pass
-                FastBallotSucceeded  -> pass
-                FastBallotInRecovery -> delegateToRecovery accId bal cstruct
+
+    forM_ voteUpdates $ \(policy, oldVotesForPolicy, votesForPolicy) -> do
+        oldPolicyStatus <- throwOnFail ProtocolError $ decideOnPolicyStatus oldVotesForPolicy
+        policyStatus <- throwOnFail ProtocolError $ decideOnPolicyStatus votesForPolicy
+
+        when (policyStatus /= oldPolicyStatus) $ do
+          case policyStatus of
+            TooFewVotes -> return ()
+
+            PolicyFixated acceptance -> do
+                let policyAcceptance = compose (acceptance, policy)
+                logInfo $ sformat ("Policy "%build%" has been fixated, not tracking it further")
+                        policyAcceptance
+
+                -- TODO: stop tracking
+
+            OnlyPossible acceptance -> do
+                let policyAcceptance = compose (acceptance, policy)
+                logInfo $ sformat ("Policy "%build%" is considered possibly chosen")
+                        policyAcceptance
+
+                withProcessStateAtomically $
+                    leaderFastPreferredPolicies . at policyAcceptance . presence .= True
+                -- TODO: periodically send
+
+            Undecidable -> do
+                logInfo $ sformat ("Heard about "%build%" by quorum, but no value \
+                                \still has been chosen, declaring conflict!")
+                        policy
+
+                -- TODO: conflict!

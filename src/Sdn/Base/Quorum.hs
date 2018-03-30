@@ -1,3 +1,4 @@
+{-# LANGUAGE AllowAmbiguousTypes        #-}
 {-# LANGUAGE DeriveTraversable          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE Rank2Types                 #-}
@@ -48,6 +49,10 @@ instance Ixed (Votes t a) where
 
 instance At (Votes t a) where
     at index = _Wrapped' . at index
+
+instance One (Votes f a) where
+    type OneItem (Votes f a) = (AcceptorId, a)
+    one = Votes . one
 
 votesL :: Iso' (Votes f a) [(AcceptorId, a)]
 votesL = _Wrapped' . listL
@@ -103,6 +108,12 @@ votesNoDups = map unsafeHead . groupBy ((==) `on` toKey) . sortWith toKey
 allSubVotes :: Votes f a -> [Votes f a]
 allSubVotes = traverseOf votesL subsequences
 
+transposeVotes :: Ord a => Votes f a -> Map a (Votes f ())
+transposeVotes (Votes votes) =
+    M.fromListWith mappend $ map trans $ M.toList votes
+  where
+    trans (accId, v) = (v, one (accId, ()))
+
 -- | Describes quorum family.
 class QuorumFamily f where
     -- | Check whether votes belong to a quorum of acceptors.
@@ -111,10 +122,15 @@ class QuorumFamily f where
     -- | Check whether votes belogs to a minimum for inclusion quorum.
     isMinQuorum :: HasMembers => Votes f a -> Bool
 
+    -- | Check whether not mentioned members can not form a quorum.
+    excludesOtherQuorum :: HasMembers => Votes f a -> Bool
+
 class QuorumFamily f => QuorumIntersectionFamily f where
     -- | @isSubIntersectionWithQuorum q v@ returns whether exists quorum @r@
     -- such that @v@ is subset of intersection of @q@ and @r@.
     isSubIntersectionWithQuorum :: HasMembers => Votes f a -> Votes f b -> Bool
+
+-- TODO: remove extra stuff
 
 -- | Similar to 'isIntersectionWithQuorum' but does additional sanity checks
 -- on arguments.
@@ -149,17 +165,21 @@ getQuorumsSubIntersections q =
 -- | Simple majority quorum.
 data MajorityQuorum frac
 
+majorityQuorumSize :: forall frac. (HasMembers, Reifies frac Rational) => Int
+majorityQuorumSize =
+    let frac = reflect @frac Proxy
+        Members {..} = getMembers
+    in  floor $ fromIntegral acceptorsNum * frac + 1
+
 instance Reifies frac Rational =>
          QuorumFamily (MajorityQuorum frac) where
-    isQuorum votes =
-        let frac = reflect @frac Proxy
-            Members {..} = getMembers
-        in fromIntegral (length votes) > fromIntegral acceptorsNum * frac
+    isQuorum votes = length votes >= majorityQuorumSize @frac
 
-    isMinQuorum votes =
-        let subVotes = votes & _Wrapped' . listL %~ drop 1
-        in  isQuorum votes && not (isQuorum subVotes)
+    isMinQuorum votes = length votes == majorityQuorumSize @frac
 
+    excludesOtherQuorum votes =
+        let freeAcceptors = acceptorsNum getMembers - length votes
+        in  freeAcceptors < majorityQuorumSize @frac
 
 data OneHalf
 instance Reifies OneHalf Rational where

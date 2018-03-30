@@ -9,7 +9,7 @@
 module Sdn.Protocol.Context where
 
 import           Control.Lens           (At (..), Index, IxValue, Ixed (..), at,
-                                         makeLenses, makePrisms, (.=), (<<.=))
+                                         makeLenses, (.=), (<<.=))
 import           Control.TimeWarp.Rpc   (MonadRpc, NetworkAddress)
 import           Control.TimeWarp.Timed (MonadTimed)
 import           Data.Default           (Default (def))
@@ -146,18 +146,7 @@ instance Default cstruct =>
 
 -- ** Leader
 
--- | Whether need in recovery has been checked and recovery was
--- launched if necessary.
-data FastBallotStatus
-    = FastBallotInProgress  -- fast ballot is executing at moment
-    | FastBallotSucceeded   -- fast ballot terminated without need in recovery
-    | FastBallotInRecovery  -- recovery has been initiated
-    deriving (Eq, Show)
-
-makePrisms ''FastBallotStatus
-
-instance Default FastBallotStatus where
-    def = FastBallotInProgress
+type PerCmdVotes qf cstruct = Map (RawCmd cstruct) $ Votes qf AcceptanceType
 
 -- TODO full Buildable instances
 
@@ -169,12 +158,10 @@ data LeaderState pv cstruct = LeaderState
       -- ^ Policies ever proposed on this classic / fast ballot, in latter case used in recovery
     , _leaderVotes            :: Map BallotId $ Votes ClassicMajorityQuorum cstruct
       -- ^ CStructs received in 2b messages
-    , _leaderFastVotes        :: Map BallotId $ Votes FastMajorityQuorum cstruct
+    , _leaderFastVotes        :: PerCmdVotes FastMajorityQuorum cstruct
       -- ^ CStructs detected in 2b messages of fast ballot
-    , _leaderFastBallotStatus :: Map BallotId FastBallotStatus
-      -- ^ Whether fast ballot succeeded or failed with conflict.
-    , _leaderRecoveryUsed     :: Map BallotId ()
-      -- ^ Ballots for which extra recovery ballot was initiated.
+    , _leaderFastPreferredPolicies :: Set $ Cmd cstruct
+      -- ^ Policies for which only one acceptance type is (mostly probably) possible.
     }
 
 makeLenses ''LeaderState
@@ -197,7 +184,7 @@ instance (ProtocolVersion pv, PracticalCStruct cstruct) =>
 
 -- | Initial state of the leader.
 instance Default (LeaderState pv cstruct) where
-    def = LeaderState def def mempty mempty mempty mempty
+    def = LeaderState def def mempty def def
 
 -- ** Acceptor
 
@@ -239,9 +226,12 @@ defAcceptorState id = AcceptorState id def def def
 
 -- | State kept by learner.
 data LearnerState pv cstruct = LearnerState
-    { _learnerVotes   :: Votes (VersionQuorum pv) cstruct
+    { _learnerVotes     :: Votes (VersionQuorum pv) cstruct
       -- ^ CStructs received from acceptors so far
-    , _learnerLearned :: cstruct
+    , _learnerFastVotes :: Map (RawCmd cstruct) $ Votes (VersionQuorum pv) AcceptanceType
+      -- ^ What has been choosen on policy.
+      -- Used only in fast ballots for now - TODO: merge
+    , _learnerLearned   :: cstruct
       -- ^ Eventually learned cstruct, result of consensus
     }
 
@@ -252,13 +242,15 @@ instance PracticalCStruct cstruct =>
     build LearnerState{..} =
         bprint
             ("\n    heard: "%build%
+             "\n    heard fast: "%listF ",\n    " (pairF ": " build build)%
              "\n    learned: "%build)
             _learnerVotes
+            _learnerFastVotes
             _learnerLearned
 
 -- | Initial state of the learner.
 instance Default cstruct => Default (LearnerState pv cstruct) where
-    def = LearnerState mempty def
+    def = LearnerState mempty def def
 
 -- * Misc
 

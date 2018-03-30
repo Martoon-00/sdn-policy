@@ -5,6 +5,8 @@
 
 module Sdn.Protocol.Fast.Topology where
 
+import           Universum
+
 import           Control.TimeWarp.Timed       (Microsecond, interval, sec)
 import           Data.Default                 (Default (..))
 import           Universum
@@ -32,7 +34,7 @@ instance HasVersionTopologyActions Fast where
     versionTopologyActions FastTopologySettingsPart{..} =
         TopologyActions
         { proposeAction = Fast.propose
-        , startBallotAction = Fast.initBallot topologyRecoveryDelay
+        , startBallotAction = pass
         , leaderListeners =
             [ listener @Leader Classic.rememberProposal
             , listener @Leader Classic.phase2a
@@ -42,7 +44,6 @@ instance HasVersionTopologyActions Fast where
             [ listener @Acceptor Classic.phase1b
             , listener @Acceptor Classic.phase2b
             , listener @Acceptor Fast.phase2b
-            , listener @Acceptor Fast.acceptorRememberProposal
             ]
         , learnerListeners =
             [ listener @Learner $ Classic.learn mempty
