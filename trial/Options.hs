@@ -18,7 +18,7 @@ import qualified Control.TimeWarp.Rpc as D
 import qualified Data.Text.Buildable
 import           Data.Time.Units      (Microsecond, convertUnit)
 import           Data.Yaml            (FromJSON (..), Value (..), decodeFileEither,
-                                       withArray, withObject, (.:), (.:?))
+                                       withArray, withObject, (.!=), (.:), (.:?))
 import qualified Data.Yaml            as Yaml
 import           Formatting           (bprint, build, builder, sformat, stext, (%))
 import qualified Options.Applicative  as Opt
@@ -164,6 +164,7 @@ data ProtocolOptions = ProtocolOptions
     , poDelays           :: WithDesc D.Delays
     , poSeed             :: Maybe Text
     , poQuick            :: Bool
+    , poEnableLogging    :: Bool
     }
 
 instance Buildable ProtocolOptions where
@@ -224,7 +225,7 @@ instance FromJSON (WithDesc $ Gen Policy) where
             <$> mapM weightenedArbitraryPolicy a
         weightenedArbitraryPolicy :: Value -> Yaml.Parser $ WithDesc (Int, Gen Policy)
         weightenedArbitraryPolicy = withObject "weightened policy" $ \o -> do
-            weight <- fromMaybe 1 <$> o .:? "weight"
+            weight <- o .:? "weight" .!= 1
             WithDesc policyDesc policy <- o .: "policy"
             pure (  sformat (build%"w "%stext) weight policyDesc
                  ?: (weight, policy)
@@ -339,7 +340,9 @@ instance FromJSON ProtocolOptions where
                 (\o ->               o .:? "seed"
                  <|> show @Int <<$>> o .:? "seed") v
         poQuick <-
-            withObject "quick" (\o -> fromMaybe False <$> o .:? "quick") v
+            withObject "quick" (\o -> o .:? "quick" .!= False) v
+        poEnableLogging <-
+            withObject "logging" (\o -> o .:? "enable_logging" .!= True) v
         return ProtocolOptions{..}
 
 configPathParser :: Opt.Parser FilePath

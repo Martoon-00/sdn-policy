@@ -47,6 +47,7 @@ library
                      , autoexporter
                      , containers
                      , data-default
+                     , dlist
                      , exceptions
                      , formatting
                      , fmt

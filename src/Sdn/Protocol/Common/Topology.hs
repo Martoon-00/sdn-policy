@@ -8,7 +8,8 @@
 module Sdn.Protocol.Common.Topology where
 
 import           Control.Monad.Catch          (Handler (..), catches)
-import           Control.TimeWarp.Logging     (WithNamedLogger, modifyLoggerName)
+import           Control.TimeWarp.Logging     (WithNamedLogger, getLoggerName,
+                                               modifyLoggerName, setLoggerName)
 import           Control.TimeWarp.Rpc         (Method (..), MonadRpc, serve)
 import           Control.TimeWarp.Timed       (Microsecond, MonadTimed, for, fork_, hour,
                                                interval, ms, till, virtualTime, wait,
@@ -112,6 +113,8 @@ newProcess process action = do
         action
     return $ readTVar stateBox
 
+type Listener p pv m = ProcessM p pv m (Method RpcOptions $ ProcessM p pv m)
+
 -- | Construct single messages listener for process.
 -- This makes all incoming messages logged, and processes
 -- errors occured in listener.
@@ -128,15 +131,18 @@ listener
        , HasContextOf p pv m
        , MonadRpc RpcOptions m
        )
-    => (msg -> m ()) -> Method RpcOptions m
-listener endpoint = Method . clarifyLoggerName $ \msg -> do
-    logInfo $ sformat (coloredF gray (stext%" "%build)) "<--" msg
-    endpoint msg `catches` handlers
+    => (msg -> m ()) -> m (Method RpcOptions m)
+listener endpoint = do
+    logName <- getLoggerName
+    let logName' = loggerNameMod logName
+    return . Method $ \msg -> do
+        setLoggerName logName' $ do
+            logInfo $ sformat (coloredF gray (stext%" "%build)) "<--" msg
+            endpoint msg `catches` handlers
   where
     loggerNameMod = (loggerNameT %~ withColor (processColor @p))
                   . (<> messageShortcut @msg)
                   . (loggerNameT %~ resetColoring)
-    clarifyLoggerName f (msg :: msg) = modifyLoggerName loggerNameMod $ f msg
     handlers =
         [ Handler $ logError . sformat (build @ProtocolError)
         , Handler $ logError . sformat ("Strange error: "%shown @SomeException)
@@ -149,9 +155,9 @@ type TopologyLauncher pv m =
 data TopologyActions pv m = TopologyActions
     { proposeAction     :: HasMembers => Policy -> ProcessM Proposer pv m ()
     , startBallotAction :: HasMembers => ProcessM Leader pv m ()
-    , leaderListeners   :: HasMembers => [Method RpcOptions $ ProcessM Leader pv m]
-    , acceptorListeners :: HasMembers => [Method RpcOptions $ ProcessM Acceptor pv m]
-    , learnerListeners  :: HasMembers => [Method RpcOptions $ ProcessM Learner pv m]
+    , leaderListeners   :: HasMembers => [Listener Leader pv m]
+    , acceptorListeners :: HasMembers => [Listener Acceptor pv m]
+    , learnerListeners  :: HasMembers => [Listener Learner pv m]
     }
 
 -- | Launch Paxos algorithm.
@@ -174,7 +180,7 @@ launchPaxosWith TopologyActions{..} seed TopologySettings{..} = withMembers topo
             S.execute <> repetitions
             lift $ proposeAction policy
 
-        serve (processPort Proposer)
+        serve (processPort Proposer) =<< sequence
             [ listener @Proposer confirmCommitted
             ]
 
@@ -185,7 +191,7 @@ launchPaxosWith TopologyActions{..} seed TopologySettings{..} = withMembers topo
             S.limited topologyLifetime topologyBallotsSchedule
             lift startBallotAction
 
-        serve (processPort Leader) leaderListeners
+        serve (processPort Leader) =<< sequence leaderListeners
 
     acceptorsStates <-
         startListeningProcessesOf Acceptor acceptorListeners
@@ -210,12 +216,12 @@ launchPaxosWith TopologyActions{..} seed TopologySettings{..} = withMembers topo
     startListeningProcessesOf
         :: (HasMembers, MonadTopology m, Process p, Integral i, ProtocolVersion pv)
         => (i -> p)
-        -> [Method RpcOptions $ ProcessM p pv m]
+        -> [Listener p pv m]
         -> m [STM $ ProcessState p pv]
     startListeningProcessesOf processType listeners =
         forM (processesOf processType) $
             \process -> newProcess process . work (for topologyLifetime) $ do
-                serve (processPort process) listeners
+                serve (processPort process) =<< sequence listeners
 
 {-# NOINLINE launchPaxosWith #-}
 

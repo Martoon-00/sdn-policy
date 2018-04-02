@@ -35,6 +35,7 @@ import           Control.TimeWarp.Logging       (LoggerName (..), LoggerNameBox 
                                                  WithNamedLogger (..))
 import           Control.TimeWarp.Rpc           (MonadRpc)
 import           Control.TimeWarp.Timed         (Microsecond, MonadTimed (..), ThreadId)
+import qualified Data.DList                     as D
 import           Data.List                      (isInfixOf)
 import qualified Data.Text                      as T
 import           Data.Time.Units                (toMicroseconds)
@@ -185,7 +186,7 @@ instance Monad m => MonadReporting (NoErrorReporting m) where
     reportError _ = return ()
 
 instance Monad m => MonadReporting (PureLog m) where
-    reportError err = PureLog $ tell mempty{ _errsPart = one err }
+    reportError err = PureLog $ tell mempty{ _errsPart = D.singleton err }
 
 logError :: (MonadLog m, MonadReporting m) => Text -> m ()
 logError msg = do
@@ -195,12 +196,12 @@ logError msg = do
 -- * Pure logging & error reporting
 
 data LogAndError = LogAndError
-    { _logsPart :: [Text]
-    , _errsPart :: [Text]
+    { _logsPart :: D.DList Text
+    , _errsPart :: D.DList Text
     }
 
 instance Monoid LogAndError where
-    mempty = LogAndError [] []
+    mempty = LogAndError mempty mempty
     LogAndError l1 e1 `mappend` LogAndError l2 e2 =
         LogAndError (l1 <> l2) (e1 <> e2)
 
@@ -218,5 +219,6 @@ launchPureLog hoist' (PureLog action) = do
     return res
 
 instance Monad m => MonadLog (PureLog m) where
-    logInfo msg = PureLog $ tell mempty{ _logsPart = one msg }
+    logInfo msg = PureLog $
+        tell mempty{ _logsPart = D.singleton msg }
 
