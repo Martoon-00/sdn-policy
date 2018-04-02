@@ -7,37 +7,38 @@
 
 module Sdn.Protocol.Context where
 
-import           Control.Concurrent.STM (STM)
-import           Control.Lens           (At (..), Index, IxValue, Ixed (..), at,
-                                         makeLenses, makePrisms, (.=), (<<.=))
-import           Control.TimeWarp.Rpc   (MonadRpc, NetworkAddress)
-import           Control.TimeWarp.Timed (MonadTimed)
-import           Data.Default           (Default (def))
-import qualified Data.Set               as S
+import           Control.Lens             (At (..), Index, IxValue, Ixed (..), at,
+                                           makeLenses, makePrisms, (.=), (<<.=))
+import           Control.Monad.Catch.Pure (Catch)
+import           Control.TimeWarp.Rpc     (MonadRpc, NetworkAddress)
+import           Control.TimeWarp.Timed   (MonadTimed)
+import           Data.Default             (Default (def))
+import qualified Data.Set                 as S
 import qualified Data.Text.Buildable
-import           Data.Text.Lazy.Builder (Builder)
-import           Formatting             (Format, bprint, build, later, (%))
+import           Data.Text.Lazy.Builder   (Builder)
+import           Formatting               (Format, bprint, build, later, (%))
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra              (Message, MonadLog, MonadReporting, PureLog,
-                                         RpcOptions, launchPureLog, listF, modifyTVarS,
-                                         pairF, submit)
+import           Sdn.Extra                (Message, MonadLog, MonadReporting, PureLog,
+                                           RpcOptions, atomicModifyIORefExcS,
+                                           launchPureLog, listF, pairF, submit)
 import           Sdn.Protocol.Versions
 
 -- * General
 
 -- | Context kept by single process.
 data ProcessContext s = ProcessContext
-    { pcState   :: TVar s   -- ^ Process'es mutable state
+    { pcState   :: IORef s   -- ^ Process'es mutable state
     }
 
 -- | Envorinment for transaction modifying process state.
-type TransactionM s a = StateT s (PureLog STM) a
+type TransactionM s a = PureLog (StateT s Catch) a
 
 -- | Constraints for transaction.
 type MonadTransaction s m =
     ( MonadIO m
+    , MonadThrow m
     , MonadLog m
     , MonadReporting m
     , MonadReader (ProcessContext s) m
@@ -48,8 +49,8 @@ type MonadTransaction s m =
 withProcessStateAtomically
     :: MonadTransaction s m => TransactionM s a -> m a
 withProcessStateAtomically modifier = do
-    var <- pcState <$> ask
-    launchPureLog atomically $ modifyTVarS var modifier
+    ref <- pcState <$> ask
+    launchPureLog (atomicModifyIORefExcS ref) modifier
 
 data ForBothRoundTypes a = ForBothRoundTypes
     { _forClassic :: a

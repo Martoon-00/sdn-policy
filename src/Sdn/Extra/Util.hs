@@ -11,32 +11,33 @@
 
 module Sdn.Extra.Util where
 
-import           Control.Lens            (Getting, Iso, Iso', LensRules, Wrapped (..),
-                                          from, has, involuted, iso, lens, lensField,
-                                          lensRules, makeLenses, mappingNamer, review)
-import           Control.Monad.Random    (MonadRandom, getRandom)
-import           Control.Monad.STM.Class (MonadSTM (..))
-import           Control.TimeWarp.Rpc    (MonadRpc (..), NetworkAddress, RpcRequest (..),
-                                          mkRequest)
-import qualified Control.TimeWarp.Rpc    as Rpc
-import           Control.TimeWarp.Timed  (Microsecond, MonadTimed (..))
-import           Data.Coerce             (coerce)
-import           Data.MessagePack        (MessagePack (..))
+import           Control.Lens             (Getting, Iso, Iso', LensRules, Wrapped (..),
+                                           from, has, involuted, iso, lens, lensField,
+                                           lensRules, makeLenses, mappingNamer, review)
+import           Control.Monad.Catch.Pure (Catch, runCatch)
+import           Control.Monad.Random     (MonadRandom, getRandom)
+import           Control.Monad.STM.Class  (MonadSTM (..))
+import           Control.TimeWarp.Rpc     (MonadRpc (..), NetworkAddress, RpcRequest (..),
+                                           mkRequest)
+import qualified Control.TimeWarp.Rpc     as Rpc
+import           Control.TimeWarp.Timed   (Microsecond, MonadTimed (..))
+import           Data.Coerce              (coerce)
+import           Data.MessagePack         (MessagePack (..))
 import qualified Data.Text.Buildable
-import           Data.Text.Lazy.Builder  (Builder)
-import           Data.Time.Units         (Millisecond, Second)
-import           Formatting              (Format, bprint, build, formatToString, later,
-                                          shortest, shown, string, (%))
-import           Formatting.Internal     (Format (..))
-import           GHC.Exts                (IsList (..))
-import qualified GHC.Exts                as Exts
-import qualified Language.Haskell.TH     as TH
-import qualified System.Console.ANSI     as ANSI
-import           Test.QuickCheck         (Gen, choose, suchThat)
-import           Test.QuickCheck.Gen     (unGen)
-import           Test.QuickCheck.Random  (mkQCGen)
-import           Universum               hiding (toList)
-import           Unsafe                  (unsafeFromJust)
+import           Data.Text.Lazy.Builder   (Builder)
+import           Data.Time.Units          (Millisecond, Second)
+import           Formatting               (Format, bprint, build, formatToString, later,
+                                           shortest, shown, string, (%))
+import           Formatting.Internal      (Format (..))
+import           GHC.Exts                 (IsList (..))
+import qualified GHC.Exts                 as Exts
+import qualified Language.Haskell.TH      as TH
+import qualified System.Console.ANSI      as ANSI
+import           Test.QuickCheck          (Gen, choose, suchThat)
+import           Test.QuickCheck.Gen      (unGen)
+import           Test.QuickCheck.Random   (mkQCGen)
+import           Universum                hiding (toList)
+import           Unsafe                   (unsafeFromJust)
 
 -- | Declare instance for one-way message.
 declareMessage :: TH.Name -> TH.Q [TH.Dec]
@@ -90,6 +91,25 @@ modifyTVarS var modifier = do
     (res, st') <- runStateT modifier st
     liftSTM $ writeTVar var st'
     return res
+
+-- | Extended modifier for 'IORef'.
+atomicModifyIORefS
+    :: MonadIO m
+    => IORef s -> StateT s Identity a -> m a
+atomicModifyIORefS ref modifier = do
+    atomicModifyIORef ref $
+        swap . runIdentity . runStateT modifier
+
+-- | Similar to 'atomicModifyIORefS', but provides opportunity to throw
+-- exceptions.
+atomicModifyIORefExcS
+    :: (MonadIO m, MonadThrow m)
+    => IORef s -> StateT s Catch a -> m a
+atomicModifyIORefExcS ref modifier = do
+    resOrErr <- atomicModifyIORef ref $ \s ->
+        either (\e -> (s, Left e)) (second Right) $
+        runCatch $ fmap swap $ runStateT modifier s
+    either throwM pure resOrErr
 
 -- | Lens which looks inside the list-like structure
 listL
@@ -198,7 +218,7 @@ zoom l st = do
     return r
 
 -- | 'MonadState'-ic version of 'has'.
-exists :: Monad m => Getting Any s a -> StateT s m Bool
+exists :: MonadState s m => Getting Any s a -> m Bool
 exists l = has l <$> get
 
 -- | Whether value is present.

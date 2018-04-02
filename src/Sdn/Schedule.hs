@@ -38,7 +38,7 @@ import           Test.QuickCheck.Gen    (Gen, unGen)
 import           Test.QuickCheck.Random (mkQCGen)
 import           Universum
 
-import           Sdn.Extra.Util         (modifyTVarS)
+import           Sdn.Extra.Util         (atomicModifyIORefS)
 
 -- | Whether executing job should be continued.
 newtype WhetherContinue = WhetherContinue Bool
@@ -121,9 +121,9 @@ instance MonadIO m => Monad (Schedule m) where
     return = generate . pure
     Schedule s1 >>= f = Schedule $ \ctx -> do
         let (gen1, gen2) = split (scGen ctx)
-        genBox <- newTVarIO gen1
+        genBox <- newIORef gen1
         let push p = do
-               gen' <- atomically . modifyTVarS genBox $ state split
+               gen' <- atomicModifyIORefS genBox $ state split
                case f p of Schedule s2 -> s2 ctx{ scGen = gen' }
         s1 ctx{ scNext = push, scGen = gen2 }
 
@@ -224,9 +224,9 @@ delayed duration =
 -- * End of list - to skipping all further executions.
 maskExecutions :: (MonadSchedule m, MonadIO n) => [Bool] -> n (Schedule m ())
 maskExecutions initMask = do
-    st <- newTVarIO initMask
+    st <- newIORef initMask
     return $ Schedule $ \ctx -> do
-        whetherExecute <- atomically . modifyTVarS st $ do
+        whetherExecute <- atomicModifyIORefS st $ do
             m <- preuse $ ix 0
             modify $ drop 1
             return $ fromMaybe False m

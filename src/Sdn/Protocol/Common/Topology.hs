@@ -87,7 +87,7 @@ data TopologyMonitor pv m = TopologyMonitor
     { -- | Returns when all active processes in the topology finish
       awaitTermination :: m ()
       -- | Fetch states of all processes in topology
-    , readAllStates    :: STM (AllStates pv)
+    , readAllStates    :: IO (AllStates pv)
     }
 
 -- | Monad in which process (and phases) are supposed to work.
@@ -104,14 +104,14 @@ newProcess
        )
     => p
     -> ProcessM p pv m ()
-    -> m (STM (ProcessState p pv))
+    -> m (IO (ProcessState p pv))
 newProcess process action = do
-    stateBox <- liftIO $ newTVarIO (initProcessState process)
+    stateBox <- liftIO $ newIORef (initProcessState process)
     fork_ $
         flip runReaderT (ProcessContext stateBox) $
         modifyLoggerName (<> coloredProcessName process) $
         action
-    return $ readTVar stateBox
+    return $ readIORef stateBox
 
 type Listener p pv m = ProcessM p pv m (Method RpcOptions $ ProcessM p pv m)
 
@@ -217,7 +217,7 @@ launchPaxosWith TopologyActions{..} seed TopologySettings{..} = withMembers topo
         :: (HasMembers, MonadTopology m, Process p, Integral i, ProtocolVersion pv)
         => (i -> p)
         -> [Listener p pv m]
-        -> m [STM $ ProcessState p pv]
+        -> m [IO $ ProcessState p pv]
     startListeningProcessesOf processType listeners =
         forM (processesOf processType) $
             \process -> newProcess process . work (for topologyLifetime) $ do

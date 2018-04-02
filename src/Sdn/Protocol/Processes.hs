@@ -54,18 +54,6 @@ type HasContext s m =
 -- | Constraint for having context of specified type of process.
 type HasContextOf p pv m = (HasContext (ProcessState p pv) m, ProtocolVersion pv)
 
--- | Provide context for given process.
-inProcessCtx
-    :: forall p pv m a.
-       (MonadIO m, Process p, ProtocolVersion pv)
-    => Proxy pv
-    -> p
-    -> ReaderT (ProcessContext (ProcessState p pv)) m a
-    -> m a
-inProcessCtx _ participant action = do
-    var <- liftIO $ newTVarIO (initProcessState @p @pv participant)
-    runReaderT action (ProcessContext var)
-
 -- | Port binded to given process.
 processPort
     :: Process p

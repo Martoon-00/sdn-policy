@@ -9,8 +9,8 @@ module Sdn.Protocol.Fast.Phases
     , detectConflicts
     ) where
 
-import           Control.Lens                  (at, has, ix, non, (.=), (<%=), (<+=),
-                                                (<>=))
+import           Control.Lens                  (at, has, ix, non, (%=), (.=), (<%=),
+                                                (<+=), (<>=))
 import           Control.TimeWarp.Timed        (Microsecond, after, schedule)
 import           Data.Default                  (def)
 import qualified Data.Map                      as M
@@ -59,7 +59,7 @@ acceptorRememberProposal (Fast.ProposalMsg policy) =
         else do
             bal <- fmap (+1) . use $ acceptorLastKnownBallotId
             logInfo $ sformat (build%" to apply at "%build) policy bal
-            acceptorFastProposedPolicies . pendingProposedCommands <>= one policy
+            acceptorFastProposedPolicies . pendingProposedCommands %= (policy :)
 
 -- * Ballot initiation
 

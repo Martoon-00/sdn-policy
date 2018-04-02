@@ -13,9 +13,8 @@ import           Data.Default        (Default (..))
 import qualified Data.Map            as M
 import           Data.MessagePack    (MessagePack (..))
 import qualified Data.Set            as S
-import           Data.String         (IsString)
 import qualified Data.Text.Buildable
-import           Formatting          (bprint, build, sformat, (%))
+import           Formatting          (bprint, build, (%))
 import qualified GHC.Exts            as Exts
 import           Test.QuickCheck     (Arbitrary (..), getNonNegative, oneof, resize)
 import           Universum
@@ -25,13 +24,11 @@ import           Sdn.Base.Quorum
 import           Sdn.Base.Types
 import           Sdn.Extra.Util
 
-newtype PolicyName = PolicyName Text
-    deriving (Eq, Ord, Show, Buildable, IsString, MessagePack)
+newtype PolicyName = PolicyName Int
+    deriving (Eq, Ord, Show, Buildable, MessagePack)
 
 instance Arbitrary PolicyName where
-    arbitrary =
-        PolicyName . sformat ("policy #"%build @Int) . getNonNegative
-            <$> arbitrary
+    arbitrary = PolicyName . getNonNegative <$> arbitrary
 
 -- | Abstract SDN policy.
 data Policy
