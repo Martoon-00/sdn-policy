@@ -1,12 +1,10 @@
-{-# LANGUAGE DataKinds      #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE Rank2Types     #-}
+{-# LANGUAGE Rank2Types #-}
 
 module Main where
 
 import           Control.TimeWarp.Logging (usingLoggerName)
 import           Control.TimeWarp.Rpc     ((:<<) (..), Dict (..), MonadRpc,
-                                           runDelaysLayer, runMsgPackUdp, runPureRpc,
+                                           runDelaysLayer, runMsgPackUdp, runPureRpcExt,
                                            withExtendedRpcOptions)
 import           Control.TimeWarp.Timed   (MonadTimed, for, sec, wait)
 import           Prelude                  (read)
@@ -15,8 +13,8 @@ import           Universum
 
 import           Options
 import           Sdn.Extra                (RpcOptions, declareMemStorage, dropDesc,
-                                           genSoundWord, generateM, ioRefMemStorage,
-                                           logInfo, runNoErrorReporting,
+                                           emulationOptions, genSoundWord, generateM,
+                                           ioRefMemStorage, logInfo, runNoErrorReporting,
                                            setDropLoggerName)
 import           Sdn.Protocol
 
@@ -60,5 +58,5 @@ main = do
 
     -- execute in emulation/as-is
     if poQuick
-    then runPureRpc $ withExtendedRpcOptions (Evi Dict) stuff
+    then runPureRpcExt emulationOptions $ withExtendedRpcOptions (Evi Dict) stuff
     else runMsgPackUdp $ withExtendedRpcOptions (Evi Dict) stuff

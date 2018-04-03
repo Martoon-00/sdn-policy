@@ -12,9 +12,8 @@ import           Universum
 
 import           Control.TimeWarp.Logging    (usingLoggerName)
 import           Control.TimeWarp.Rpc        ((:<<) (Evi), Dict (..), runDelaysLayer,
-                                              runPureRpc, withExtendedRpcOptions)
+                                              runPureRpcExt, withExtendedRpcOptions)
 import qualified Control.TimeWarp.Rpc        as D
-import           Control.TimeWarp.Timed      (runTimedT)
 import           Data.Default
 import           Formatting                  (build, sformat, stext, (%))
 import           System.Random               (mkStdGen, split)
@@ -64,8 +63,7 @@ testLaunch TestLaunchParams{..} =
             runMemStorage = declareMemStorage stmMemStorage
             failProp err = do
                 lift $
-                    runTimedT .
-                    runPureRpc .
+                    runPureRpcExt emulationOptions .
                     withExtendedRpcOptions (Evi Dict) .
                     runDelaysLayer testDelays gen1 .
                     runNoErrorReporting .
@@ -77,8 +75,7 @@ testLaunch TestLaunchParams{..} =
         monadicIO $ do
             -- launch silently
             (errors, propErrors) <- lift $
-                runTimedT $
-                runPureRpc $
+                runPureRpcExt emulationOptions $
                 withExtendedRpcOptions (Evi Dict) $
                 runDelaysLayer testDelays gen1 $
                 runErrorReporting $

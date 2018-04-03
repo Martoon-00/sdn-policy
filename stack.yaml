@@ -11,13 +11,12 @@ packages:
     - msgpack-rpc
 - location:
     git: https://github.com/serokell/time-warp.git
-    commit: 4055f044b9a15291880397b8bdd4c2325857afef
+    commit: e502d179050820f7fc140aaa96658e13e5cbcac8
   extra-dep: true
 
 extra-deps:
 - acid-state-0.14.3
 - fmt-0.5.0.0
-- serokell-util-0.5.0
 - time-units-1.0.0
 - universum-0.7.1
 - streaming-commons-0.1.16  # 0.1.17 is picked by default and it's broken :(

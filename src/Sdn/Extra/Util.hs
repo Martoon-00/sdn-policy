@@ -20,7 +20,8 @@ import           Control.Monad.STM.Class  (MonadSTM (..))
 import           Control.TimeWarp.Rpc     (MonadRpc (..), NetworkAddress, RpcRequest (..),
                                            mkRequest)
 import qualified Control.TimeWarp.Rpc     as Rpc
-import           Control.TimeWarp.Timed   (Microsecond, MonadTimed (..))
+import           Control.TimeWarp.Timed   (Microsecond, MonadTimed (..),
+                                           TimedTOptions (..))
 import           Data.Coerce              (coerce)
 import           Data.MessagePack         (MessagePack (..))
 import qualified Data.Text.Buildable
@@ -263,3 +264,8 @@ pack = review _Wrapped'
 unpack :: Wrapped s => s -> Unwrapped s
 unpack = view _Wrapped'
 
+emulationOptions :: TimedTOptions
+emulationOptions =
+    TimedTOptions
+    { shutdownOnMainEnd = True
+    }
