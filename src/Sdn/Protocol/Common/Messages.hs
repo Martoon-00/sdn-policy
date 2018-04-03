@@ -15,8 +15,8 @@ import qualified Data.Text.Buildable
 import           Formatting               (bprint, build, (%))
 import           Universum
 
-import           Sdn.Base
 import           Sdn.Extra                (declareMessage, listF)
+import           Sdn.Policy.Fake
 
 -- | Suffix used in logging for incoming messages of given type.
 class HasMessageShortcut msg where

@@ -3,9 +3,16 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
--- | Policies arangement.
+-- | Fake policies with various conflicting behaviour.
 
-module Sdn.Base.Policy where
+module Sdn.Policy.Fake
+    ( Policy (..)
+    , PolicyName
+    , policyName
+
+    , Configuration (..)
+    , mkConfig
+    ) where
 
 import           Control.Lens        (At (..), Index, Iso', IxValue, Ixed (..),
                                       Wrapped (..), iso, mapping, _Wrapped')

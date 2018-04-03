@@ -24,6 +24,7 @@ import           Sdn.Base
 import           Sdn.Extra                    (MonadLog, MonadReporting, RpcOptions,
                                                logError, logInfo, presence, submit,
                                                throwOnFail)
+import           Sdn.Policy.Fake
 import           Sdn.Protocol.Common.Messages
 import           Sdn.Protocol.Context
 import           Sdn.Protocol.Processes

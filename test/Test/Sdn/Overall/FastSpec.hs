@@ -13,6 +13,7 @@ import           Test.Hspec.QuickCheck       (prop)
 import           Test.QuickCheck             (Small (..), arbitrary, forAll, suchThat)
 
 import           Sdn.Base
+import           Sdn.Policy.Fake
 import           Sdn.Protocol
 import qualified Sdn.Schedule                as S
 import           Test.Sdn.Overall.Launcher

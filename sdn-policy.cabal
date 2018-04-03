@@ -20,6 +20,9 @@ library
                        Sdn.Extra.Logging
                        Sdn.Extra.MemStorage
                        Sdn.Extra.Util
+                       Sdn.Policy
+                       Sdn.Policy.Fake
+                       Sdn.Policy.OpenFlow
                        Sdn.Protocol
                        Sdn.Protocol.Common
                        Sdn.Protocol.Classic
@@ -28,7 +31,6 @@ library
   other-modules:       Sdn.Base.CStruct
                        Sdn.Base.Error
                        Sdn.Base.Settings
-                       Sdn.Base.Policy
                        Sdn.Base.Quorum
                        Sdn.Base.Types
 

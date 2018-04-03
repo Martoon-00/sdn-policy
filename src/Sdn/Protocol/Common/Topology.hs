@@ -26,6 +26,7 @@ import           Sdn.Extra                    (Message, MonadLog, MonadReporting
                                                logInfo, loggerNameT, mkMemStorage,
                                                readMemStorage, resetColoring, withColor)
 import           Sdn.Extra.MemStorage
+import           Sdn.Policy.Fake
 import           Sdn.Protocol.Common.Messages
 import           Sdn.Protocol.Common.Phases   (confirmCommitted, isPolicyUnconfirmed)
 import           Sdn.Protocol.Context

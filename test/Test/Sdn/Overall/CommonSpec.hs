@@ -16,6 +16,7 @@ import           Test.QuickCheck             (Positive (..), Small (..), arbitra
                                               (==>))
 
 import           Sdn.Base
+import           Sdn.Policy.Fake
 import           Sdn.Protocol
 import qualified Sdn.Schedule                as S
 import           Test.Sdn.Overall.Launcher

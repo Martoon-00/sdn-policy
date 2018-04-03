@@ -21,6 +21,7 @@ import           Universum
 import           Sdn.Base
 import           Sdn.Extra                     (exists, exit, listF, logInfo, presence,
                                                 rightSpaced, throwOnFail, zoom)
+import           Sdn.Policy.Fake
 import qualified Sdn.Protocol.Classic.Messages as Classic
 import qualified Sdn.Protocol.Classic.Phases   as Classic
 import           Sdn.Protocol.Common.Phases

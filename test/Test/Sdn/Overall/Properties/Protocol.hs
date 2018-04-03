@@ -13,6 +13,7 @@ import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra                        (listF)
+import           Sdn.Policy.Fake
 import           Sdn.Protocol
 import           Test.Sdn.Overall.Properties.Util
 

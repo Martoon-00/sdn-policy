@@ -17,6 +17,7 @@ import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra                    (declareMessage)
+import           Sdn.Policy.Fake
 import           Sdn.Protocol.Common.Messages (HasMessageShortcut (..))
 
 newtype ProposalMsg = ProposalMsg Policy

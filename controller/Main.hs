@@ -19,6 +19,7 @@ import           Sdn.Base
 import           Sdn.Extra                (atomicModifyIORefS, declareMemStorage,
                                            ioRefMemStorage, logInfo, runNoErrorReporting,
                                            setDropLoggerName)
+import           Sdn.Policy.Fake
 import           Sdn.Protocol
 import qualified Sdn.Protocol.Classic     as Classic
 import           Sdn.Protocol.Common      (LearningCallback (..))

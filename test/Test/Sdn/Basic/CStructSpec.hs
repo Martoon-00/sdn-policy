@@ -18,6 +18,7 @@ import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra
+import           Sdn.Policy.Fake
 
 spec :: Spec
 spec = do

@@ -23,6 +23,7 @@ import           Sdn.Base
 import           Sdn.Extra              (Message, MonadLog, MonadReporting, PureLog,
                                          RpcOptions, launchPureLog, listF, pairF, submit)
 import           Sdn.Extra.MemStorage
+import           Sdn.Policy.Fake
 import           Sdn.Protocol.Versions
 
 -- * General

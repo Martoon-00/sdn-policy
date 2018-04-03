@@ -15,6 +15,7 @@ import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra
+import           Sdn.Policy.Fake
 import           Sdn.Protocol.Common.Messages (HasMessageShortcut (..))
 
 -- Some messages from Classic Paxos are also used, but not mentioned here.
