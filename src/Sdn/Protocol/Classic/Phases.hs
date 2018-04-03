@@ -51,8 +51,7 @@ rememberProposal (ProposalMsg policy) = do
 -- * Phase 1
 
 phase1a
-    :: forall pv m.
-       (MonadPhase m, HasContextOf Leader pv m)
+    :: (MonadPhase m, HasContextOf Leader pv m)
     => m ()
 phase1a = do
     logInfo "Starting new ballot"
@@ -69,8 +68,7 @@ phase1a = do
     broadcastTo (processesAddresses Acceptor) msg
 
 phase1b
-    :: forall pv m.
-       (MonadPhase m, HasContextOf Acceptor pv m)
+    :: (MonadPhase m, HasContextOf Acceptor pv m)
     => Phase1aMsg -> m ()
 phase1b (Phase1aMsg bal) = do
     msg <- withProcessStateAtomically $ do
@@ -87,11 +85,10 @@ phase1b (Phase1aMsg bal) = do
 -- * Phase 2
 
 phase2a
-    :: forall pv m.
-       (MonadPhase m, HasContextOf Leader pv m)
+    :: (MonadPhase m, HasContextOf Leader pv m)
     => Phase1bMsg -> m ()
 phase2a (Phase1bMsg accId bal cstruct) = do
-    maybeMsg <- withProcessStateAtomically . runMaybeT $ do
+    maybeMsg <- withProcessStateAtomically $ runMaybeT $ do
         -- add received vote to set of votes stored locally for this ballot,
         -- initializing this set if doesn't exist yet
         (oldVotes, newVotes) <- zoom (leaderVotes . at bal . non mempty) $ do
@@ -117,7 +114,7 @@ phase2a (Phase1bMsg accId bal cstruct) = do
 
             logInfo $ sformat ("Applied policies at "%build%": "%listF "," build)
                       bal appliedPolicies
-            logInfo $ "Broadcasting new cstruct: " <> show cstructWithNewPolicies
+            logInfo $ "Broadcasting new cstruct: " <> pretty cstructWithNewPolicies
 
             pure $ Phase2aMsg bal cstructWithNewPolicies
         else exit
@@ -130,7 +127,7 @@ phase2b
     :: (MonadPhase m, HasContextOf Acceptor pv m)
     => Phase2aMsg -> m ()
 phase2b (Phase2aMsg bal cstruct) = do
-    maybeMsg <- withProcessStateAtomically . runMaybeT $ do
+    maybeMsg <- withProcessStateAtomically $ runMaybeT $ do
         localBallotId <- use $ acceptorLastKnownBallotId
         localCstruct <- use $ acceptorCStruct . forClassic
 

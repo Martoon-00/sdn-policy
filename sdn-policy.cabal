@@ -27,6 +27,7 @@ library
                        Sdn.Base.Types
 
                        Sdn.Extra.Logging
+                       Sdn.Extra.MemStorage
                        Sdn.Extra.Util
 
                        Sdn.Protocol.Context

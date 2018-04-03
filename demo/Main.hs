@@ -4,7 +4,7 @@
 
 module Main where
 
-import           Control.TimeWarp.Logging (logInfo, usingLoggerName)
+import           Control.TimeWarp.Logging (usingLoggerName)
 import           Control.TimeWarp.Rpc     ((:<<) (..), Dict (..), MonadRpc,
                                            runDelaysLayer, runMsgPackUdp, runPureRpc,
                                            withExtendedRpcOptions)
@@ -14,8 +14,10 @@ import           System.Random            (split)
 import           Universum
 
 import           Options
-import           Sdn.Extra                (RpcOptions, dropDesc, genSoundWord, generateM,
-                                           runNoErrorReporting, setDropLoggerName)
+import           Sdn.Extra                (RpcOptions, declareMemStorage, dropDesc,
+                                           genSoundWord, generateM, ioRefMemStorage,
+                                           logInfo, runNoErrorReporting,
+                                           setDropLoggerName)
 import           Sdn.Protocol
 
 main :: IO ()
@@ -41,14 +43,14 @@ main = do
 
     -- environment initialization and protocol launch
     let stuff :: (forall m. (MonadIO m, MonadTimed m, MonadRpc RpcOptions m, MonadCatch m) => m ())
-        stuff = runDelaysLayer (dropDesc poDelays) gen1 . runNoErrorReporting . usingLoggerName mempty $ do
-            -- disable logging if config says so
-            let tuneLogging =
-                    if poEnableLogging
-                    then identity
-                    else setDropLoggerName
+        stuff =
+            let runDelays = runDelaysLayer (dropDesc poDelays) gen1
+                runLogging = runNoErrorReporting . usingLoggerName mempty
+                runMemStorage = declareMemStorage ioRefMemStorage
+                -- disable logging if config says so
+                tuneLogging = if poEnableLogging then identity else setDropLoggerName
 
-            tuneLogging $ do
+            in runDelays . runLogging $ runMemStorage $ tuneLogging $ do
                 wait (for 1 sec)
                 logInfo "Starting"
 

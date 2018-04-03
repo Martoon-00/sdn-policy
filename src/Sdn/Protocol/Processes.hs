@@ -16,7 +16,8 @@ import qualified System.Console.ANSI      as ANSI
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra                (loggerNameT, withColor)
+import           Sdn.Extra.Logging        (loggerNameT, withColor)
+import           Sdn.Extra.MemStorage
 import           Sdn.Protocol.Context
 import           Sdn.Protocol.Versions
 
@@ -48,7 +49,8 @@ class Process p where
 -- | Constraint for having context with specified mutable state.
 type HasContext s m =
     ( MonadIO m
-    , MonadReader (ProcessContext s) m
+    , DeclaresMemStore m
+    , MonadReader (ProcessContext (DeclaredMemStore m s)) m
     )
 
 -- | Constraint for having context of specified type of process.

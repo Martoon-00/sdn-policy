@@ -1,3 +1,4 @@
+{-# LANGUAGE GADTs                #-}
 {-# LANGUAGE Rank2Types           #-}
 {-# LANGUAGE TemplateHaskell      #-}
 {-# LANGUAGE TypeFamilies         #-}
@@ -7,50 +8,51 @@
 
 module Sdn.Protocol.Context where
 
-import           Control.Lens             (At (..), Index, IxValue, Ixed (..), at,
-                                           makeLenses, makePrisms, (.=), (<<.=))
-import           Control.Monad.Catch.Pure (Catch)
-import           Control.TimeWarp.Rpc     (MonadRpc, NetworkAddress)
-import           Control.TimeWarp.Timed   (MonadTimed)
-import           Data.Default             (Default (def))
-import qualified Data.Set                 as S
+import           Control.Lens           (At (..), Index, IxValue, Ixed (..), at,
+                                         makeLenses, makePrisms, (.=), (<<.=))
+import           Control.TimeWarp.Rpc   (MonadRpc, NetworkAddress)
+import           Control.TimeWarp.Timed (MonadTimed)
+import           Data.Default           (Default (def))
+import qualified Data.Set               as S
 import qualified Data.Text.Buildable
-import           Data.Text.Lazy.Builder   (Builder)
-import           Formatting               (Format, bprint, build, later, (%))
+import           Data.Text.Lazy.Builder (Builder)
+import           Formatting             (Format, bprint, build, later, (%))
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra                (Message, MonadLog, MonadReporting, PureLog,
-                                           RpcOptions, atomicModifyIORefExcS,
-                                           launchPureLog, listF, pairF, submit)
+import           Sdn.Extra              (Message, MonadLog, MonadReporting, PureLog,
+                                         RpcOptions, launchPureLog, listF, pairF, submit)
+import           Sdn.Extra.MemStorage
 import           Sdn.Protocol.Versions
 
 -- * General
 
 -- | Context kept by single process.
-data ProcessContext s = ProcessContext
-    { pcState   :: IORef s   -- ^ Process'es mutable state
+data ProcessContext ctx = ProcessContext
+    { pcState :: ctx  -- ^ Process'es mutable state
     }
 
 -- | Envorinment for transaction modifying process state.
-type TransactionM s a = PureLog (StateT s Catch) a
+type TransactionM s a = forall n. (MonadCatch n) => PureLog (StateT s n) a
 
 -- | Constraints for transaction.
-type MonadTransaction s m =
+type MonadTransaction ctx m =
     ( MonadIO m
     , MonadThrow m
     , MonadLog m
     , MonadReporting m
-    , MonadReader (ProcessContext s) m
+    , MonadReader (ProcessContext ctx) m
     )
 
 -- | Atomically modify state stored by process.
 -- If exception is thrown in the process, no changes apply.
 withProcessStateAtomically
-    :: MonadTransaction s m => TransactionM s a -> m a
+    :: (MonadTransaction (DeclaredMemStore m s) m, DeclaresMemStore m)
+    => TransactionM s a -> m a
 withProcessStateAtomically modifier = do
-    ref <- pcState <$> ask
-    launchPureLog (atomicModifyIORefExcS ref) modifier
+    ProcessContext{..} <- ask
+    MemStorage{..} <- getMemStorage
+    launchPureLog (atomicallyModifyMemStorage pcState) modifier
 
 data ForBothRoundTypes a = ForBothRoundTypes
     { _forClassic :: a
@@ -277,7 +279,7 @@ broadcastTo
     :: ( MonadCatch m
        , MonadTimed m
        , MonadRpc RpcOptions m
-       , MonadReader (ProcessContext s) m
+       , MonadReader (ProcessContext ctx) m
        , Message msg
        , HasMembers
        )

@@ -262,3 +262,4 @@ pack = review _Wrapped'
 -- | Like @unpack@ for @Newtype@, but in terms of 'Wrapped'.
 unpack :: Wrapped s => s -> Unwrapped s
 unpack = view _Wrapped'
+

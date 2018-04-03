@@ -1,3 +1,5 @@
+{-# LANGUAGE Rank2Types #-}
+
 -- | Utilities for various phases of Paxos.
 
 module Sdn.Protocol.Common.Phases

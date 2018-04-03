@@ -83,7 +83,7 @@ phase2b
     :: (MonadPhase m, HasContextOf Acceptor Fast m)
     => Fast.InitBallotMsg -> m ()
 phase2b (Fast.InitBallotMsg bal) = do
-    msg <- withProcessStateAtomically . runMaybeT $ do
+    msg <- withProcessStateAtomically $ runMaybeT $ do
         lastKnownBal <- use acceptorLastKnownBallotId
         when (bal <= lastKnownBal) $ do
              logInfo "Already heard about this ballot, ignoring"
@@ -133,7 +133,7 @@ startRecoveryIfNecessary
     :: (MonadPhase m, HasContextOf Leader Fast m)
     => BallotId -> m ()
 startRecoveryIfNecessary bal = do
-    mVotesSoFar <- withProcessStateAtomically . runMaybeT $ do
+    mVotesSoFar <- withProcessStateAtomically $ runMaybeT $ do
         -- skip check if ballot status is ok or recovery already happened
         fastBallotStatus <- use $ leaderFastBallotStatus . at bal . non def
         unless (_FastBallotInProgress `has` fastBallotStatus) $ do
@@ -185,7 +185,7 @@ detectConflicts (Fast.Phase2bMsg bal accId cstruct) = do
         -- if recovery already occured - delegate to phase2a of classic paxos
         else do
             fastBallotStatus <-
-                withProcessStateAtomically . use $ leaderFastBallotStatus . at bal . non def
+                withProcessStateAtomically $ use $ leaderFastBallotStatus . at bal . non def
             case fastBallotStatus of
                 FastBallotInProgress -> pass
                 FastBallotSucceeded  -> pass

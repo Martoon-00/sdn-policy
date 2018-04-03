@@ -23,8 +23,9 @@ import           Universum
 import           Sdn.Base
 import           Sdn.Extra                    (Message, MonadLog, MonadReporting,
                                                RpcOptions, coloredF, gray, logError,
-                                               logInfo, loggerNameT, resetColoring,
-                                               withColor)
+                                               logInfo, loggerNameT, mkMemStorage,
+                                               readMemStorage, resetColoring, withColor)
+import           Sdn.Extra.MemStorage
 import           Sdn.Protocol.Common.Messages
 import           Sdn.Protocol.Common.Phases   (confirmCommitted, isPolicyUnconfirmed)
 import           Sdn.Protocol.Context
@@ -41,6 +42,7 @@ type MonadTopology m =
     , MonadReporting m
     , MonadTimed m
     , MonadRpc RpcOptions m
+    , DeclaresMemStore m
     )
 
 type TopologySchedule p = forall m. MonadTopology m => S.Schedule m p
@@ -87,11 +89,11 @@ data TopologyMonitor pv m = TopologyMonitor
     { -- | Returns when all active processes in the topology finish
       awaitTermination :: m ()
       -- | Fetch states of all processes in topology
-    , readAllStates    :: IO (AllStates pv)
+    , readAllStates    :: DeclaredMemStoreTxMonad m (AllStates pv)
     }
 
 -- | Monad in which process (and phases) are supposed to work.
-type ProcessM p pv m = ReaderT (ProcessContext $ ProcessState p pv) m
+type ProcessM p pv m = ReaderT (ProcessContext $ DeclaredMemStore m $ ProcessState p pv) m
 
 -- | Create single process.
 newProcess
@@ -101,19 +103,21 @@ newProcess
        , WithNamedLogger m
        , Process p
        , ProtocolVersion pv
+       , DeclaresMemStore m
        )
     => p
     -> ProcessM p pv m ()
-    -> m (IO (ProcessState p pv))
+    -> m (DeclaredMemStoreTxMonad m (ProcessState p pv))
 newProcess process action = do
-    stateBox <- liftIO $ newIORef (initProcessState process)
+    memStorage <- getMemStorage
+    stateBox <- liftIO $ mkMemStorage memStorage (initProcessState process)
     fork_ $
         flip runReaderT (ProcessContext stateBox) $
         modifyLoggerName (<> coloredProcessName process) $
         action
-    return $ readIORef stateBox
+    return $ readMemStorage memStorage stateBox
 
-type Listener p pv m = ProcessM p pv m (Method RpcOptions $ ProcessM p pv m)
+type Listener p pv m = ProcessM p pv m $ Method RpcOptions $ ProcessM p pv m
 
 -- | Construct single messages listener for process.
 -- This makes all incoming messages logged, and processes
@@ -162,7 +166,10 @@ data TopologyActions pv m = TopologyActions
 
 -- | Launch Paxos algorithm.
 -- This function gathers all actions and listeners together in a small network.
-launchPaxosWith :: ProtocolVersion pv => TopologyActions pv m -> TopologyLauncher pv m
+launchPaxosWith
+    :: forall pv m.
+       ProtocolVersion pv
+    => TopologyActions pv m -> TopologyLauncher pv m
 launchPaxosWith TopologyActions{..} seed TopologySettings{..} = withMembers topologyMembers $ do
     let (proposalSeed, ballotSeed) = split seed
 
@@ -214,10 +221,10 @@ launchPaxosWith TopologyActions{..} seed TopologySettings{..} = withMembers topo
     -- launch required number of servers, for processes of given type,
     -- serving given listeners
     startListeningProcessesOf
-        :: (HasMembers, MonadTopology m, Process p, Integral i, ProtocolVersion pv)
+        :: (HasMembers, MonadTopology m, Process p, Integral i, ProtocolVersion pv, DeclaresMemStore m)
         => (i -> p)
         -> [Listener p pv m]
-        -> m [IO $ ProcessState p pv]
+        -> m [DeclaredMemStoreTxMonad m $ ProcessState p pv]
     startListeningProcessesOf processType listeners =
         forM (processesOf processType) $
             \process -> newProcess process . work (for topologyLifetime) $ do

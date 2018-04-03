@@ -6,7 +6,7 @@
 
 module Main where
 
-import           Control.TimeWarp.Logging (logInfo, usingLoggerName)
+import           Control.TimeWarp.Logging (usingLoggerName)
 import           Control.TimeWarp.Rpc     (runMsgPackUdp)
 import           Control.TimeWarp.Timed   (interval, minute, sec)
 import           System.Random            (mkStdGen)
@@ -14,7 +14,8 @@ import           Test.QuickCheck          (arbitrary)
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra                (runNoErrorReporting, setDropLoggerName)
+import           Sdn.Extra                (declareMemStorage, ioRefMemStorage, logInfo,
+                                           runNoErrorReporting, setDropLoggerName)
 import           Sdn.Protocol
 import qualified Sdn.Schedule             as S
 
@@ -24,7 +25,8 @@ main = do
     let runLogging = runNoErrorReporting . usingLoggerName mempty . setDropLoggerName
 
     -- environment initialization
-    runMsgPackUdp . runLogging $ do
+    runMsgPackUdp . runLogging $ declareMemStorage ioRefMemStorage $ do
+        return ()
         logInfo "Starting"
 
         -- execute consensus
