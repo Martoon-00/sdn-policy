@@ -1,6 +1,5 @@
-{-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE TemplateHaskell        #-}
-{-# LANGUAGE TypeFamilies           #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeFamilies    #-}
 
 -- | Interface for commands and cstructs.
 
@@ -96,11 +95,16 @@ instance MessagePack p => MessagePack (Acceptance p)
 -- | Defines basic operations with commands and cstructs.
 -- Requires "conflict" relationship to be defined for them,
 -- and "bottom" cstruct to exist.
-class (SuperConflict cmd cstruct, Default cstruct, Buildable cstruct) =>
-      Command cstruct cmd | cstruct -> cmd, cmd -> cstruct where
+class ( SuperConflict (Cmd cstruct) cstruct
+      , Default cstruct
+      , Buildable cstruct
+      ) => CStruct cstruct where
+
+    -- | Type of commands, cstruct is assembled from.
+    type Cmd cstruct :: *
 
     -- | Add command to CStruct, if no conflict arise.
-    addCommand :: cmd -> cstruct -> Maybe cstruct
+    addCommand :: Cmd cstruct -> cstruct -> Maybe cstruct
 
     -- | Calculate Greatest Lower Bound of two cstructs.
     -- Fails, if two cstructs have conflicting commands.
@@ -115,7 +119,7 @@ class (SuperConflict cmd cstruct, Default cstruct, Buildable cstruct) =>
 
     -- | @difference c1 c2@ returns all commands in @c1@ which are
     -- not present in @c2@.
-    difference :: cstruct -> cstruct -> [cmd]
+    difference :: cstruct -> cstruct -> [Cmd cstruct]
 
     -- | Returns cstruct with all commands, which are present in votes
     -- from all acceptors of some quorum.
@@ -134,16 +138,19 @@ class (SuperConflict cmd cstruct, Default cstruct, Buildable cstruct) =>
     intersectingCombination = intersectingCombinationDefault
 
 
+-- | 'CStruct', where commands are 'Acceptance's.
+type CStructA cstruct cmd = (CStruct cstruct, Cmd cstruct ~ Acceptance cmd)
+
 -- | Construct cstruct from single command.
 liftCommand
-    :: Command cstruct (Acceptance cmd)
+    :: (CStruct cstruct, Cmd cstruct ~ Acceptance cmd)
     => Acceptance cmd -> cstruct
 liftCommand cmd =
     fromMaybe (error "Can't make up cstruct from single command") $
     addCommand cmd def
 
 -- | Whether sctruct contains command, accepted or rejected.
-contains :: Command cstruct (Acceptance cmd) => cstruct -> cmd -> Bool
+contains :: CStructA cstruct cmd => cstruct -> cmd -> Bool
 contains cstruct cmd =
     any (\acc -> cstruct `extends` liftCommand (acc cmd))
     [Accepted, Rejected]
@@ -163,7 +170,7 @@ checkingConsistency x
 -- | Try to add command to cstruct; on fail add denial of that command.
 -- Returns acceptance/denial of command which fit and new cstruct.
 acceptOrRejectCommand
-    :: Command cstruct (Acceptance cmd)
+    :: CStructA cstruct cmd
     => cmd -> cstruct -> (Acceptance cmd, cstruct)
 acceptOrRejectCommand cmd cstruct =
     fromMaybe (error "failed to add command rejection") $
@@ -175,14 +182,14 @@ acceptOrRejectCommand cmd cstruct =
 
 -- | 'State' version of 'acceptOrRejectCommand'.
 acceptOrRejectCommandS
-    :: (Monad m, Command cstruct (Acceptance cmd))
+    :: (Monad m, CStructA cstruct cmd)
     => cmd -> StateT cstruct m (Acceptance cmd)
 acceptOrRejectCommandS = state . acceptOrRejectCommand
 
 -- | Take list of lists of cstructs, 'lub's inner lists and then 'gdb's results.
 -- None of given 'cstruct's should be empty.
 mergeCStructs
-    :: (Container cstructs, cstruct ~ Element cstructs, Command cstruct cmd)
+    :: (Container cstructs, cstruct ~ Element cstructs, CStruct cstruct)
     => [cstructs] -> Either Text cstruct
 mergeCStructs cstructs =
     let gamma = map (foldr1 lub . toList) cstructs
@@ -195,7 +202,7 @@ mergeCStructs cstructs =
             gamma
 
 -- | Takes first argument only if it is extension of second one.
-maxOrSecond :: Command cstruct cmd => cstruct -> cstruct -> cstruct
+maxOrSecond :: CStruct cstruct => cstruct -> cstruct -> cstruct
 maxOrSecond c1 c2
     | c1 `extends` c2 = c1
     | otherwise       = c2
@@ -203,7 +210,7 @@ maxOrSecond c1 c2
 -- | This is straightforward and very inefficient implementation of
 -- 'combination'.
 combinationDefault
-    :: (HasMembers, Command cstruct cmd, QuorumFamily qf)
+    :: (HasMembers, CStruct cstruct, QuorumFamily qf)
     => Votes qf cstruct -> Either Text cstruct
 combinationDefault votes =
     mergeCStructs $ allMinQuorumsOf votes
@@ -211,7 +218,7 @@ combinationDefault votes =
 -- | This is straightforward and very inefficient implementation of
 -- 'intersectingCombination'.
 intersectingCombinationDefault
-    :: (HasMembers, Command cstruct cmd, QuorumIntersectionFamily qf)
+    :: (HasMembers, CStruct cstruct, QuorumIntersectionFamily qf)
     => Votes qf cstruct -> Either Text cstruct
 intersectingCombinationDefault =
     mergeCStructs . filter (not . null) . getQuorumsSubIntersections

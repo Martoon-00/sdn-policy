@@ -26,7 +26,7 @@ spec = do
         describe "examples" $ do
             prop "good policies" $
                 withMembers def{ acceptorsNum = 3 } $
-                    combination @Configuration @_ @ClassicMajorityQuorum
+                    combination @Configuration @ClassicMajorityQuorum
                     [ (AcceptorId 1, mkNeatPolicies [1])
                     , (AcceptorId 2, mkNeatPolicies [1, 2])
                     ]
@@ -39,7 +39,7 @@ spec = do
         describe "examples" $ do
             prop "good policies" $
                 withMembers def{ acceptorsNum = 5 } $
-                    intersectingCombination @Configuration @_ @FastMajorityQuorum
+                    intersectingCombination @Configuration @FastMajorityQuorum
                     (fromList $ [1..5] <&> \i -> (AcceptorId i, mkNeatPolicies [i..5]))
                     === Right (mkNeatPolicies [4..5])
 

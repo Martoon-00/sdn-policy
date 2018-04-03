@@ -173,7 +173,8 @@ perPolicy = _Wrapped' . mapping _Wrapped' . iso toPolicyMap fromPolicyMap
         , (accId, ()) <- M.toList votes
         ]
 
-instance Command Configuration PolicyEntry where
+instance CStruct Configuration where
+    type Cmd Configuration = PolicyEntry
     addCommand = checkingAgreement $ underneath . S.insert
     glb = checkingAgreement $ underneath2 S.union
     lub = underneath2 S.intersection
