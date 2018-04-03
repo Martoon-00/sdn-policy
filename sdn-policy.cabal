@@ -21,6 +21,9 @@ library
                        Sdn.Extra.MemStorage
                        Sdn.Extra.Util
                        Sdn.Protocol
+                       Sdn.Protocol.Common
+                       Sdn.Protocol.Classic
+                       Sdn.Protocol.Fast
                        Sdn.Schedule
   other-modules:       Sdn.Base.CStruct
                        Sdn.Base.Error
@@ -30,14 +33,12 @@ library
                        Sdn.Base.Types
 
                        Sdn.Protocol.Context
-                       Sdn.Protocol.Classic
                        Sdn.Protocol.Classic.Messages
                        Sdn.Protocol.Classic.Phases
                        Sdn.Protocol.Classic.Topology
                        Sdn.Protocol.Common.Messages
                        Sdn.Protocol.Common.Phases
                        Sdn.Protocol.Common.Topology
-                       Sdn.Protocol.Fast
                        Sdn.Protocol.Fast.Messages
                        Sdn.Protocol.Fast.Phases
                        Sdn.Protocol.Fast.Topology
@@ -138,6 +139,7 @@ executable controller
   main-is:             Main.hs
   ghc-options:         -threaded -O2 -rtsopts -with-rtsopts=-N
   build-depends:       base
+                     , data-default
                      , formatting
                      , lens
                      , mtl

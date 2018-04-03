@@ -4,6 +4,7 @@
 
 module Sdn.Protocol.Common.Phases
     ( MonadPhase
+    , LearningCallback (..)
     , updateLearnedValue
     , warnOnPartialApply
     , learnCStruct
@@ -83,14 +84,23 @@ updateLearnedValue newLearned = do
         logInfo $
         sformat ("New learned cstruct: "%build) new
 
+newtype LearningCallback m = LearningCallback
+    { runLearningCallback :: NonEmpty (Acceptance Policy) -> m ()
+    }
+
+instance Applicative m => Monoid (LearningCallback m) where
+    mempty = LearningCallback $ \_ -> pure ()
+    LearningCallback a `mappend` LearningCallback b = LearningCallback $ \p -> a p *> b p
+
 -- | Learning phase of algorithm.
 learnCStruct
     :: (MonadPhase m, HasContextOf Learner pv m)
-    => (Votes (VersionQuorum pv) Configuration -> Either Text Configuration)
+    => LearningCallback m
+    -> (Votes (VersionQuorum pv) Configuration -> Either Text Configuration)
     -> AcceptorId
     -> Configuration
     -> m ()
-learnCStruct combinator accId cstruct = do
+learnCStruct (LearningCallback callback) combinator accId cstruct = do
     newLearnedPolicies <- withProcessStateAtomically $ do
         -- rewrite cstruct kept for this acceptor
 
@@ -109,10 +119,12 @@ learnCStruct combinator accId cstruct = do
             >>= throwOnFail ProtocolError . combinator
             >>= updateLearnedValue
 
-        return $ map acceptanceCmd learnedDifference
+        return learnedDifference
 
-    whenNotNull newLearnedPolicies $ \policies ->
+    whenNotNull newLearnedPolicies $ \policyAcceptances -> do
+        let policies = map acceptanceCmd policyAcceptances
         submit (processAddress Proposer) (CommittedMsg policies)
+        callback policyAcceptances
 
 -- * Confirmation to proposal
 

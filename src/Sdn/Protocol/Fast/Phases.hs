@@ -114,9 +114,9 @@ phase2b (Fast.InitBallotMsg bal) = do
 
 learn
     :: (MonadPhase m, HasContextOf Learner Fast m)
-    => Fast.Phase2bMsg -> m ()
-learn (Fast.Phase2bMsg _ accId cstruct) =
-    learnCStruct intersectingCombination accId cstruct
+    => LearningCallback m -> Fast.Phase2bMsg -> m ()
+learn callback (Fast.Phase2bMsg _ accId cstruct) =
+    learnCStruct callback intersectingCombination accId cstruct
 
 -- * Recovery detection and initialition
 

@@ -7,6 +7,7 @@ module Sdn.Protocol.Fast.Topology where
 
 import           Control.TimeWarp.Timed       (Microsecond, interval, sec)
 import           Data.Default                 (Default (..))
+import           Universum
 
 import qualified Sdn.Protocol.Classic.Phases  as Classic
 import           Sdn.Protocol.Common.Topology
@@ -44,7 +45,7 @@ instance HasVersionTopologyActions Fast where
             , listener @Acceptor Fast.acceptorRememberProposal
             ]
         , learnerListeners =
-            [ listener @Learner Classic.learn
-            , listener @Learner Fast.learn
+            [ listener @Learner $ Classic.learn mempty
+            , listener @Learner $ Fast.learn mempty
             ]
         }

@@ -16,7 +16,8 @@ import qualified Data.Set            as S
 import qualified Data.Text.Buildable
 import           Formatting          (bprint, build, (%))
 import qualified GHC.Exts            as Exts
-import           Test.QuickCheck     (Arbitrary (..), getNonNegative, oneof, resize)
+import           Test.QuickCheck     (Arbitrary (..), getNonNegative, oneof, resize,
+                                      suchThat)
 import           Universum
 
 import           Sdn.Base.CStruct
@@ -28,7 +29,7 @@ newtype PolicyName = PolicyName Int
     deriving (Eq, Ord, Show, Num, Buildable, MessagePack)
 
 instance Arbitrary PolicyName where
-    arbitrary = PolicyName . getNonNegative <$> arbitrary
+    arbitrary = PolicyName <$> arbitrary `suchThat` (>= 0)
 
 -- | Abstract SDN policy.
 data Policy

@@ -137,11 +137,11 @@ instance MonadTrans Schedule where
 -- | Just fires once, generating arbitrary job data.
 --
 -- Use combinators to define timing.
-generate :: Monad m => Gen p -> Schedule m p
+generate :: MonadIO m => Gen p -> Schedule m p
 generate generator = do
-    Schedule $ \ctx@ScheduleContext{..} ->
+    Schedule $ \ctx@ScheduleContext{..} -> do
         let (seed, _) = next scGen
-        in  scYield ctx $ unGen generator (mkQCGen seed) 30
+        scYield ctx $ unGen generator (mkQCGen seed) 100
 
 -- | Just fires once, for jobs without any data.
 -- Synonym to @return ()@.

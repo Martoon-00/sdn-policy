@@ -154,5 +154,5 @@ phase2b (Phase2aMsg bal cstruct) = do
 
 learn
     :: (MonadPhase m, HasContextOf Learner pv m)
-    => Phase2bMsg -> m ()
-learn (Phase2bMsg accId cstruct) = learnCStruct combination accId cstruct
+    => LearningCallback m -> Phase2bMsg -> m ()
+learn callback (Phase2bMsg accId cstruct) = learnCStruct callback combination accId cstruct

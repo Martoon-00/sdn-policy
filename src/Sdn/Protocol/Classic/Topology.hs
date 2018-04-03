@@ -6,6 +6,7 @@
 module Sdn.Protocol.Classic.Topology where
 
 import           Data.Default                 (Default (..))
+import           Universum
 
 import           Sdn.Protocol.Classic.Phases
 import           Sdn.Protocol.Common.Topology
@@ -34,7 +35,7 @@ instance HasVersionTopologyActions Classic where
             , listener @Acceptor phase2b
             ]
         , learnerListeners =
-            [ listener @Learner learn
+            [ listener @Learner $ learn mempty
             ]
         }
 
