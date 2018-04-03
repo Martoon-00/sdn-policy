@@ -33,7 +33,8 @@ import           Control.Monad.Reader           (mapReaderT)
 import           Control.Monad.Writer           (WriterT, runWriterT, tell)
 import           Control.TimeWarp.Logging       (LoggerName (..), LoggerNameBox (..),
                                                  WithNamedLogger (..))
-import           Control.TimeWarp.Rpc           (MonadRpc)
+import           Control.TimeWarp.Rpc           (DelaysLayer, ExtendedRpcOptions,
+                                                 MonadRpc)
 import           Control.TimeWarp.Timed         (Microsecond, MonadTimed (..), ThreadId)
 import qualified Data.DList                     as D
 import           Data.List                      (isInfixOf)
@@ -137,6 +138,8 @@ instance MonadReporting m => MonadReporting (ReaderT __ m) where
 instance MonadReporting m => MonadReporting (StateT __ m) where
 instance MonadReporting m => MonadReporting (MaybeT m) where
 instance MonadReporting m => MonadReporting (LoggerNameBox m) where
+instance MonadReporting m => MonadReporting (DelaysLayer m) where
+instance MonadReporting m => MonadReporting (ExtendedRpcOptions (o :: [*]) (os :: [*]) m)
 
 -- ** Error reporting enabled
 
@@ -175,7 +178,8 @@ newtype NoErrorReporting m a = NoErrorReporting
     { runNoErrorReporting :: m a
     } deriving ( Functor, Applicative, Monad, MonadIO
                , MonadThrow, MonadCatch
-               , MonadState __, MonadTimed, MonadRpc (os :: [*]), WithNamedLogger, MonadLog)
+               , MonadState __
+               , MonadTimed, MonadRpc (os :: [*]), WithNamedLogger, MonadLog)
 
 instance MonadTrans NoErrorReporting where
     lift = NoErrorReporting

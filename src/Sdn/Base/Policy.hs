@@ -25,7 +25,7 @@ import           Sdn.Base.Types
 import           Sdn.Extra.Util
 
 newtype PolicyName = PolicyName Int
-    deriving (Eq, Ord, Show, Buildable, MessagePack)
+    deriving (Eq, Ord, Show, Num, Buildable, MessagePack)
 
 instance Arbitrary PolicyName where
     arbitrary = PolicyName . getNonNegative <$> arbitrary

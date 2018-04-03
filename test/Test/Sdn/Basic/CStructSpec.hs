@@ -29,7 +29,7 @@ spec = do
                     [ (AcceptorId 1, mkNeatPolicies [1])
                     , (AcceptorId 2, mkNeatPolicies [1, 2])
                     ]
-                    === Right [Accepted $ GoodPolicy "1"]
+                    === Right [Accepted $ GoodPolicy 1]
 
         compareCombinations @ClassicMajorityQuorum combination combinationDefault
         compareCombinations @FastMajorityQuorum combination combinationDefault
@@ -45,7 +45,7 @@ spec = do
         compareCombinations @FastMajorityQuorum intersectingCombination intersectingCombinationDefault
 
   where
-    mkNeatPolicies = fromList . map (Accepted . GoodPolicy . show)
+    mkNeatPolicies = fromList . map (Accepted . GoodPolicy . fromIntegral)
 
 
 type CombinationFun qf = Votes qf Configuration -> Either Text Configuration

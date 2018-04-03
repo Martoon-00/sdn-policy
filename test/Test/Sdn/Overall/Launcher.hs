@@ -10,8 +10,9 @@ module Test.Sdn.Overall.Launcher
 
 import           Universum
 
-import           Control.TimeWarp.Logging    (setLoggerName, usingLoggerName)
-import           Control.TimeWarp.Rpc        (runDelaysLayer, runPureRpc)
+import           Control.TimeWarp.Logging    (usingLoggerName)
+import           Control.TimeWarp.Rpc        ((:<<) (Evi), Dict (..), runDelaysLayer,
+                                              runPureRpc, withExtendedRpcOptions)
 import qualified Control.TimeWarp.Rpc        as D
 import           Control.TimeWarp.Timed      (runTimedT)
 import           Data.Default
@@ -60,21 +61,31 @@ testLaunch TestLaunchParams{..} =
             launch :: MonadTopology m => m (TopologyMonitor pv m)
             launch =
                 launchPaxos gen2 testSettings
-            runEmulation =
-                runTimedT .
-                runPureRpc .
-                runDelaysLayer testDelays gen1 .
-                usingLoggerName mempty
+            runMemStorage = declareMemStorage stmMemStorage
             failProp err = do
-                lift . runEmulation . runNoErrorReporting . setLoggerName mempty $
-                    awaitTermination =<< launch
+                lift $
+                    runTimedT .
+                    runPureRpc .
+                    withExtendedRpcOptions (Evi Dict) .
+                    runDelaysLayer testDelays gen1 .
+                    runNoErrorReporting .
+                    usingLoggerName mempty $
+                    runMemStorage $
+                        awaitTermination =<< launch
                 stop failed{ reason = toString err }
 
         monadicIO $ do
             -- launch silently
-            (errors, propErrors) <- lift . runEmulation . runErrorReporting $ do
-                monitor <- setDropLoggerName launch
-                protocolProperties monitor testProperties
+            (errors, propErrors) <- lift $
+                runTimedT $
+                runPureRpc $
+                withExtendedRpcOptions (Evi Dict) $
+                runDelaysLayer testDelays gen1 $
+                runErrorReporting $
+                usingLoggerName mempty $
+                runMemStorage $ do
+                    monitor <- setDropLoggerName launch
+                    protocolProperties monitor testProperties
 
             -- check errors log
             unless (null errors) $

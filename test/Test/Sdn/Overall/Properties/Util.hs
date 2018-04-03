@@ -1,3 +1,5 @@
+{-# LANGUAGE TypeFamilies #-}
+
 -- | Helpers in properties creation.
 
 module Test.Sdn.Overall.Properties.Util where
@@ -9,6 +11,7 @@ import qualified Control.Concurrent.STM   as STM
 import           Test.QuickCheck          (Property, property)
 import           Test.QuickCheck.Property (failed, reason, succeeded)
 
+import           Sdn.Extra.MemStorage
 import           Sdn.Protocol
 
 type PropertyOutcome = Either Text ()
@@ -20,9 +23,11 @@ type ProtocolProperty pv m =
 
 type PropertyChecker pv = AllStates pv -> Either Text ()
 
+type MemStorageOnSTM m = DeclaredMemStoreTxMonad m ~ STM
+
 -- | Combines properties into large one.
 protocolProperties
-    :: MonadIO m
+    :: (MonadIO m, MemStorageOnSTM m)
     => TopologyMonitor pv m
     -> [ProtocolProperty pv m]
     -> m (Maybe (AllStates pv, Text))

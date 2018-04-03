@@ -17,6 +17,9 @@ library
   hs-source-dirs:      src
   exposed-modules:     Sdn.Base
                        Sdn.Extra
+                       Sdn.Extra.Logging
+                       Sdn.Extra.MemStorage
+                       Sdn.Extra.Util
                        Sdn.Protocol
                        Sdn.Schedule
   other-modules:       Sdn.Base.CStruct
@@ -25,10 +28,6 @@ library
                        Sdn.Base.Policy
                        Sdn.Base.Quorum
                        Sdn.Base.Types
-
-                       Sdn.Extra.Logging
-                       Sdn.Extra.MemStorage
-                       Sdn.Extra.Util
 
                        Sdn.Protocol.Context
                        Sdn.Protocol.Classic
