@@ -5,7 +5,7 @@
 
 module Sdn.Base.CStruct where
 
-import           Control.Lens         (makePrisms)
+import           Control.Lens         (Index, Ixed, makePrisms)
 import           Control.Monad.Except (MonadError, throwError)
 import           Data.Default         (Default (..))
 import           Data.MessagePack     (MessagePack)
@@ -16,7 +16,7 @@ import           Universum
 
 import           Sdn.Base.Quorum
 import           Sdn.Base.Settings
-import           Sdn.Extra.Util
+import           Sdn.Extra.Util       (DeclaredMark, MonadicMark (..), listF)
 
 -- * Conflict
 
@@ -72,6 +72,15 @@ acceptanceType :: Acceptance cmd -> AcceptanceType
 acceptanceType = \case
     Accepted _ -> AcceptedT
     Rejected _ -> RejectedT
+
+type family UnAcceptance cmd where
+    UnAcceptance (Acceptance a) = a
+
+-- | Takes raw command.
+-- E.g. when cstruct is network configuration, then true command is
+-- @Acceptance Policy@ (because @Configuration@ consists from them),
+-- while form in which policies are proposed (@Policy@) is "raw" command.
+type RawCmd cstruct = UnAcceptance (Cmd cstruct)
 
 -- | Command rejection doesn't conflict with any other command.
 instance (Conflict a a, Eq a) => Conflict (Acceptance a) (Acceptance a) where
@@ -222,3 +231,36 @@ intersectingCombinationDefault
     => Votes qf cstruct -> Either Text cstruct
 intersectingCombinationDefault =
     mergeCStructs . filter (not . null) . getQuorumsSubIntersections
+
+
+-- | Declares that implementation of cstruct has many other practically useful
+-- instances.
+-- Generally, all this constraints are needed for distributed protocol.
+class ( CStruct cstruct
+      , Buildable cstruct
+      , Buildable (RawCmd cstruct)
+      , Ord (RawCmd cstruct)
+      , Eq cstruct  -- TODO: remove?
+      , MessagePack cstruct
+      , MessagePack (RawCmd cstruct)
+      , Acceptance (RawCmd cstruct) ~ Cmd cstruct
+      , Ixed cstruct
+      , Index cstruct ~ Cmd cstruct
+      ) =>
+      PracticalCStruct cstruct
+
+
+-- | Contains type of cstruct, used to be passed to 'MonadicMark'.
+data CStructType cstruct
+
+-- | Monad transformer to bind cstruct type to monadic stack.
+type CStructDecl store = MonadicMark (CStructType store)
+
+-- | Get type of cstruct in given monad.
+type DeclaredCStruct m = DeclaredMark CStructType m
+
+-- | Get type of command in given monad.
+type DeclaredCmd m = Cmd (DeclaredCStruct m)
+
+-- | Get type of raw command in given monad.
+type DeclaredRawCmd m = RawCmd (DeclaredCStruct m)

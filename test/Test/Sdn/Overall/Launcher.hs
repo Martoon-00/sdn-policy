@@ -1,15 +1,22 @@
 {-# LANGUAGE Rank2Types           #-}
+{-# LANGUAGE TemplateHaskell      #-}
+{-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 -- | Test launcher of protocol.
 
 module Test.Sdn.Overall.Launcher
     ( TestLaunchParams (..)
+    , testPropertiesL
+
     , testLaunch
+
+    , defTopologySettings
     ) where
 
 import           Universum
 
+import           Control.Lens                (makeLensesFor)
 import           Control.TimeWarp.Logging    (usingLoggerName)
 import           Control.TimeWarp.Rpc        ((:<<) (Evi), Dict (..), runDelaysLayer,
                                               runPureRpcExt, withExtendedRpcOptions)
@@ -22,19 +29,29 @@ import           Test.QuickCheck.Gen         (chooseAny)
 import           Test.QuickCheck.Monadic     (monadicIO, stop)
 import           Test.QuickCheck.Property    (failed, reason, succeeded)
 
-import           Sdn.Extra
+import           Sdn.Base
+import           Sdn.Extra.Logging
+import           Sdn.Extra.MemStorage
+import           Sdn.Extra.Util              (declareMonadicMark, emulationOptions)
+import           Sdn.Policy.Fake
 import           Sdn.Protocol
 import           Test.Sdn.Overall.Properties
 
 
 data TestLaunchParams pv = TestLaunchParams
-    { testSettings   :: TopologySettings pv
+    { testSettings   :: TopologySettings pv Configuration
     , testDelays     :: D.Delays
-    , testProperties :: forall m. MonadIO m => [ProtocolProperty pv m]
+    , testProperties :: forall m. (MonadIO m, DeclaredCStruct m ~ Configuration)
+                     => [ProtocolProperty pv m]
     , testStub       :: Proxy pv
     }
 
-instance Default (CustomTopologySettings pv) =>
+makeLensesFor
+    [ ("testProperties", "testPropertiesL")
+    ] ''TestLaunchParams
+
+instance ( Default (CustomTopologySettings pv)
+         ) =>
          Default (TestLaunchParams pv) where
     def =
         TestLaunchParams
@@ -57,7 +74,9 @@ testLaunch TestLaunchParams{..} =
     forAll (Blind <$> chooseAny) $ \(Blind seed) -> do
         let (gen1, gen2) =
                 split (mkStdGen seed)
-            launch :: MonadTopology m => m (TopologyMonitor pv m)
+            launch
+                :: (MonadTopology m, DeclaredCStruct m ~ Configuration)
+                => m (TopologyMonitor pv m)
             launch =
                 launchPaxos gen2 testSettings
             runMemStorage = declareMemStorage stmMemStorage
@@ -69,6 +88,7 @@ testLaunch TestLaunchParams{..} =
                     runNoErrorReporting .
                     usingLoggerName mempty $
                     runMemStorage $
+                    declareMonadicMark @(CStructType Configuration) $
                         awaitTermination =<< launch
                 stop failed{ reason = toString err }
 
@@ -80,7 +100,8 @@ testLaunch TestLaunchParams{..} =
                 runDelaysLayer testDelays gen1 $
                 runErrorReporting $
                 usingLoggerName mempty $
-                runMemStorage $ do
+                runMemStorage $
+                declareMonadicMark @(CStructType Configuration) $ do
                     monitor <- setDropLoggerName launch
                     protocolProperties monitor testProperties
 
@@ -96,3 +117,8 @@ testLaunch TestLaunchParams{..} =
 
             stop succeeded
 
+-- | Default for 'TopologySettings' restricted to use 'Configuration' as cstruct.
+defTopologySettings
+    :: Default (CustomTopologySettings pv)
+    => TopologySettings pv Configuration
+defTopologySettings = def

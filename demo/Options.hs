@@ -134,7 +134,7 @@ instance Buildable TopologySettingsBuilder where
 
 data TopologySettingsBox =
     forall pv. HasVersionTopologyActions pv =>
-               TopologySettingsBox (TopologySettings pv)
+               TopologySettingsBox (TopologySettings pv Configuration)
 
 buildTopologySettings
     :: MonadRandom m

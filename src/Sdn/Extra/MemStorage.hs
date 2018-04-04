@@ -19,7 +19,7 @@ module Sdn.Extra.MemStorage
     , takeMemStorage
     , withMemStorage
 
-    , MemStoreDecl (..)
+    , MemStoreDecl
     , declareMemStorage
     , DeclaresMemStore
     , DeclaredMemStore
@@ -27,14 +27,11 @@ module Sdn.Extra.MemStorage
     , getMemStorage
     ) where
 
-import           Control.TimeWarp.Logging (WithNamedLogger)
-import           Control.TimeWarp.Rpc     (MonadRpc)
-import           Control.TimeWarp.Timed   (MonadTimed, ThreadId)
-import           Data.Reflection          (Given (..), give)
+import           Data.Reflection (Given (..), give)
 import           Universum
 
-import           Sdn.Extra.Logging
-import           Sdn.Extra.Util           (atomicModifyIORefExcS, modifyTVarS)
+import           Sdn.Extra.Util  (DeclaredMark, MonadicMark, atomicModifyIORefExcS,
+                                  declareMonadicMark, modifyTVarS)
 
 -- | Base monad in which store allows to read/modify its entires.
 type family MemStoreTxMonad (store :: * -> *) :: * -> *
@@ -88,14 +85,11 @@ withMemStorage
 withMemStorage = give
 
 
--- | Allows to deterministically get storage type from monad stack used.
-newtype MemStoreDecl (store :: * -> *) m a = MemStoreDecl
-    { runMemStoreDecl :: m a
-    } deriving (Functor, Applicative, Monad, MonadIO,
-                MonadThrow, MonadCatch, MonadMask,
-                MonadTimed, MonadRpc (o :: [*]), MonadLog, MonadReporting, WithNamedLogger)
+-- | Contains type of store, used to be passed to 'MonadicMark'.
+data StoreType (store :: * -> *)
 
-type instance ThreadId (MemStoreDecl store m) = ThreadId m
+-- | Monad transformer to bind store type to monadic stack.
+type MemStoreDecl store = MonadicMark (StoreType store)
 
 -- | Binds specific mem storage type to the monad stack.
 declareMemStorage
@@ -104,15 +98,12 @@ declareMemStorage
     -> (HasMemStorage store =>
             MemStoreDecl store m a)
     -> m a
-declareMemStorage ms action = runMemStoreDecl $ withMemStorage ms action
+declareMemStorage ms action = declareMonadicMark $ withMemStorage ms action
 
 -- | Get type of store used by 'MemStorage' in given monad.
-type family DeclaredMemStore m where
-    DeclaredMemStore (MemStoreDecl store m) = store
-    DeclaredMemStore (t m) = DeclaredMemStore m
+type DeclaredMemStore m = DeclaredMark StoreType m
 
 type DeclaresMemStore m = HasMemStorage (DeclaredMemStore m)
-
 type DeclaredMemStoreTxMonad m = MemStoreTxMonad (DeclaredMemStore m)
 
 -- | Get mem storage in given monad.

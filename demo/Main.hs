@@ -12,10 +12,13 @@ import           System.Random            (split)
 import           Universum
 
 import           Options
-import           Sdn.Extra                (RpcOptions, declareMemStorage, dropDesc,
-                                           emulationOptions, genSoundWord, generateM,
-                                           ioRefMemStorage, logInfo, runNoErrorReporting,
+import           Sdn.Base
+import           Sdn.Extra                (RpcOptions, declareMemStorage,
+                                           declareMonadicMark, dropDesc, emulationOptions,
+                                           genSoundWord, generateM, ioRefMemStorage,
+                                           logInfo, runNoErrorReporting,
                                            setDropLoggerName)
+import           Sdn.Policy.Fake
 import           Sdn.Protocol
 
 main :: IO ()
@@ -45,10 +48,11 @@ main = do
             let runDelays = runDelaysLayer (dropDesc poDelays) gen1
                 runLogging = runNoErrorReporting . usingLoggerName mempty
                 runMemStorage = declareMemStorage ioRefMemStorage
+                setCStruct = declareMonadicMark @(CStructType Configuration)
                 -- disable logging if config says so
                 tuneLogging = if poEnableLogging then identity else setDropLoggerName
 
-            in runDelays . runLogging $ runMemStorage $ tuneLogging $ do
+            in runDelays . runLogging $ runMemStorage $ setCStruct $ tuneLogging $ do
                 wait (for 1 sec)
                 logInfo "Starting"
 

@@ -1,4 +1,5 @@
-{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE Rank2Types   #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- | Various useful properties for the protocol.
 
@@ -20,7 +21,7 @@ import           Test.Sdn.Overall.Properties.Util
 
 -- * Property primitives
 
-proposedPoliciesWereLearned :: PropertyChecker pv
+proposedPoliciesWereLearned :: PropertyChecker pv Configuration
 proposedPoliciesWereLearned AllStates{..} = do
     let proposed's = _proposerProposedPolicies proposerState
     let learned's = _learnerLearned <$> learnersStates
@@ -34,7 +35,7 @@ proposedPoliciesWereLearned AllStates{..} = do
         throwError $
         sformat ("Proposed "%build%" wasn't leart by learner "%build) p li
 
-learnedPoliciesWereProposed :: PropertyChecker pv
+learnedPoliciesWereProposed :: PropertyChecker pv Configuration
 learnedPoliciesWereProposed AllStates{..} = do
     let proposed's = _proposerProposedPolicies proposerState
     let validOutcomes = S.fromList $ [Accepted, Rejected] <*> proposed's
@@ -47,7 +48,7 @@ learnedPoliciesWereProposed AllStates{..} = do
         throwError $
         sformat ("Learned "%build%" by "%build%" was never proposed") p li
 
-learnersAgree :: PropertyChecker pv
+learnersAgree :: PropertyChecker pv Configuration
 learnersAgree AllStates{..} = do
     let learned = _learnerLearned <$> learnersStates
     l :| ls <- maybe (Left "No learners") Right $ nonEmpty learned
@@ -57,7 +58,7 @@ learnersAgree AllStates{..} = do
 -- | Checks that number of learned policies matches predicate.
 numberOfLearnedPolicies :: (Prism' (Acceptance Policy) a)
                         -> (Word -> Bool)
-                        -> PropertyChecker pv
+                        -> PropertyChecker pv Configuration
 numberOfLearnedPolicies predicate cmp AllStates{..} = do
     let learned's = _learnerLearned <$> learnersStates
     forM_ (zip [1..] learned's) $ \(learnerId, learned) -> do
@@ -70,7 +71,7 @@ numberOfLearnedPolicies predicate cmp AllStates{..} = do
         sformat ("Unexpected number of learned policies for learner "%build
                 %", but "%build%" are present:"%build) li (length l) l
 
-recoveryWasUsed :: Bool -> PropertyChecker pv
+recoveryWasUsed :: Bool -> PropertyChecker pv cstruct
 recoveryWasUsed used AllStates{..} =
     let recoveries = _leaderRecoveryUsed leaderState
     in  unless (null recoveries /= used) $
@@ -85,7 +86,9 @@ recoveryWasUsed used AllStates{..} =
 
 -- * Properties groups
 
-basicProperties :: MonadIO m => [ProtocolProperty pv m]
+basicProperties
+    :: (MonadIO m, DeclaredCStruct m ~ Configuration)
+    => [ProtocolProperty pv m]
 basicProperties =
     [ eventually proposedPoliciesWereLearned
     , invariant learnedPoliciesWereProposed

@@ -1,3 +1,5 @@
+{-# LANGUAGE TypeFamilies #-}
+
 -- | Phases of Classic Paxos.
 
 module Sdn.Protocol.Classic.Phases
@@ -17,7 +19,6 @@ import           Universum
 import           Sdn.Base
 import           Sdn.Extra                     (exit, listF, logInfo, submit, throwOnFail,
                                                 zoom)
-import           Sdn.Policy.Fake
 import           Sdn.Protocol.Classic.Messages
 import           Sdn.Protocol.Common.Phases
 import           Sdn.Protocol.Context
@@ -28,8 +29,9 @@ import           Sdn.Protocol.Versions
 -- * Proposal
 
 propose
-    :: (MonadPhase m, HasContextOf Proposer Classic m)
-    => Policy -> m ()
+    :: forall cstruct m.
+       (MonadPhase cstruct m, HasContextOf Proposer Classic m)
+    => RawCmd cstruct -> m ()
 propose policy = do
     logInfo $ sformat ("Proposing policy: "%build) policy
     -- remember policy (for testing purposes)
@@ -37,13 +39,13 @@ propose policy = do
         proposerProposedPolicies <>= one policy
         proposerUnconfirmedPolicies <>= one policy
     -- and send it to leader
-    broadcastTo (processAddresses Leader) (ProposalMsg policy)
+    broadcastTo (processAddresses Leader) (ProposalMsg @cstruct policy)
 
 -- * Remembering proposals
 
 rememberProposal
-    :: (MonadPhase m, HasContextOf Leader pv m)
-    => ProposalMsg -> m ()
+    :: (MonadPhase cstruct m, HasContextOf Leader pv m)
+    => ProposalMsg cstruct -> m ()
 rememberProposal (ProposalMsg policy) = do
     -- atomically modify process'es state
     withProcessStateAtomically $ do
@@ -52,7 +54,7 @@ rememberProposal (ProposalMsg policy) = do
 -- * Phase 1
 
 phase1a
-    :: (MonadPhase m, HasContextOf Leader pv m)
+    :: (MonadPhase cstruct m, HasContextOf Leader pv m)
     => m ()
 phase1a = do
     logInfo "Starting new ballot"
@@ -69,7 +71,7 @@ phase1a = do
     broadcastTo (processesAddresses Acceptor) msg
 
 phase1b
-    :: (MonadPhase m, HasContextOf Acceptor pv m)
+    :: (MonadPhase cstruct m, HasContextOf Acceptor pv m)
     => Phase1aMsg -> m ()
 phase1b (Phase1aMsg bal) = do
     msg <- withProcessStateAtomically $ do
@@ -86,8 +88,8 @@ phase1b (Phase1aMsg bal) = do
 -- * Phase 2
 
 phase2a
-    :: (MonadPhase m, HasContextOf Leader pv m)
-    => Phase1bMsg -> m ()
+    :: (MonadPhase cstruct m, HasContextOf Leader pv m)
+    => Phase1bMsg cstruct -> m ()
 phase2a (Phase1bMsg accId bal cstruct) = do
     maybeMsg <- withProcessStateAtomically $ runMaybeT $ do
         -- add received vote to set of votes stored locally for this ballot,
@@ -125,8 +127,8 @@ phase2a (Phase1bMsg accId bal cstruct) = do
         broadcastTo (processesAddresses Acceptor)
 
 phase2b
-    :: (MonadPhase m, HasContextOf Acceptor pv m)
-    => Phase2aMsg -> m ()
+    :: (MonadPhase cstruct m, HasContextOf Acceptor pv m)
+    => Phase2aMsg cstruct -> m ()
 phase2b (Phase2aMsg bal cstruct) = do
     maybeMsg <- withProcessStateAtomically $ runMaybeT $ do
         localBallotId <- use $ acceptorLastKnownBallotId
@@ -154,6 +156,6 @@ phase2b (Phase2aMsg bal cstruct) = do
 -- * Learning
 
 learn
-    :: (MonadPhase m, HasContextOf Learner pv m)
-    => LearningCallback m -> Phase2bMsg -> m ()
+    :: (MonadPhase cstruct m, HasContextOf Learner pv m)
+    => LearningCallback m -> Phase2bMsg cstruct -> m ()
 learn callback (Phase2bMsg accId cstruct) = learnCStruct callback combination accId cstruct

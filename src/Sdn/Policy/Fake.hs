@@ -14,8 +14,8 @@ module Sdn.Policy.Fake
     , mkConfig
     ) where
 
-import           Control.Lens        (At (..), Index, Iso', IxValue, Ixed (..),
-                                      Wrapped (..), iso, mapping, _Wrapped')
+import           Control.Lens        (AsEmpty (..), At (..), Index, Iso', IxValue,
+                                      Ixed (..), Wrapped (..), iso, mapping, _Wrapped')
 import           Data.Default        (Default (..))
 import qualified Data.Map            as M
 import           Data.MessagePack    (MessagePack (..))
@@ -113,6 +113,9 @@ instance NontrivialContainer Configuration where
 instance Default Configuration where
     def = Configuration def
 
+instance AsEmpty Configuration where
+    _Empty = _Wrapped' . _Empty
+
 mkConfig :: [PolicyEntry] -> Maybe Configuration
 mkConfig policies =
     let res = Configuration $ S.fromList policies
@@ -196,3 +199,4 @@ instance CStruct Configuration where
          sanityCheck =
              first ("intersectingCombination: " <> ) . checkingConsistency
 
+instance PracticalCStruct Configuration

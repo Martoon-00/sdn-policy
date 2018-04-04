@@ -23,7 +23,6 @@ import           Sdn.Base
 import           Sdn.Extra              (Message, MonadLog, MonadReporting, PureLog,
                                          RpcOptions, launchPureLog, listF, pairF, submit)
 import           Sdn.Extra.MemStorage
-import           Sdn.Policy.Fake
 import           Sdn.Protocol.Versions
 
 -- * General
@@ -123,16 +122,17 @@ data PolicyConfirmation
     | Confirmed
 
 -- | State held by proposer.
-data ProposerState pv = ProposerState
-    { _proposerProposedPolicies    :: [Policy]
+data ProposerState pv cstruct = ProposerState
+    { _proposerProposedPolicies    :: [RawCmd cstruct]
       -- ^ Policies ever proposed with their condition.
-    , _proposerUnconfirmedPolicies :: S.Set Policy
+    , _proposerUnconfirmedPolicies :: S.Set (RawCmd cstruct)
       -- ^ Policies not yet reported as committed by any learned.
     }
 
 makeLenses ''ProposerState
 
-instance Buildable (ProposerState pv) where
+instance PracticalCStruct cstruct =>
+         Buildable (ProposerState pv cstruct) where
     build ProposerState{..} =
         bprint
             ("\n    proposed policies:\n    "%listF "\n    , " build
@@ -140,8 +140,9 @@ instance Buildable (ProposerState pv) where
             _proposerProposedPolicies
             _proposerUnconfirmedPolicies
 
-instance Default (ProposerState pv) where
-    def = ProposerState mempty mempty
+instance Default cstruct =>
+         Default (ProposerState pv cstruct) where
+    def = ProposerState mempty def
 
 -- ** Leader
 
@@ -161,14 +162,14 @@ instance Default FastBallotStatus where
 -- TODO full Buildable instances
 
 -- | State kept by leader.
-data LeaderState pv = LeaderState
+data LeaderState pv cstruct = LeaderState
     { _leaderBallotId         :: BallotId
       -- ^ Number of current ballot
-    , _leaderProposedPolicies :: ForBothRoundTypes $ ProposedCommands Policy
+    , _leaderProposedPolicies :: ForBothRoundTypes $ ProposedCommands (RawCmd cstruct)
       -- ^ Policies ever proposed on this classic / fast ballot, in latter case used in recovery
-    , _leaderVotes            :: Map BallotId $ Votes ClassicMajorityQuorum Configuration
+    , _leaderVotes            :: Map BallotId $ Votes ClassicMajorityQuorum cstruct
       -- ^ CStructs received in 2b messages
-    , _leaderFastVotes        :: Map BallotId $ Votes FastMajorityQuorum Configuration
+    , _leaderFastVotes        :: Map BallotId $ Votes FastMajorityQuorum cstruct
       -- ^ CStructs detected in 2b messages of fast ballot
     , _leaderFastBallotStatus :: Map BallotId FastBallotStatus
       -- ^ Whether fast ballot succeeded or failed with conflict.
@@ -183,8 +184,8 @@ bothRoundsF fmt = later $ \ForBothRoundTypes{..} ->
     bprint ("_fast_: "%fmt) _forClassic <>
     bprint ("\n  _classic_: "%fmt) _forFast
 
-instance ProtocolVersion pv =>
-         Buildable (LeaderState pv) where
+instance (ProtocolVersion pv, PracticalCStruct cstruct) =>
+         Buildable (LeaderState pv cstruct) where
     build LeaderState {..} =
         bprint
             ("\n    current ballod id: " %build%
@@ -195,26 +196,27 @@ instance ProtocolVersion pv =>
             _leaderVotes
 
 -- | Initial state of the leader.
-instance Default (LeaderState pv) where
+instance Default (LeaderState pv cstruct) where
     def = LeaderState def def mempty mempty mempty mempty
 
 -- ** Acceptor
 
 -- | State kept by acceptor.
-data AcceptorState pv = AcceptorState
+data AcceptorState pv cstruct = AcceptorState
     { _acceptorId                   :: AcceptorId
       -- ^ Identificator of this acceptor, should be read-only
     , _acceptorLastKnownBallotId    :: BallotId
       -- ^ Last heard ballotId from leader
-    , _acceptorCStruct              :: ForBothRoundTypes Configuration
+    , _acceptorCStruct              :: ForBothRoundTypes cstruct
       -- ^ Gathered CStruct so far
-    , _acceptorFastProposedPolicies :: ProposedCommands Policy
+    , _acceptorFastProposedPolicies :: ProposedCommands (RawCmd cstruct)
       -- ^ Policies proposed upon each fast ballot
     }
 
 makeLenses ''AcceptorState
 
-instance ProtocolVersion pv => Buildable (AcceptorState pv) where
+instance (ProtocolVersion pv, PracticalCStruct cstruct) =>
+         Buildable (AcceptorState pv cstruct) where
     build AcceptorState{..} =
         bprint
             ("\n    my id: "%build%
@@ -227,22 +229,26 @@ instance ProtocolVersion pv => Buildable (AcceptorState pv) where
             _acceptorFastProposedPolicies
 
 -- | Initial state of acceptor.
-defAcceptorState :: forall pv. AcceptorId -> (AcceptorState pv)
+defAcceptorState
+    :: forall pv cstruct.
+       Default cstruct
+    => AcceptorId -> (AcceptorState pv cstruct)
 defAcceptorState id = AcceptorState id def def def
 
 -- ** Learner
 
 -- | State kept by learner.
-data LearnerState pv = LearnerState
-    { _learnerVotes   :: Votes (VersionQuorum pv) Configuration
+data LearnerState pv cstruct = LearnerState
+    { _learnerVotes   :: Votes (VersionQuorum pv) cstruct
       -- ^ CStructs received from acceptors so far
-    , _learnerLearned :: Configuration
+    , _learnerLearned :: cstruct
       -- ^ Eventually learned cstruct, result of consensus
     }
 
 makeLenses ''LearnerState
 
-instance Buildable (LearnerState pv) where
+instance PracticalCStruct cstruct =>
+         Buildable (LearnerState pv cstruct) where
     build LearnerState{..} =
         bprint
             ("\n    heard: "%build%
@@ -251,20 +257,20 @@ instance Buildable (LearnerState pv) where
             _learnerLearned
 
 -- | Initial state of the learner.
-instance Default (LearnerState pv) where
+instance Default cstruct => Default (LearnerState pv cstruct) where
     def = LearnerState mempty def
 
 -- * Misc
 
-data AllStates pv = AllStates
-    { proposerState   :: ProposerState pv
-    , leaderState     :: (LeaderState pv)
-    , acceptorsStates :: [AcceptorState pv]
-    , learnersStates  :: [LearnerState pv]
+data AllStates pv cstruct = AllStates
+    { proposerState   :: ProposerState pv cstruct
+    , leaderState     :: (LeaderState pv cstruct)
+    , acceptorsStates :: [AcceptorState pv cstruct]
+    , learnersStates  :: [LearnerState pv cstruct]
     }
 
-instance ProtocolVersion pv =>
-         Buildable (AllStates pv) where
+instance (ProtocolVersion pv, PracticalCStruct cstruct) =>
+         Buildable (AllStates pv cstruct) where
     build AllStates {..} =
         bprint
             ("\n  Proposer state: " %build % "\n\n  Leader state: " %build %

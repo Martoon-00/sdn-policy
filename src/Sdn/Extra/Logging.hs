@@ -45,7 +45,7 @@ import           GHC.IO.Unsafe                  (unsafePerformIO)
 import qualified System.Console.ANSI            as ANSI
 import           Universum                      hiding (pass)
 
-import           Sdn.Extra.Util                 (coloredF, gray)
+import           Sdn.Extra.Util                 (MonadicMark (..), coloredF, gray)
 
 -- * Util
 
@@ -106,6 +106,7 @@ class Monad m => MonadLog m where
 instance MonadLog m => MonadLog (ReaderT r m)
 instance MonadLog m => MonadLog (StateT r m)
 instance MonadLog m => MonadLog (MaybeT m)
+instance MonadLog m => MonadLog (MonadicMark mark m)
 
 logBuffer :: TBM.TBMChan LogEntry
 logBuffer = unsafePerformIO $ do
@@ -140,6 +141,7 @@ instance MonadReporting m => MonadReporting (MaybeT m) where
 instance MonadReporting m => MonadReporting (LoggerNameBox m) where
 instance MonadReporting m => MonadReporting (DelaysLayer m) where
 instance MonadReporting m => MonadReporting (ExtendedRpcOptions (o :: [*]) (os :: [*]) m)
+instance MonadReporting m => MonadReporting (MonadicMark __ m)
 
 -- ** Error reporting enabled
 

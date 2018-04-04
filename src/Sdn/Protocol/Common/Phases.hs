@@ -1,4 +1,5 @@
-{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE Rank2Types   #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- | Utilities for various phases of Paxos.
 
@@ -24,14 +25,13 @@ import           Sdn.Base
 import           Sdn.Extra                    (MonadLog, MonadReporting, RpcOptions,
                                                logError, logInfo, presence, submit,
                                                throwOnFail)
-import           Sdn.Policy.Fake
 import           Sdn.Protocol.Common.Messages
 import           Sdn.Protocol.Context
 import           Sdn.Protocol.Processes
 import           Sdn.Protocol.Versions
 
 -- | Common constraints for all phases.
-type MonadPhase m =
+type MonadPhase cstruct m =
     ( MonadIO m
     , MonadCatch m
     , MonadTimed m
@@ -39,13 +39,17 @@ type MonadPhase m =
     , MonadLog m
     , MonadReporting m
     , HasMembers
+    , cstruct ~ DeclaredCStruct m
+    , PracticalCStruct cstruct
     )
 
 -- * Common
 
 -- | Drop warning if we are going to merge received cstruct, but
 -- dropping some of its policies in the process.
-warnOnPartialApply :: MonadLog m => Configuration -> Configuration -> m ()
+warnOnPartialApply
+    :: (MonadLog m, CStruct cstruct)
+    => cstruct -> cstruct -> m ()
 warnOnPartialApply incoming updated = do
     unless (updated `extends` incoming) $
         logInfo $
@@ -57,8 +61,10 @@ warnOnPartialApply incoming updated = do
 -- * Learning
 
 -- | Update learned value with all checks and cautions.
-updateLearnedValue :: Configuration
-                   -> TransactionM (ProcessState Learner pv) [Acceptance Policy]
+updateLearnedValue
+    :: (CStruct cstruct, Eq cstruct)
+    => cstruct
+    -> TransactionM (ProcessState Learner pv cstruct) [Cmd cstruct]
 updateLearnedValue newLearned = do
     prevLearned <- use learnerLearned
 
@@ -86,7 +92,7 @@ updateLearnedValue newLearned = do
         sformat ("New learned cstruct: "%build) new
 
 newtype LearningCallback m = LearningCallback
-    { runLearningCallback :: NonEmpty (Acceptance Policy) -> m ()
+    { runLearningCallback :: NonEmpty (DeclaredCmd m) -> m ()
     }
 
 instance Applicative m => Monoid (LearningCallback m) where
@@ -95,13 +101,13 @@ instance Applicative m => Monoid (LearningCallback m) where
 
 -- | Learning phase of algorithm.
 learnCStruct
-    :: (MonadPhase m, HasContextOf Learner pv m)
+    :: (MonadPhase cstruct m, HasContextOf Learner pv m)
     => LearningCallback m
-    -> (Votes (VersionQuorum pv) Configuration -> Either Text Configuration)
+    -> (Votes (VersionQuorum pv) cstruct -> Either Text cstruct)
     -> AcceptorId
-    -> Configuration
+    -> cstruct
     -> m ()
-learnCStruct (LearningCallback callback) combinator accId cstruct = do
+learnCStruct (LearningCallback callback) combinator accId (cstruct :: cstruct) = do
     newLearnedPolicies <- withProcessStateAtomically $ do
         -- rewrite cstruct kept for this acceptor
 
@@ -124,15 +130,15 @@ learnCStruct (LearningCallback callback) combinator accId cstruct = do
 
     whenNotNull newLearnedPolicies $ \policyAcceptances -> do
         let policies = map acceptanceCmd policyAcceptances
-        submit (processAddress Proposer) (CommittedMsg policies)
+        submit (processAddress Proposer) (CommittedMsg @cstruct policies)
         callback policyAcceptances
 
 -- * Confirmation to proposal
 
 -- | Remember that given policies were committed.
 confirmCommitted
-    :: (MonadPhase m, HasContextOf Proposer pv m)
-    => CommittedMsg -> m ()
+    :: (MonadPhase cstruct m, HasContextOf Proposer pv m)
+    => CommittedMsg cstruct -> m ()
 confirmCommitted (CommittedMsg policies) = do
     withProcessStateAtomically $ do
         for_ policies $ \policy ->
@@ -140,8 +146,8 @@ confirmCommitted (CommittedMsg policies) = do
 
 -- | Helper to check whether policy is in list of unconfirmed policies.
 isPolicyUnconfirmed
-    :: (MonadPhase m, HasContextOf Proposer pv m)
-    => Policy -> m Bool
+    :: (MonadPhase cstruct m, HasContextOf Proposer pv m)
+    => RawCmd cstruct -> m Bool
 isPolicyUnconfirmed policy = do
     withProcessStateAtomically $
         use $ proposerUnconfirmedPolicies . at policy . presence
