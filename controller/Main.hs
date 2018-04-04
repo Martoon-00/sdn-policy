@@ -17,8 +17,9 @@ import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra                (atomicModifyIORefS, declareMemStorage,
-                                           ioRefMemStorage, logInfo, runNoErrorReporting,
-                                           setDropLoggerName)
+                                           declareMonadicMark, ioRefMemStorage, logInfo,
+                                           runNoErrorReporting, setDropLoggerName)
+import           Sdn.Policy.Fake
 import           Sdn.Protocol
 import qualified Sdn.Protocol.Classic     as Classic
 import           Sdn.Protocol.Common      (LearningCallback (..))
@@ -32,8 +33,7 @@ main = do
         networkOptions = def{ udpMessageSizeLimit = 15000 }
 
     -- environment initialization
-    runMsgPackUdpOpts networkOptions . runLogging $ declareMemStorage ioRefMemStorage $ setDropLoggerName $ do
-        return ()
+    runMsgPackUdpOpts networkOptions . runLogging $ declareMemStorage ioRefMemStorage $ declareMonadicMark @(CStructType Configuration) $ setDropLoggerName $ do
         logInfo "Starting"
 
         learnedCounter <- newIORef 0
@@ -61,6 +61,7 @@ main = do
   where
     gen = mkStdGen 42
 
+    settings :: TopologySettings Fast Configuration
     settings =
         TopologySettings
         { topologyMembers = Members{ acceptorsNum = 3, learnersNum = 1 }

@@ -26,6 +26,7 @@ import           Sdn.Extra                    (Message, MonadLog, MonadReporting
                                                logInfo, loggerNameT, mkMemStorage,
                                                readMemStorage, resetColoring, withColor)
 import           Sdn.Extra.MemStorage
+import qualified Sdn.Policy.Fake              as Fake
 import           Sdn.Protocol.Common.Messages
 import           Sdn.Protocol.Common.Phases   (confirmCommitted, isPolicyUnconfirmed)
 import           Sdn.Protocol.Context
@@ -43,15 +44,16 @@ type MonadTopology m =
     , MonadTimed m
     , MonadRpc RpcOptions m
     , DeclaresMemStore m
+    , PracticalCStruct (DeclaredCStruct m)
     )
 
 type TopologySchedule p = forall m. MonadTopology m => S.Schedule m p
 
 -- | Contains all info to build network which serves consensus algorithm.
-data TopologySettings pv = TopologySettings
+data TopologySettings pv cstruct = TopologySettings
     { topologyMembers            :: Members
       -- ^ Participants of given topology.
-    , topologyProposalSchedule   :: TopologySchedule Policy
+    , topologyProposalSchedule   :: TopologySchedule (RawCmd cstruct)
       -- ^ Given schedule of ballots,
       -- schedule according to which policies are generated and proposed.
     , topologyProposerInsistance :: TopologySchedule () -> TopologySchedule ()
@@ -71,11 +73,11 @@ data family CustomTopologySettings :: * -> *
 
 -- | Example of topology.
 instance Default (CustomTopologySettings pv) =>
-         Default (TopologySettings pv) where
+         Default (TopologySettings pv Fake.Configuration) where
     def =
         TopologySettings
         { topologyMembers = def
-        , topologyProposalSchedule = S.generate (GoodPolicy <$> arbitrary)
+        , topologyProposalSchedule = S.generate (Fake.GoodPolicy <$> arbitrary)
         , topologyProposerInsistance = \ballotSchedule -> do
             every3rd <- S.maskExecutions (cycle [True, False, False])
             ballotSchedule <* every3rd
@@ -89,11 +91,16 @@ data TopologyMonitor pv m = TopologyMonitor
     { -- | Returns when all active processes in the topology finish
       awaitTermination :: m ()
       -- | Fetch states of all processes in topology
-    , readAllStates    :: DeclaredMemStoreTxMonad m (AllStates pv)
+    , readAllStates    :: DeclaredMemStoreTxMonad m (AllStates pv (DeclaredCStruct m))
     }
 
+type ProcessEnv p pv m =
+    ProcessContext $
+    DeclaredMemStore m $
+    ProcessState p pv (DeclaredCStruct m)
+
 -- | Monad in which process (and phases) are supposed to work.
-type ProcessM p pv m = ReaderT (ProcessContext $ DeclaredMemStore m $ ProcessState p pv) m
+type ProcessM p pv m = ReaderT (ProcessEnv p pv m) m
 
 -- | Create single process.
 newProcess
@@ -104,10 +111,11 @@ newProcess
        , Process p
        , ProtocolVersion pv
        , DeclaresMemStore m
+       , Default (DeclaredCStruct m)
        )
     => p
     -> ProcessM p pv m ()
-    -> m (DeclaredMemStoreTxMonad m (ProcessState p pv))
+    -> m (DeclaredMemStoreTxMonad m (ProcessState p pv (DeclaredCStruct m)))
 newProcess process action = do
     memStorage <- getMemStorage
     stateBox <- liftIO $ mkMemStorage memStorage (initProcessState process)
@@ -153,11 +161,12 @@ listener endpoint = do
         ]
 
 type TopologyLauncher pv m =
-    MonadTopology m => StdGen -> TopologySettings pv -> m (TopologyMonitor pv m)
+    MonadTopology m =>
+    StdGen -> TopologySettings pv (DeclaredCStruct m) -> m (TopologyMonitor pv m)
 
 -- | How processes of various roles are supposed to work.
 data TopologyActions pv m = TopologyActions
-    { proposeAction     :: HasMembers => Policy -> ProcessM Proposer pv m ()
+    { proposeAction     :: HasMembers => DeclaredRawCmd m -> ProcessM Proposer pv m ()
     , startBallotAction :: HasMembers => ProcessM Leader pv m ()
     , leaderListeners   :: HasMembers => [Listener Leader pv m]
     , acceptorListeners :: HasMembers => [Listener Acceptor pv m]
@@ -221,10 +230,10 @@ launchPaxosWith TopologyActions{..} seed TopologySettings{..} = withMembers topo
     -- launch required number of servers, for processes of given type,
     -- serving given listeners
     startListeningProcessesOf
-        :: (HasMembers, MonadTopology m, Process p, Integral i, ProtocolVersion pv, DeclaresMemStore m)
+        :: (HasMembers, MonadTopology m, Process p, Integral i, ProtocolVersion pv, DeclaresMemStore m, Default (DeclaredCStruct m))
         => (i -> p)
         -> [Listener p pv m]
-        -> m [DeclaredMemStoreTxMonad m $ ProcessState p pv]
+        -> m [DeclaredMemStoreTxMonad m $ ProcessState p pv (DeclaredCStruct m)]
     startListeningProcessesOf processType listeners =
         forM (processesOf processType) $
             \process -> newProcess process . work (for topologyLifetime) $ do

@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE Rank2Types                 #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 {-# LANGUAGE TemplateHaskell            #-}
@@ -17,18 +18,19 @@ import           Control.Lens             (Getting, Iso, Iso', LensRules, Wrappe
 import           Control.Monad.Catch.Pure (Catch, runCatch)
 import           Control.Monad.Random     (MonadRandom, getRandom)
 import           Control.Monad.STM.Class  (MonadSTM (..))
+import           Control.TimeWarp.Logging (WithNamedLogger)
 import           Control.TimeWarp.Rpc     (MonadRpc (..), NetworkAddress, RpcRequest (..),
                                            mkRequest)
 import qualified Control.TimeWarp.Rpc     as Rpc
-import           Control.TimeWarp.Timed   (Microsecond, MonadTimed (..),
+import           Control.TimeWarp.Timed   (Microsecond, MonadTimed (..), ThreadId,
                                            TimedTOptions (..))
 import           Data.Coerce              (coerce)
 import           Data.MessagePack         (MessagePack (..))
 import qualified Data.Text.Buildable
 import           Data.Text.Lazy.Builder   (Builder)
 import           Data.Time.Units          (Millisecond, Second)
-import           Formatting               (Format, bprint, build, formatToString, later,
-                                           shortest, shown, string, (%))
+import           Formatting               (Format, bprint, build, later, shortest, string,
+                                           (%))
 import           Formatting.Internal      (Format (..))
 import           GHC.Exts                 (IsList (..))
 import qualified GHC.Exts                 as Exts
@@ -42,19 +44,7 @@ import           Unsafe                   (unsafeFromJust)
 
 -- | Declare instance for one-way message.
 declareMessage :: TH.Name -> TH.Q [TH.Dec]
-declareMessage msgType = do
-    dec1 <- [d| instance MessagePack $getFullType |]
-    dec2 <- mkRequest msgType ''()
-    return $ dec2 <> dec1
-  where
-    getFullType = do
-        (name, vars) <- TH.reify msgType >>= \case
-            TH.TyConI (TH.NewtypeD _ nname typeVars _ _ _) -> pure (nname, typeVars)
-            TH.TyConI (TH.DataD _ dname typeVars _ _ _) -> pure (dname, typeVars)
-            TH.TyConI (TH.TySynD tname typeVars _) -> pure (tname, typeVars)
-            _ -> fail $ formatToString ("Type "%shown%" not found") msgType
-        typeArgs <- replicateM (length vars) $ TH.VarT <$> TH.newName "a"
-        pure $ foldl TH.AppT (TH.ConT name) typeArgs
+declareMessage msgType = mkRequest msgType ''()
 
 type RpcOptions = '[Rpc.RpcOptionMessagePack, Rpc.RpcOptionNoReturn]
 
@@ -264,8 +254,34 @@ pack = review _Wrapped'
 unpack :: Wrapped s => s -> Unwrapped s
 unpack = view _Wrapped'
 
+-- | Options suitable for emulation in this project.
 emulationOptions :: TimedTOptions
 emulationOptions =
     TimedTOptions
     { shutdownOnMainEnd = True
     }
+
+type family Covered item :: [*]
+
+type Whole (constr :: * -> Constraint) item = Each '[constr] (Covered item)
+
+-- | Attaches a type-level mark to a monad.
+--
+-- It then can be extracted with closed type family.
+-- Useful to make type parameters inferred from type of monad stack.
+newtype MonadicMark mark m a = MonadicMark (m a)
+    deriving (Functor, Applicative, Monad, MonadIO,
+              MonadThrow, MonadCatch, MonadMask,
+              MonadTimed, MonadRpc (o :: [*]), WithNamedLogger)
+
+declareMonadicMark :: forall mark m a. MonadicMark mark m a -> m a
+declareMonadicMark (MonadicMark action) = action
+
+type instance ThreadId (MonadicMark mark m) = ThreadId m
+
+instance MonadTrans (MonadicMark mark) where
+    lift = MonadicMark
+
+type family DeclaredMark markType (m :: * -> *) where
+    DeclaredMark markType (MonadicMark (markType a) m) = a
+    DeclaredMark markType (t m) = DeclaredMark markType m

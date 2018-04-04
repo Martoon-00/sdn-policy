@@ -24,7 +24,7 @@ import           Sdn.Protocol.Versions
 -- | Unique features of each process.
 class Process p where
     -- | State kept by the process
-    type ProcessState p :: * -> *
+    type ProcessState p :: * -> * -> *
 
     -- | Name of the process, used in logging.
     processName :: p -> LoggerName
@@ -40,10 +40,12 @@ class Process p where
     processesNumber :: HasMembers => Int
 
     -- | Initial state of the process.
-    initProcessState :: ProtocolVersion pv => p -> ProcessState p pv
+    initProcessState
+        :: (ProtocolVersion pv, Default cstruct)
+        => p -> ProcessState p pv cstruct
     default initProcessState
-        :: Default (ProcessState p pv)
-        => p -> ProcessState p pv
+        :: Default (ProcessState p pv cstruct)
+        => p -> ProcessState p pv cstruct
     initProcessState _ = def
 
 -- | Constraint for having context with specified mutable state.
@@ -54,7 +56,10 @@ type HasContext s m =
     )
 
 -- | Constraint for having context of specified type of process.
-type HasContextOf p pv m = (HasContext (ProcessState p pv) m, ProtocolVersion pv)
+type HasContextOf p pv m =
+    ( HasContext (ProcessState p pv (DeclaredCStruct m)) m
+    , ProtocolVersion pv
+    )
 
 -- | Port binded to given process.
 processPort

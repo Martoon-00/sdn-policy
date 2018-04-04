@@ -1,3 +1,5 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
+
 -- | Common properties for classic and fast versions of algorithm.
 
 module Test.Sdn.Overall.CommonSpec
@@ -16,6 +18,7 @@ import           Test.QuickCheck             (Positive (..), Small (..), arbitra
                                               (==>))
 
 import           Sdn.Base
+import           Sdn.Policy.Fake
 import           Sdn.Protocol
 import qualified Sdn.Schedule                as S
 import           Test.Sdn.Overall.Launcher
@@ -24,7 +27,10 @@ import           Test.Sdn.Overall.Properties
 spec :: Spec
 spec = describe "common" $ do
 
-    let checkVersion (pv :: Proxy pv) = do
+    let checkVersion
+            :: (HasVersionTopologyActions pv, Default (CustomTopologySettings pv), Typeable pv)
+            => Proxy pv -> Spec
+        checkVersion (pv :: Proxy pv) = do
 
           -- artifical scenarious which check whether protocol at least slightly works
           describe "primitive cases" $ do
@@ -61,7 +67,7 @@ spec = describe "common" $ do
                 \(Small (n :: Word)) ->
 
                 testLaunch @pv def
-                { testSettings = def
+                { testSettings = defTopologySettings
                     { topologyProposalSchedule = do
                         S.times n
                         S.generate . oneof $
@@ -72,10 +78,10 @@ spec = describe "common" $ do
                 }
 
             prop "all conflicting policies" $
-                \(Positive (Small n)) ->
+                \(Positive (Small n :: Small Word)) ->
 
                 testLaunch @pv def
-                { testSettings = def
+                { testSettings = defTopologySettings
                     { topologyProposalSchedule = do
                         S.times n
                         S.generate (BadPolicy <$> arbitrary)
@@ -119,12 +125,12 @@ spec = describe "common" $ do
           describe "real life cases" $
 
             prop "no conflicts" $
-            \(Positive (Small proposalsNum)) ->
+            \(Positive (Small proposalsNum :: Small Word)) ->
             \(Positive (Small balDelay)) ->
             proposalsNum > balDelay ==>
 
                 testLaunch @pv def
-                { testSettings = def
+                { testSettings = defTopologySettings
                     { topologyProposalSchedule = do
                         S.repeating proposalsNum (interval 1 sec)
                         S.generate (GoodPolicy <$> arbitrary)

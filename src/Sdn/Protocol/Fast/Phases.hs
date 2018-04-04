@@ -1,3 +1,5 @@
+{-# LANGUAGE TypeFamilies #-}
+
 -- | Phases of Fast Paxos.
 
 module Sdn.Protocol.Fast.Phases
@@ -14,13 +16,12 @@ import           Control.Lens                  (at, has, ix, non, (%=), (.=), (<
 import           Control.TimeWarp.Timed        (Microsecond, after, schedule)
 import           Data.Default                  (def)
 import qualified Data.Map                      as M
-import qualified Data.Set                      as S
 import           Formatting                    (build, sformat, stext, (%))
 import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra                     (exists, exit, listF, logInfo, presence,
-                                                rightSpaced, throwOnFail, zoom)
+                                                rightSpaced, zoom)
 import qualified Sdn.Protocol.Classic.Messages as Classic
 import qualified Sdn.Protocol.Classic.Phases   as Classic
 import           Sdn.Protocol.Common.Phases
@@ -32,21 +33,22 @@ import           Sdn.Protocol.Versions
 -- * Proposal
 
 propose
-    :: (MonadPhase m, HasContextOf Proposer Fast m)
-    => Policy -> m ()
+    :: forall cstruct m.
+       (MonadPhase cstruct m, HasContextOf Proposer Fast m)
+    => RawCmd cstruct -> m ()
 propose policy = do
     logInfo $ sformat ("Proposing policy (fast): "%build) policy
     withProcessStateAtomically $ do
         proposerProposedPolicies <>= one policy
         proposerUnconfirmedPolicies <>= one policy
     broadcastTo (processesAddresses Acceptor)
-                (Fast.ProposalMsg policy)
+                (Fast.ProposalMsg @cstruct policy)
 
 -- * Remembering proposals
 
 acceptorRememberProposal
-    :: (MonadPhase m, HasContextOf Acceptor Fast m)
-    => Fast.ProposalMsg -> m ()
+    :: (MonadPhase cstruct m, HasContextOf Acceptor Fast m)
+    => Fast.ProposalMsg cstruct -> m ()
 acceptorRememberProposal (Fast.ProposalMsg policy) =
     withProcessStateAtomically $ do
         committed <- exists $ acceptorCStruct . forFast . (ix (Accepted policy) <> ix (Rejected policy))
@@ -64,7 +66,7 @@ acceptorRememberProposal (Fast.ProposalMsg policy) =
 -- * Ballot initiation
 
 initBallot
-    :: (MonadPhase m, HasContextOf Leader Fast m)
+    :: (MonadPhase cstruct m, HasContextOf Leader Fast m)
     => Microsecond -> m ()
 initBallot recoveryDelay = do
     logInfo "Starting new fast ballot"
@@ -80,7 +82,7 @@ initBallot recoveryDelay = do
 -- * Phase 2
 
 phase2b
-    :: (MonadPhase m, HasContextOf Acceptor Fast m)
+    :: (MonadPhase cstruct m, HasContextOf Acceptor Fast m)
     => Fast.InitBallotMsg -> m ()
 phase2b (Fast.InitBallotMsg bal) = do
     msg <- withProcessStateAtomically $ runMaybeT $ do
@@ -113,8 +115,8 @@ phase2b (Fast.InitBallotMsg bal) = do
 -- * Learning
 
 learn
-    :: (MonadPhase m, HasContextOf Learner Fast m)
-    => LearningCallback m -> Fast.Phase2bMsg -> m ()
+    :: (MonadPhase cstruct m, HasContextOf Learner Fast m)
+    => LearningCallback m -> Fast.Phase2bMsg cstruct -> m ()
 learn callback (Fast.Phase2bMsg _ accId cstruct) =
     learnCStruct callback intersectingCombination accId cstruct
 
@@ -123,14 +125,14 @@ learn callback (Fast.Phase2bMsg _ accId cstruct) =
 -- | In fast round, if recovery has been initiated, leader on fast 2b messages
 -- acts like if it received classic 1b messsage.
 delegateToRecovery
-    :: (MonadPhase m, HasContextOf Leader Fast m)
-    => AcceptorId -> BallotId -> Configuration -> m ()
+    :: (MonadPhase cstruct m, HasContextOf Leader Fast m)
+    => AcceptorId -> BallotId -> cstruct -> m ()
 delegateToRecovery accId bal cstruct = do
     let recoveryBallotId = bal
     Classic.phase2a (Classic.Phase1bMsg accId recoveryBallotId cstruct)
 
 startRecoveryIfNecessary
-    :: (MonadPhase m, HasContextOf Leader Fast m)
+    :: (MonadPhase cstruct m, HasContextOf Leader Fast m)
     => BallotId -> m ()
 startRecoveryIfNecessary bal = do
     mVotesSoFar <- withProcessStateAtomically $ runMaybeT $ do
@@ -165,16 +167,20 @@ startRecoveryIfNecessary bal = do
              delegateToRecovery accId bal cstruct
   where
     -- find policies which haven't gathered a quorum of votes
-    evalUnconfirmedPolicies votes = do
-        combined <- throwOnFail ProtocolError $ intersectingCombination votes
-        let mentionedPolicyEntries = fold $ fmap unConfiguration votes
-            unconfirmedPolicies = mentionedPolicyEntries `S.difference` unConfiguration combined
-        return unconfirmedPolicies
+    evalUnconfirmedPolicies _votes = do
+        -- combined <- throwOnFail ProtocolError $ intersectingCombination votes
+        -- let mentionedPolicyEntries = fold votes
+        --     unconfirmedPolicies = mentionedPolicyEntries `difference` combined
+        -- return unconfirmedPolicies
+        --
+        -- NO CONFLICTS EVER! MEME
+        -- FIXME:
+        return ([] :: [Int])
 
 
 detectConflicts
-    :: (MonadPhase m, HasContextOf Leader Fast m)
-    => Fast.Phase2bMsg -> m ()
+    :: (MonadPhase cstruct m, HasContextOf Leader Fast m)
+    => Fast.Phase2bMsg cstruct -> m ()
 detectConflicts (Fast.Phase2bMsg bal accId cstruct) = do
     newVotes <- withProcessStateAtomically $ do
         leaderFastVotes . at bal . non mempty <%= addVote accId cstruct

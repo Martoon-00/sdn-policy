@@ -3,12 +3,19 @@
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
--- | Policies arangement.
+-- | Fake policies with various conflicting behaviour.
 
-module Sdn.Base.Policy where
+module Sdn.Policy.Fake
+    ( Policy (..)
+    , PolicyName
+    , policyName
 
-import           Control.Lens        (At (..), Index, Iso', IxValue, Ixed (..),
-                                      Wrapped (..), iso, mapping, _Wrapped')
+    , Configuration (..)
+    , mkConfig
+    ) where
+
+import           Control.Lens        (AsEmpty (..), At (..), Index, Iso', IxValue,
+                                      Ixed (..), Wrapped (..), iso, mapping, _Wrapped')
 import           Data.Default        (Default (..))
 import qualified Data.Map            as M
 import           Data.MessagePack    (MessagePack (..))
@@ -106,6 +113,9 @@ instance NontrivialContainer Configuration where
 instance Default Configuration where
     def = Configuration def
 
+instance AsEmpty Configuration where
+    _Empty = _Wrapped' . _Empty
+
 mkConfig :: [PolicyEntry] -> Maybe Configuration
 mkConfig policies =
     let res = Configuration $ S.fromList policies
@@ -166,7 +176,8 @@ perPolicy = _Wrapped' . mapping _Wrapped' . iso toPolicyMap fromPolicyMap
         , (accId, ()) <- M.toList votes
         ]
 
-instance Command Configuration PolicyEntry where
+instance CStruct Configuration where
+    type Cmd Configuration = PolicyEntry
     addCommand = checkingAgreement $ underneath . S.insert
     glb = checkingAgreement $ underneath2 S.union
     lub = underneath2 S.intersection
@@ -188,3 +199,4 @@ instance Command Configuration PolicyEntry where
          sanityCheck =
              first ("intersectingCombination: " <> ) . checkingConsistency
 
+instance PracticalCStruct Configuration

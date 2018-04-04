@@ -28,6 +28,7 @@ import           Universum
 import           Sdn.Base
 import           Sdn.Extra            (WithDesc (..), descText, getWithDesc, listF,
                                        rightSpaced, (?:))
+import           Sdn.Policy.Fake
 import           Sdn.Protocol
 import           Sdn.Schedule         (Schedule)
 import qualified Sdn.Schedule         as S
@@ -133,7 +134,7 @@ instance Buildable TopologySettingsBuilder where
 
 data TopologySettingsBox =
     forall pv. HasVersionTopologyActions pv =>
-               TopologySettingsBox (TopologySettings pv)
+               TopologySettingsBox (TopologySettings pv Configuration)
 
 buildTopologySettings
     :: MonadRandom m
