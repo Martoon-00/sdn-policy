@@ -1,5 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes        #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
@@ -176,13 +177,23 @@ perPolicy = _Wrapped' . mapping _Wrapped' . iso toPolicyMap fromPolicyMap
         , (accId, ()) <- M.toList votes
         ]
 
+
+pattern HappyPolicy :: PolicyName -> Acceptance Policy
+pattern HappyPolicy name = Accepted (GoodPolicy name)
+
 instance CStruct Configuration where
     type Cmd Configuration = PolicyEntry
-    addCommand = checkingAgreement $ underneath . S.insert
     glb = checkingAgreement $ underneath2 S.union
     lub = underneath2 S.intersection
     Configuration c1 `extends` Configuration c2 = c2 `S.isSubsetOf` c1
     difference = Exts.toList ... underneath2 S.difference
+
+    addCommand p c = case (p, toList c) of
+        (HappyPolicy _, HappyPolicy _ : _) ->
+            -- optimization for profiling
+            pure $ underneath (S.insert p) c
+        _ ->
+            checkingAgreement (underneath . S.insert) p c
 
     -- for each policy check, whether there is a quorum containing
     -- its acceptance or rejection
