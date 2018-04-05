@@ -11,8 +11,9 @@ module Sdn.Protocol.Fast.Phases
     , detectConflicts
     ) where
 
-import           Control.Lens                  (at, non, (.=), (<>=))
+import           Control.Lens                  (at, non, (%=), (.=))
 import qualified Data.Map                      as M
+import qualified Data.Set                      as S
 import           Formatting                    (build, sformat, (%))
 import           Universum
 
@@ -33,14 +34,14 @@ import           Sdn.Protocol.Versions
 propose
     :: forall cstruct m.
        (MonadPhase cstruct m, HasContextOf Proposer Fast m)
-    => RawCmd cstruct -> m ()
-propose policy = do
-    logInfo $ sformat ("Proposing policy (fast): "%build) policy
+    => NonEmpty (RawCmd cstruct) -> m ()
+propose policies = do
+    logInfo $ sformat ("Proposing policy (fast): "%listF "," build) policies
     withProcessStateAtomically $ do
-        proposerProposedPolicies <>= one policy
-        proposerUnconfirmedPolicies <>= one policy
+        proposerProposedPolicies %= (toList policies <>)
+        proposerUnconfirmedPolicies %= \s -> foldl (flip S.insert) s policies
     broadcastTo (processesAddresses Acceptor)
-                (Fast.ProposalMsg @cstruct $ one policy)
+                (Fast.ProposalMsg @cstruct policies)
 
 -- * Phase 2
 

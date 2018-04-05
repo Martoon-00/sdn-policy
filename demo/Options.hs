@@ -30,6 +30,7 @@ import           Sdn.Extra            (WithDesc (..), descText, getWithDesc, lis
                                        rightSpaced, (?:))
 import           Sdn.Policy.Fake
 import           Sdn.Protocol
+import           Sdn.Protocol.Common  (BatchingSettings (..))
 import           Sdn.Schedule         (Schedule)
 import qualified Sdn.Schedule         as S
 
@@ -96,12 +97,13 @@ instance Buildable (ScheduleBuilder a) where
             mconcat $ intersperse " + " $ map (bprint $ "("%build%")") sbs
 
 data TopologySettingsBuilder = TopologySettingsBuilder
-    { tsbMembers            :: Members
-    , tsbProposalSchedule   :: ScheduleBuilder Policy
-    , tsbProposerInsistance :: ScheduleBuilder ()
-    , tsbBallotsSchedule    :: ScheduleBuilder ()
-    , tsbLifetime           :: Microsecond
-    , tsbCustomSettings     :: CustomTopologySettingsBuilder
+    { tsbMembers               :: Members
+    , tsbProposalSchedule      :: ScheduleBuilder Policy
+    , tsbProposerInsistance    :: ScheduleBuilder ()
+    , tsbBallotsSchedule       :: ScheduleBuilder ()
+    , tsbProposalBatchSettings :: Maybe BatchingSettings
+    , tsbLifetime              :: Microsecond
+    , tsbCustomSettings        :: CustomTopologySettingsBuilder
     } deriving (Generic)
 
 data CustomTopologySettingsBuilder
@@ -116,12 +118,14 @@ instance Buildable TopologySettingsBuilder where
                "\n  proposal schedule: "%build%
                "\n  re-proposals: "%build%
                "\n  ballots schedule: "%build%
+               "\n  proposal batching settings: "%build%
                "\n  lifetime: "%build%
                "\n  type: "%builder)
             tsbMembers
             tsbProposalSchedule
             tsbProposerInsistance
             tsbBallotsSchedule
+            tsbProposalBatchSettings
             tsbLifetime
             custom
       where
@@ -145,6 +149,7 @@ buildTopologySettings TopologySettingsBuilder{..} = do
     let topologyProposerInsistance :: TopologySchedule () -> TopologySchedule ()
         topologyProposerInsistance _ = buildSchedule tsbProposerInsistance
     let topologyBallotsSchedule = buildSchedule tsbBallotsSchedule
+    let topologyProposalBatchSettings = tsbProposalBatchSettings
     let topologyLifetime = convertUnit tsbLifetime
     return $ case tsbCustomSettings of
         ClassicSettingsBuilderPart ->
@@ -309,6 +314,11 @@ instance FromJSON (WithDesc D.Delays) where
         alternativeParser = withArray "alternative delays" $ \a -> do
             fmap mconcat $ mapM parseJSON (toList a)
 
+instance FromJSON BatchingSettings where
+    parseJSON = withObject "batching settings" $ \o -> do
+        batchMaxSize <- o .: "max_size"
+        batchMaxJitter <- o .: "max_jitter"
+        return BatchingSettings{..}
 
 instance FromJSON TopologySettingsBuilder where
     parseJSON = withObject "topology settings" $ \o -> do
@@ -316,6 +326,7 @@ instance FromJSON TopologySettingsBuilder where
         tsbProposalSchedule <- o .: "proposals"
         tsbProposerInsistance <- o .: "reproposals"
         tsbBallotsSchedule <- o .: "ballots"
+        tsbProposalBatchSettings <- o .:? "proposals_batching"
         tsbLifetime <- o .: "lifetime"
         tsbCustomSettings <- customParser o
         return TopologySettingsBuilder{..}

@@ -9,6 +9,7 @@ import           Data.Default                 (Default (..))
 import           Universum
 
 import           Sdn.Protocol.Classic.Phases
+import           Sdn.Protocol.Common.Phases   (simpleProposal)
 import           Sdn.Protocol.Common.Topology
 import           Sdn.Protocol.Processes
 import           Sdn.Protocol.Versions        (Classic)
@@ -24,7 +25,7 @@ instance Default (CustomTopologySettings Classic) where
 instance HasVersionTopologyActions Classic where
     versionTopologyActions _ =
         TopologyActions
-        { proposeAction = propose
+        { proposeAction = simpleProposal (propose . one)
         , startBallotAction = phase1a
         , leaderListeners =
             [ listener @Leader rememberProposal
@@ -38,4 +39,3 @@ instance HasVersionTopologyActions Classic where
             [ listener @Learner $ learn mempty
             ]
         }
-

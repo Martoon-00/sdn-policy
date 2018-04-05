@@ -5,8 +5,14 @@
 -- | Utilities for various phases of Paxos.
 
 module Sdn.Protocol.Common.Phases
-    ( MonadPhase
+    ( MakeProposal
+    , simpleProposal
+    , BatchingSettings (..)
+    , batchingProposal
+    , batchedOrSimpleProposals
     , LearningCallback (..)
+
+    , MonadPhase
     , updateLearnedValue
     , warnOnPartialCStructApply
     , warnOnPartialCommandsApply
@@ -18,19 +24,47 @@ module Sdn.Protocol.Common.Phases
 import           Control.Lens                 (at, non, (%=), (.=), (<%=))
 import           Control.TimeWarp.Rpc         (MonadRpc)
 import           Control.TimeWarp.Timed       (MonadTimed (..))
-import           Data.Default                 (def)
+import           Data.Default                 (Default (..))
 import qualified Data.Set                     as S
 import           Formatting                   (build, sformat, (%))
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra                    (MonadLog, MonadReporting, RpcOptions,
-                                               listF, logError, logInfo, presence, submit,
+import           Sdn.Extra                    (MonadLog, MonadReporting,
+                                               PreparedAction (..), RpcOptions, listF,
+                                               logError, logInfo, presence, submit,
                                                throwOnFail)
+import           Sdn.Extra.Batching
 import           Sdn.Protocol.Common.Messages
 import           Sdn.Protocol.Context
 import           Sdn.Protocol.Processes
 import           Sdn.Protocol.Versions
+
+type MakeProposal m = PreparedAction (DeclaredRawCmd m) m
+
+simpleProposal :: Applicative m => (DeclaredRawCmd m -> m ()) -> MakeProposal m
+simpleProposal = PreparedAction . pure
+
+batchingProposal
+    :: (MonadIO m, MonadCatch m, MonadTimed m)
+    => BatchingSettings -> (NonEmpty (DeclaredRawCmd m) -> m ()) -> MakeProposal m
+batchingProposal = batchedAction
+
+batchedOrSimpleProposals
+    :: (MonadIO m, MonadCatch m, MonadTimed m)
+    => Maybe BatchingSettings
+    -> (NonEmpty (DeclaredRawCmd m) -> m ())
+    -> MakeProposal m
+batchedOrSimpleProposals mbs propose = case mbs of
+    Nothing -> simpleProposal (propose . one)
+    Just bs -> batchingProposal bs propose
+
+
+-- | Executed when new pack of policies is applied.
+-- Batched for optimization purposes.
+newtype LearningCallback m = LearningCallback
+    { runLearningCallback :: NonEmpty (DeclaredCmd m) -> m ()
+    }
 
 -- | Common constraints for all phases.
 type MonadPhase cstruct m =
@@ -105,10 +139,6 @@ updateLearnedValue newLearned = do
     reportNewLearnedCStruct new =
         logInfo $
         sformat ("New learned cstruct: "%build) new
-
-newtype LearningCallback m = LearningCallback
-    { runLearningCallback :: NonEmpty (DeclaredCmd m) -> m ()
-    }
 
 instance Applicative m => Monoid (LearningCallback m) where
     mempty = LearningCallback $ \_ -> pure ()

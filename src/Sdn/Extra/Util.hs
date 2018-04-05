@@ -319,3 +319,11 @@ takeNoMoreThanOne desc options = case toList options of
 whenJust' :: Applicative m => Maybe a -> (a -> m b) -> m (Maybe b)
 whenJust' Nothing _  = pure Nothing
 whenJust' (Just x) f = Just <$> f x
+
+-- | Action which requires preparation.
+--
+-- First monadic layer of result should be unwrapped once at preparation stage,
+-- and second one stands for action itself.
+data PreparedAction a m = PreparedAction
+    { prepareToAct :: m (a -> m ())
+    }

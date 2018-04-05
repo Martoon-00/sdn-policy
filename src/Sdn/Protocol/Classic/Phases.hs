@@ -12,7 +12,8 @@ module Sdn.Protocol.Classic.Phases
     , learn
     ) where
 
-import           Control.Lens                  (at, non, (%=), (.=), (<%=), (<+=), (<>=))
+import           Control.Lens                  (at, non, (%=), (.=), (<%=), (<+=))
+import qualified Data.Set                      as S
 import           Formatting                    (build, sformat, (%))
 import           Universum
 
@@ -31,25 +32,25 @@ import           Sdn.Protocol.Versions
 propose
     :: forall cstruct m.
        (MonadPhase cstruct m, HasContextOf Proposer Classic m)
-    => RawCmd cstruct -> m ()
-propose policy = do
-    logInfo $ sformat ("Proposing policy: "%build) policy
+    => NonEmpty (RawCmd cstruct) -> m ()
+propose policies = do
+    logInfo $ sformat ("Proposing policies: "%listF "," build) policies
     -- remember policy (for testing purposes)
     withProcessStateAtomically $ do
-        proposerProposedPolicies <>= one policy
-        proposerUnconfirmedPolicies <>= one policy
+        proposerProposedPolicies %= (toList policies <>)
+        proposerUnconfirmedPolicies %= \s -> foldl (flip S.insert) s policies
     -- and send it to leader
-    broadcastTo (processAddresses Leader) (ProposalMsg @cstruct policy)
+    broadcastTo (processAddresses Leader) (ProposalMsg @cstruct policies)
 
 -- * Remembering proposals
 
 rememberProposal
     :: (MonadPhase cstruct m, HasContextOf Leader pv m)
     => ProposalMsg cstruct -> m ()
-rememberProposal (ProposalMsg policy) = do
+rememberProposal (ProposalMsg policies) = do
     -- atomically modify process'es state
     withProcessStateAtomically $ do
-        leaderProposedPolicies . forClassic . pendingProposedCommands %= (policy :)
+        leaderProposedPolicies . forClassic . pendingProposedCommands %= (toList policies <>)
 
 -- * Phase 1
 

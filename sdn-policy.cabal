@@ -17,6 +17,7 @@ library
   hs-source-dirs:      src
   exposed-modules:     Sdn.Base
                        Sdn.Extra
+                       Sdn.Extra.Batching
                        Sdn.Extra.Logging
                        Sdn.Extra.MemStorage
                        Sdn.Extra.Util

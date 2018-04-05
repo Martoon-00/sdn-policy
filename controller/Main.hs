@@ -9,7 +9,7 @@ module Main where
 import           Control.Lens             ((+=))
 import           Control.TimeWarp.Logging (usingLoggerName)
 import           Control.TimeWarp.Rpc     (MsgPackUdpOptions (..), runMsgPackUdpOpts)
-import           Control.TimeWarp.Timed   (for, fork_, interval, minute, sec, wait)
+import           Control.TimeWarp.Timed   (for, fork_, interval, minute, ms, sec, wait)
 import           Data.Default             (def)
 import           System.Random            (mkStdGen)
 import           Universum
@@ -21,7 +21,7 @@ import           Sdn.Extra                (atomicModifyIORefS, declareMemStorage
 import           Sdn.Policy.Fake
 import           Sdn.Protocol
 import qualified Sdn.Protocol.Classic     as Classic
-import           Sdn.Protocol.Common      (LearningCallback (..))
+import           Sdn.Protocol.Common      (BatchingSettings (..), LearningCallback (..))
 import qualified Sdn.Protocol.Fast        as Fast
 import qualified Sdn.Schedule             as S
 
@@ -41,7 +41,7 @@ main = do
                 atomicModifyIORefS learnedCounter (identity += length policies)
 
         let topologyActions =
-              (versionTopologyActions @Fast $ topologyCustomSettings settings)
+              (versionTopologyActions @Fast settings)
                 { learnerListeners =
                     [ listener @Learner $ Classic.learn callback
                     , listener @Learner $ Fast.learn callback
@@ -69,10 +69,17 @@ main = do
                     push (GoodPolicy $ fromIntegral p)
         , topologyProposerInsistance = \_ -> mempty  -- S.repeating 3 (interval 1 sec)
         , topologyBallotsSchedule = S.periodic (interval 1 sec)
+        , topologyProposalBatchSettings = Just proposalBatchSettings
         , topologyLifetime = interval 1 minute
         , topologyCustomSettings =
             FastTopologySettingsPart
             { topologyRecoveryDelay = interval 1 sec
             }
+        }
+
+    proposalBatchSettings =
+        BatchingSettings
+        { batchMaxSize = 10
+        , batchMaxJitter = interval 10 ms
         }
 

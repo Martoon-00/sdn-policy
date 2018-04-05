@@ -9,9 +9,8 @@ import           Universum
 
 import           Control.TimeWarp.Timed       (Microsecond, interval, sec)
 import           Data.Default                 (Default (..))
-import           Universum
-
 import qualified Sdn.Protocol.Classic.Phases  as Classic
+import           Sdn.Protocol.Common.Phases   (batchedOrSimpleProposals)
 import           Sdn.Protocol.Common.Topology
 import qualified Sdn.Protocol.Fast.Phases     as Fast
 import           Sdn.Protocol.Processes
@@ -31,9 +30,9 @@ instance Default (CustomTopologySettings Fast) where
 
 
 instance HasVersionTopologyActions Fast where
-    versionTopologyActions FastTopologySettingsPart{..} =
+    versionTopologyActions TopologySettings{..} =
         TopologyActions
-        { proposeAction = Fast.propose
+        { proposeAction = batchedOrSimpleProposals topologyProposalBatchSettings Fast.propose
         , startBallotAction = pass
         , leaderListeners =
             [ listener @Leader Classic.rememberProposal
@@ -50,3 +49,5 @@ instance HasVersionTopologyActions Fast where
             , listener @Learner $ Fast.learn mempty
             ]
         }
+      where
+        FastTopologySettingsPart{..} = topologyCustomSettings

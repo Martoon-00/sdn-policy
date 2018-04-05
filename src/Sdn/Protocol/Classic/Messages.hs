@@ -18,16 +18,16 @@ import           Formatting                   (bprint, build, (%))
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra                    (declareMessage)
+import           Sdn.Extra                    (declareMessage, listF)
 import           Sdn.Protocol.Common.Messages (HasMessageShortcut (..))
 
 -- | Message sent by proposer to leader in order to propose a new value.
-newtype ProposalMsg cstruct = ProposalMsg (RawCmd cstruct)
+newtype ProposalMsg cstruct = ProposalMsg (NonEmpty $ RawCmd cstruct)
     deriving (Generic)
 
 instance Buildable (RawCmd cstruct) =>
          Buildable (ProposalMsg cstruct) where
-    build (ProposalMsg p) = bprint ("Proposal message "%build) p
+    build (ProposalMsg p) = bprint ("Proposal message "%listF "," build) p
 
 instance HasMessageShortcut (ProposalMsg cstruct) where
     messageShortcut = "1a"

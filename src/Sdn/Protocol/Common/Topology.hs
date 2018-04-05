@@ -24,11 +24,13 @@ import           Sdn.Base
 import           Sdn.Extra                    (Message, MonadLog, MonadReporting,
                                                RpcOptions, coloredF, gray, logError,
                                                logInfo, loggerNameT, mkMemStorage,
-                                               readMemStorage, resetColoring, withColor)
+                                               prepareToAct, readMemStorage,
+                                               resetColoring, withColor)
 import           Sdn.Extra.MemStorage
 import qualified Sdn.Policy.Fake              as Fake
 import           Sdn.Protocol.Common.Messages
-import           Sdn.Protocol.Common.Phases   (confirmCommitted, isPolicyUnconfirmed)
+import           Sdn.Protocol.Common.Phases   (BatchingSettings, MakeProposal,
+                                               confirmCommitted, isPolicyUnconfirmed)
 import           Sdn.Protocol.Context
 import           Sdn.Protocol.Processes
 import           Sdn.Protocol.Versions
@@ -51,21 +53,23 @@ type TopologySchedule p = forall m. MonadTopology m => S.Schedule m p
 
 -- | Contains all info to build network which serves consensus algorithm.
 data TopologySettings pv cstruct = TopologySettings
-    { topologyMembers            :: Members
+    { topologyMembers               :: Members
       -- ^ Participants of given topology.
-    , topologyProposalSchedule   :: TopologySchedule (RawCmd cstruct)
+    , topologyProposalSchedule      :: TopologySchedule (RawCmd cstruct)
       -- ^ Given schedule of ballots,
       -- schedule according to which policies are generated and proposed.
-    , topologyProposerInsistance :: TopologySchedule () -> TopologySchedule ()
+    , topologyProposerInsistance    :: TopologySchedule () -> TopologySchedule ()
       -- ^ Schedule for repeating proposals of single policy.
       -- It will automatically stop executing when proposer finds out that
       -- policy is learned.
-    , topologyBallotsSchedule    :: TopologySchedule ()
+    , topologyBallotsSchedule       :: TopologySchedule ()
       -- ^ Schedule of ballots.
-    , topologyLifetime           :: Microsecond
+    , topologyProposalBatchSettings :: Maybe BatchingSettings
+      -- ^ Proposal batching, if specified
+    , topologyLifetime              :: Microsecond
       -- ^ How long network should exist.
       -- Once the hour comes, all actions are halted.
-    , topologyCustomSettings     :: CustomTopologySettings pv
+    , topologyCustomSettings        :: CustomTopologySettings pv
       -- ^ Settings related to particular version of consensus algorithm.
     }
 
@@ -82,6 +86,7 @@ instance Default (CustomTopologySettings pv) =>
             every3rd <- S.maskExecutions (cycle [True, False, False])
             ballotSchedule <* every3rd
         , topologyBallotsSchedule = S.execute
+        , topologyProposalBatchSettings = Nothing
         , topologyLifetime = interval 999 hour
         , topologyCustomSettings = def
         }
@@ -166,7 +171,7 @@ type TopologyLauncher pv m =
 
 -- | How processes of various roles are supposed to work.
 data TopologyActions pv m = TopologyActions
-    { proposeAction     :: HasMembers => DeclaredRawCmd m -> ProcessM Proposer pv m ()
+    { proposeAction     :: HasMembers => MakeProposal (ProcessM Proposer pv m)
     , startBallotAction :: HasMembers => ProcessM Leader pv m ()
     , leaderListeners   :: HasMembers => [Listener Leader pv m]
     , acceptorListeners :: HasMembers => [Listener Acceptor pv m]
@@ -184,6 +189,7 @@ launchPaxosWith TopologyActions{..} seed TopologySettings{..} = withMembers topo
 
     proposerState <- newProcess Proposer . work (for topologyLifetime) $ do
         skipFirst <- S.maskExecutions (False : repeat True)
+        makeProposal <- prepareToAct proposeAction
 
         S.runSchedule_ proposalSeed . S.limited topologyLifetime $ do
             -- wait for servers to bootstrap
@@ -194,7 +200,7 @@ launchPaxosWith TopologyActions{..} seed TopologySettings{..} = withMembers topo
                     skipFirst
                     S.executeWhile (isPolicyUnconfirmed policy) pass
             S.execute <> repetitions
-            lift $ proposeAction policy
+            lift $ makeProposal policy
 
         serve (processPort Proposer) =<< sequence
             [ listener @Proposer confirmCommitted
@@ -248,11 +254,9 @@ class ProtocolVersion pv =>
     versionTopologyActions
         :: forall m.
            MonadTopology m
-        => CustomTopologySettings pv -> TopologyActions pv m
+        => TopologySettings pv (DeclaredCStruct m) -> TopologyActions pv m
 
 -- | Launch version of paxos.
 launchPaxos :: HasVersionTopologyActions pv => TopologyLauncher pv m
-launchPaxos gen settings = launchPaxosWith (versionTopologyActions customSettings) gen settings
-  where
-    customSettings = topologyCustomSettings settings
+launchPaxos gen settings = launchPaxosWith (versionTopologyActions settings) gen settings
 
