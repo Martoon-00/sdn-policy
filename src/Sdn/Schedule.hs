@@ -14,6 +14,7 @@ module Sdn.Schedule
     , splitGenSeed
 
     -- * schedules
+    , wrapped
     , generate
     , execute
 
@@ -123,7 +124,7 @@ instance MonadIO m => Monad (Schedule m) where
         let (gen1, gen2) = split (scGen ctx)
         genBox <- newIORef gen1
         let push p = do
-               gen' <- atomicModifyIORefS genBox $ state split
+               gen' <- atomicModifyIORef genBox split
                case f p of Schedule s2 -> s2 ctx{ scGen = gen' }
         s1 ctx{ scNext = push, scGen = gen2 }
 
@@ -133,6 +134,11 @@ instance MonadIO m => MonadIO (Schedule m) where
 instance MonadTrans Schedule where
     lift job = Schedule $ \ctx -> job >>= scYield ctx
 
+
+-- | Manually dump items.
+wrapped :: Monad m => ((a -> m ()) -> m ()) -> Schedule m a
+wrapped pusher = Schedule $ \ctx ->
+    pusher $ \val -> scNext ctx val
 
 -- | Just fires once, generating arbitrary job data.
 --

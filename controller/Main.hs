@@ -7,18 +7,17 @@
 module Main where
 
 import           Control.Lens             ((+=))
-import           Control.TimeWarp.Logging (setLoggerName, usingLoggerName)
+import           Control.TimeWarp.Logging (usingLoggerName)
 import           Control.TimeWarp.Rpc     (MsgPackUdpOptions (..), runMsgPackUdpOpts)
 import           Control.TimeWarp.Timed   (for, fork_, interval, minute, sec, wait)
 import           Data.Default             (def)
 import           System.Random            (mkStdGen)
-import           Test.QuickCheck          (arbitrary, resize)
 import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra                (atomicModifyIORefS, declareMemStorage,
                                            declareMonadicMark, ioRefMemStorage, logInfo,
-                                           runNoErrorReporting, setDropLoggerName)
+                                           runNoErrorReporting)
 import           Sdn.Policy.Fake
 import           Sdn.Protocol
 import qualified Sdn.Protocol.Classic     as Classic
@@ -33,14 +32,13 @@ main = do
         networkOptions = def{ udpMessageSizeLimit = 15000 }
 
     -- environment initialization
-    runMsgPackUdpOpts networkOptions . runLogging $ declareMemStorage ioRefMemStorage $ declareMonadicMark @(CStructType Configuration) $ setDropLoggerName $ do
+    runMsgPackUdpOpts networkOptions . runLogging $ declareMemStorage ioRefMemStorage $ declareMonadicMark @(CStructType Configuration) $ do
         logInfo "Starting"
 
         learnedCounter <- newIORef 0
 
         let callback = LearningCallback $ \policies -> do
                 atomicModifyIORefS learnedCounter (identity += length policies)
-                setLoggerName mempty $ logInfo $ "Mem" -- <> show policies
 
         let topologyActions =
               (versionTopologyActions @Fast $ topologyCustomSettings settings)
@@ -66,8 +64,9 @@ main = do
         TopologySettings
         { topologyMembers = Members{ acceptorsNum = 3, learnersNum = 1 }
         , topologyProposalSchedule = do
-            S.times 1000
-            S.generate (GoodPolicy <$> resize 1000000 arbitrary)
+            S.wrapped $ \push ->
+                forM_ [1..1000 :: Int] $ \p ->
+                    push (GoodPolicy $ fromIntegral p)
         , topologyProposerInsistance = \_ -> S.repeating 3 (interval 1 sec)
         , topologyBallotsSchedule = S.periodic (interval 1 sec)
         , topologyLifetime = interval 1 minute
