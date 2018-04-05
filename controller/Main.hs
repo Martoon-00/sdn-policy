@@ -65,9 +65,9 @@ main = do
         { topologyMembers = Members{ acceptorsNum = 3, learnersNum = 1 }
         , topologyProposalSchedule = do
             S.wrapped $ \push ->
-                forM_ [1..1000 :: Int] $ \p ->
+                forM_ [1..3000 :: Int] $ \p ->
                     push (GoodPolicy $ fromIntegral p)
-        , topologyProposerInsistance = \_ -> S.repeating 3 (interval 1 sec)
+        , topologyProposerInsistance = \_ -> mempty  -- S.repeating 3 (interval 1 sec)
         , topologyBallotsSchedule = S.periodic (interval 1 sec)
         , topologyLifetime = interval 1 minute
         , topologyCustomSettings =

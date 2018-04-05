@@ -8,9 +8,6 @@ members:
 
 # schedules. See `topologies/schedules.yaml` for fine-tuning examples.
 proposals:
-  period:
-    ms: 100
-  schedule:
     once: good
 reproposals:
   period:

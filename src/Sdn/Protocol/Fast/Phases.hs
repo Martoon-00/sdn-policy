@@ -62,7 +62,7 @@ phase2b (Fast.ProposalMsg policiesToApply) = do
         accId <- use acceptorId
         pure $ Fast.Phase2bMsg @cstruct accId appliedPolicies
 
-    broadcastTo (processAddresses Leader <> processesAddresses Learner) msg
+    broadcastTo (processesAddresses Learner <> processAddresses Leader) msg
 
 -- * Learning
 
@@ -185,7 +185,7 @@ detectConflicts (Fast.Phase2bMsg accId (toList -> cstructDiff)) = do
 
             PolicyFixated acceptance -> do
                 let policyAcceptance = compose (acceptance, policy)
-                logInfo $ sformat ("Policy "%build%" has been fixated, not tracking it further")
+                logInfo $ sformat ("Policy "%build%" has been learned, not tracking it further")
                         policyAcceptance
 
                 -- TODO: stop tracking
