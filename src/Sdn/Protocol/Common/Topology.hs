@@ -27,6 +27,7 @@ import           Sdn.Extra                    (Message, MonadLog, MonadReporting
                                                prepareToAct, readMemStorage,
                                                resetColoring, withColor)
 import           Sdn.Extra.MemStorage
+import qualified Sdn.Extra.Schedule           as S
 import qualified Sdn.Policy.Fake              as Fake
 import           Sdn.Protocol.Common.Messages
 import           Sdn.Protocol.Common.Phases   (BatchingSettings, MakeProposal,
@@ -34,7 +35,6 @@ import           Sdn.Protocol.Common.Phases   (BatchingSettings, MakeProposal,
 import           Sdn.Protocol.Context
 import           Sdn.Protocol.Processes
 import           Sdn.Protocol.Versions
-import qualified Sdn.Schedule                 as S
 
 -- | Constraints for running a topology.
 type MonadTopology m =

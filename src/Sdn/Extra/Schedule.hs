@@ -3,7 +3,7 @@
 
 -- | Allows to specify schedules in convenient way.
 
-module Sdn.Schedule
+module Sdn.Extra.Schedule
     ( Schedule
     , MonadSchedule
     , runSchedule

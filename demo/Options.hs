@@ -28,11 +28,11 @@ import           Universum
 import           Sdn.Base
 import           Sdn.Extra            (WithDesc (..), descText, getWithDesc, listF,
                                        rightSpaced, (?:))
+import           Sdn.Extra.Schedule   (Schedule)
+import qualified Sdn.Extra.Schedule   as S
 import           Sdn.Policy.Fake
 import           Sdn.Protocol
 import           Sdn.Protocol.Common  (BatchingSettings (..))
-import           Sdn.Schedule         (Schedule)
-import qualified Sdn.Schedule         as S
 
 -- * Helpers
 

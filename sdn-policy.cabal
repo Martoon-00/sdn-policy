@@ -20,6 +20,7 @@ library
                        Sdn.Extra.Batching
                        Sdn.Extra.Logging
                        Sdn.Extra.MemStorage
+                       Sdn.Extra.Schedule
                        Sdn.Extra.Util
                        Sdn.Policy
                        Sdn.Policy.Fake
@@ -28,7 +29,6 @@ library
                        Sdn.Protocol.Common
                        Sdn.Protocol.Classic
                        Sdn.Protocol.Fast
-                       Sdn.Schedule
   other-modules:       Sdn.Base.CStruct
                        Sdn.Base.Error
                        Sdn.Base.Settings

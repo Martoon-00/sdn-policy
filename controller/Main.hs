@@ -18,12 +18,12 @@ import           Sdn.Base
 import           Sdn.Extra                (atomicModifyIORefS, declareMemStorage,
                                            declareMonadicMark, ioRefMemStorage, logInfo,
                                            runNoErrorReporting)
+import qualified Sdn.Extra.Schedule       as S
 import           Sdn.Policy.Fake
 import           Sdn.Protocol
 import qualified Sdn.Protocol.Classic     as Classic
 import           Sdn.Protocol.Common      (BatchingSettings (..), LearningCallback (..))
 import qualified Sdn.Protocol.Fast        as Fast
-import qualified Sdn.Schedule             as S
 
 main :: IO ()
 main = do
