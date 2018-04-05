@@ -92,7 +92,7 @@ learn callback (Fast.Phase2bMsg accId (toList -> cstructDiff)) = do
 
             withProcessStateAtomically $
                 use learnerLearned
-                    >>= throwOnFail ProtocolError . glb (liftCommand policyAcceptance)
+                    >>= throwOnFail ProtocolError . addCommand policyAcceptance
                     >>= (learnerLearned .= )
 
             return policyAcceptance
@@ -121,7 +121,7 @@ rememberVoteForPolicy
     -- TODO: distinguish old & new
 rememberVoteForPolicy atVotesL accId policyAcceptance =
     let (acceptance, policy) = decompose policyAcceptance
-    in  zoomOnPresense (atVotesL . at policy . non mempty) $ do
+    in  lift . zoomOnPresense (atVotesL . at policy . non mempty) $ do
             curValue <- use $ at accId
             when (curValue /= Nothing && curValue /= Just acceptance) $
                     throwM $ ProtocolError "Rebinded vote"
@@ -186,7 +186,8 @@ detectConflicts (Fast.Phase2bMsg accId (toList -> cstructDiff)) = do
 
             PolicyFixated acceptance -> do
                 let policyAcceptance = compose (acceptance, policy)
-                logInfo $ sformat ("Policy "%build%" has been learned, not tracking it further")
+                logInfo $ sformat ("Policy "%build%" supposedly has been learned, \
+                                   \not tracking it further")
                         policyAcceptance
 
                 -- TODO: stop tracking

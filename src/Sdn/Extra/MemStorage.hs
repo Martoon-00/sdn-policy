@@ -12,6 +12,7 @@
 module Sdn.Extra.MemStorage
     ( MemStorage (..)
     , ioRefMemStorage
+    , ioRefMemStorageUnsafe
     , stmMemStorage
 
     , HasMemStorage
@@ -31,7 +32,8 @@ import           Data.Reflection (Given (..), give)
 import           Universum
 
 import           Sdn.Extra.Util  (DeclaredMark, MonadicMark, atomicModifyIORefExcS,
-                                  declareMonadicMark, modifyTVarS)
+                                  atomicModifyIORefExcUnsafeS, declareMonadicMark,
+                                  modifyTVarS)
 
 -- | Base monad in which store allows to read/modify its entires.
 type family MemStoreTxMonad (store :: * -> *) :: * -> *
@@ -58,6 +60,10 @@ type instance MemStoreTxMonad IORef = IO
 -- | Creates mem storage based on 'IORef'.
 ioRefMemStorage :: MemStorage IORef
 ioRefMemStorage = MemStorage newIORef atomicModifyIORefExcS readIORef
+
+-- | Faster though unsafe (it uses 'throw') version of 'ioRefMemStorage'.
+ioRefMemStorageUnsafe :: MemStorage IORef
+ioRefMemStorageUnsafe = MemStorage newIORef atomicModifyIORefExcUnsafeS readIORef
 
 type instance MemStoreTxMonad TVar = STM
 

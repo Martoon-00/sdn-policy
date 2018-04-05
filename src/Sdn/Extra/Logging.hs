@@ -27,14 +27,12 @@ module Sdn.Extra.Logging
     ) where
 
 import           Control.Concurrent       (forkIO, threadDelay)
-import           Control.Lens             (Iso', iso)
+import           Control.Lens             (Iso', iso, makeLenses, (%=))
 import           Control.Monad.Reader     (mapReaderT)
-import           Control.Monad.Writer     (WriterT, runWriterT, tell)
 import           Control.TimeWarp.Logging (LoggerName (..), LoggerNameBox (..),
                                            WithNamedLogger (..))
 import           Control.TimeWarp.Rpc     (DelaysLayer, ExtendedRpcOptions, MonadRpc)
 import           Control.TimeWarp.Timed   (Microsecond, MonadTimed (..), ThreadId, ms)
-import qualified Data.DList               as D
 import           Data.List                (isInfixOf)
 import qualified Data.Text                as T
 import           Data.Time.Units          (toMicroseconds)
@@ -191,9 +189,6 @@ type instance ThreadId (NoErrorReporting m) = ThreadId m
 instance Monad m => MonadReporting (NoErrorReporting m) where
     reportError _ = return ()
 
-instance Monad m => MonadReporting (PureLog m) where
-    reportError err = PureLog $ tell mempty{ _errsPart = D.singleton err }
-
 logError :: (MonadLog m, MonadReporting m) => Text -> m ()
 logError msg = do
     logInfo $ withColor (ANSI.Dull, ANSI.Red) "Error: " <> msg
@@ -202,29 +197,38 @@ logError msg = do
 -- * Pure logging & error reporting
 
 data LogAndError = LogAndError
-    { _logsPart :: D.DList Text
-    , _errsPart :: D.DList Text
+    { _logsPart :: [Text]
+    , _errsPart :: [Text]
     }
+
+makeLenses ''LogAndError
 
 instance Monoid LogAndError where
     mempty = LogAndError mempty mempty
     LogAndError l1 e1 `mappend` LogAndError l2 e2 =
         LogAndError (l1 <> l2) (e1 <> e2)
 
-newtype PureLog m a = PureLog (WriterT LogAndError m a)
+newtype PureLog m a = PureLog (StateT LogAndError m a)
     deriving ( Functor, Applicative, Monad, MonadIO, MonadTrans
-             , MonadThrow, MonadCatch, MonadState __, MonadReader __)
+             , MonadThrow, MonadCatch, MonadReader __)
 
 launchPureLog
     :: (MonadCatch m, MonadLog n, MonadReporting n)
     => (forall x. m (x, a) -> n (x, b)) -> PureLog m a -> n b
 launchPureLog hoist' (PureLog action) = do
-    (logs, res) <- hoist' $ swap <$> runWriterT action
+    (logs, res) <- hoist' $ swap <$> runStateT action mempty
     mapM_ logInfo (_logsPart logs)
     mapM_ reportError (_errsPart logs)
     return res
 
+instance MonadState s m => MonadState s (PureLog m) where
+    get = lift get
+    put = lift . put
+    state = lift . state
+
 instance Monad m => MonadLog (PureLog m) where
     logInfo msg = PureLog $
-        tell mempty{ _logsPart = D.singleton msg }
+        logsPart %= (msg :)
 
+instance Monad m => MonadReporting (PureLog m) where
+    reportError err = PureLog $ errsPart %= (err :)

@@ -18,7 +18,7 @@ module Sdn.Policy.Fake
 import           Control.Lens        (AsEmpty (..), At (..), Index, Iso', IxValue,
                                       Ixed (..), Wrapped (..), iso, mapping, _Wrapped')
 import           Data.Default        (Default (..))
-import qualified Data.Map            as M
+import qualified Data.Map.Strict     as M
 import           Data.MessagePack    (MessagePack (..))
 import qualified Data.Set            as S
 import qualified Data.Text.Buildable
@@ -83,7 +83,7 @@ type PolicyEntry = Acceptance Policy
 
 -- | For our simplified model with abstract policies, cstruct is just set of
 -- policies.
-data Configuration = Configuration
+newtype Configuration = Configuration
     { unConfiguration :: S.Set PolicyEntry
     } deriving (Eq, Show)
 
@@ -188,10 +188,10 @@ instance CStruct Configuration where
     Configuration c1 `extends` Configuration c2 = c2 `S.isSubsetOf` c1
     difference = Exts.toList ... underneath2 S.difference
 
-    addCommand p c = case (p, toList c) of
-        (HappyPolicy _, HappyPolicy _ : _) ->
+    addCommand p c = case (p, S.lookupMin $ unConfiguration c) of
+        (HappyPolicy _, Just (HappyPolicy _)) ->
             -- optimization for profiling
-            pure $ underneath (S.insert p) c
+            pure $ Exts.coerce (S.insert p) c
         _ ->
             checkingAgreement (underneath . S.insert) p c
 

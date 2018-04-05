@@ -9,15 +9,16 @@ module Main where
 import           Control.Lens             ((+=))
 import           Control.TimeWarp.Logging (usingLoggerName)
 import           Control.TimeWarp.Rpc     (MsgPackUdpOptions (..), runMsgPackUdpOpts)
-import           Control.TimeWarp.Timed   (for, fork_, interval, minute, ms, sec, wait)
+import           Control.TimeWarp.Timed   (for, fork_, interval, ms, sec, wait)
 import           Data.Default             (def)
 import           System.Random            (mkStdGen)
 import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra                (atomicModifyIORefS, declareMemStorage,
-                                           declareMonadicMark, ioRefMemStorage, logInfo,
-                                           runNoErrorReporting)
+                                           declareMonadicMark, ioRefMemStorageUnsafe,
+                                           logInfo, runNoErrorReporting,
+                                           setDropLoggerName)
 import qualified Sdn.Extra.Schedule       as S
 import           Sdn.Policy.Fake
 import           Sdn.Protocol
@@ -32,7 +33,7 @@ main = do
         networkOptions = def{ udpMessageSizeLimit = 15000 }
 
     -- environment initialization
-    runMsgPackUdpOpts networkOptions . runLogging $ declareMemStorage ioRefMemStorage $ declareMonadicMark @(CStructType Configuration) $ do
+    runMsgPackUdpOpts networkOptions . runLogging $ declareMemStorage ioRefMemStorageUnsafe $ declareMonadicMark @(CStructType Configuration) $ setDropLoggerName $ do
         logInfo "Starting"
 
         learnedCounter <- newIORef 0
@@ -70,7 +71,7 @@ main = do
         , topologyProposerInsistance = \_ -> mempty  -- S.repeating 3 (interval 1 sec)
         , topologyBallotsSchedule = S.periodic (interval 1 sec)
         , topologyProposalBatchSettings = Just proposalBatchSettings
-        , topologyLifetime = interval 1 minute
+        , topologyLifetime = interval 5 sec
         , topologyCustomSettings =
             FastTopologySettingsPart
             { topologyRecoveryDelay = interval 1 sec

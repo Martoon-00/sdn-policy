@@ -13,12 +13,15 @@
 
 module Sdn.Extra.Util where
 
+import           Control.Exception        (Handler (..), throw)
 import           Control.Lens             (Getting, Iso, Iso', LensRules, Wrapped (..),
                                            from, has, involuted, iso, lens, lensField,
                                            lensRules, makeLenses, mappingNamer, review)
+import           Control.Monad.Catch      (MonadCatch (..), MonadThrow (..))
 import           Control.Monad.Catch.Pure (Catch, runCatch)
 import           Control.Monad.Random     (MonadRandom, getRandom)
 import           Control.Monad.STM.Class  (MonadSTM (..))
+import           Control.Spoon            (teaspoonWithHandles)
 import           Control.TimeWarp.Logging (WithNamedLogger)
 import           Control.TimeWarp.Rpc     (MonadRpc (..), NetworkAddress, RpcRequest (..),
                                            mkRequest)
@@ -40,7 +43,7 @@ import qualified System.Console.ANSI      as ANSI
 import           Test.QuickCheck          (Gen, choose, suchThat)
 import           Test.QuickCheck.Gen      (unGen)
 import           Test.QuickCheck.Random   (mkQCGen)
-import           Universum                hiding (toList)
+import           Universum                hiding (throwM, toList)
 import           Unsafe                   (unsafeFromJust)
 
 -- | Declare instance for one-way message.
@@ -102,6 +105,27 @@ atomicModifyIORefExcS ref modifier = do
         either (\e -> (s, Left e)) (second Right) $
         runCatch $ fmap swap $ runStateT modifier s
     either throwM pure resOrErr
+
+-- | Provides 'MonadThrow' and 'MonadCatch' based on pure exceptions,
+-- generally for be faster than 'CatchT'.
+newtype UnsafeExc m a = UnsafeExc
+    { runUnsafeExc :: m a
+    } deriving (Functor, Applicative, Monad)
+
+instance Monad m => MonadThrow (UnsafeExc m) where
+    throwM = throw
+instance Monad m => MonadCatch (UnsafeExc m) where
+    UnsafeExc action `catch` handle = UnsafeExc $
+        fromMaybe (error "UnsafeExc: unexpected error") $
+        teaspoonWithHandles [Handler $ pure . Just . runUnsafeExc . handle] action
+
+-- | Faster though unsafe version of 'atomicModifyIORefExcS'.
+atomicModifyIORefExcUnsafeS
+    :: (MonadIO m, MonadThrow m)
+    => IORef s -> StateT s (UnsafeExc Identity) a -> m a
+atomicModifyIORefExcUnsafeS ref modifier = do
+    atomicModifyIORef ref $ \s ->
+        swap $ runIdentity $ runUnsafeExc $ runStateT modifier s
 
 -- | Lens which looks inside the list-like structure
 listL
@@ -247,16 +271,19 @@ exit = mzero
 -- | Modify under newtype.
 underneath :: Wrapped s => (Unwrapped s -> Unwrapped s) -> s -> s
 underneath = over _Wrapped'
+{-# INLINE underneath #-}
 
 -- | Similar to 'over', but for functions which accepts 2 arguments.
 over2 :: Iso' s a -> (a -> a -> a) -> s -> s -> s
 over2 l f a b = f (a ^. l) (b ^. l) ^. from l
+{-# INLINE over2 #-}
 
 -- | Apply function of 2 arguments under newtype.
 underneath2
     :: Wrapped s
     => (Unwrapped s -> Unwrapped s -> Unwrapped s) -> s -> s -> s
 underneath2 = over2 _Wrapped'
+{-# INLINE underneath2 #-}
 
 -- | Like @pack@ for @Newtype@, but in terms of 'Wrapped'.
 pack :: Wrapped s => Unwrapped s -> s

@@ -50,7 +50,7 @@ library
   build-depends:       base >= 4.7 && < 5
                      , ansi-terminal
                      , autoexporter
-                     , containers
+                     , containers >= 0.5.9
                      , data-default
                      , dlist
                      , exceptions
@@ -62,6 +62,7 @@ library
                      , msgpack
                      , mtl
                      , reflection
+                     , spoon
                      , stm
                      , tagged
                      , template-haskell
