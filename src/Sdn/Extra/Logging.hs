@@ -26,26 +26,24 @@ module Sdn.Extra.Logging
     , launchPureLog
     ) where
 
-import           Control.Concurrent             (forkIO)
-import qualified Control.Concurrent.STM.TBMChan as TBM
-import           Control.Lens                   (Iso', iso)
-import           Control.Monad.Reader           (mapReaderT)
-import           Control.Monad.Writer           (WriterT, runWriterT, tell)
-import           Control.TimeWarp.Logging       (LoggerName (..), LoggerNameBox (..),
-                                                 WithNamedLogger (..))
-import           Control.TimeWarp.Rpc           (DelaysLayer, ExtendedRpcOptions,
-                                                 MonadRpc)
-import           Control.TimeWarp.Timed         (Microsecond, MonadTimed (..), ThreadId)
-import qualified Data.DList                     as D
-import           Data.List                      (isInfixOf)
-import qualified Data.Text                      as T
-import           Data.Time.Units                (toMicroseconds)
-import           Formatting                     (build, left, sformat, stext, (%))
-import           GHC.IO.Unsafe                  (unsafePerformIO)
-import qualified System.Console.ANSI            as ANSI
-import           Universum                      hiding (pass)
+import           Control.Concurrent       (forkIO, threadDelay)
+import           Control.Lens             (Iso', iso)
+import           Control.Monad.Reader     (mapReaderT)
+import           Control.Monad.Writer     (WriterT, runWriterT, tell)
+import           Control.TimeWarp.Logging (LoggerName (..), LoggerNameBox (..),
+                                           WithNamedLogger (..))
+import           Control.TimeWarp.Rpc     (DelaysLayer, ExtendedRpcOptions, MonadRpc)
+import           Control.TimeWarp.Timed   (Microsecond, MonadTimed (..), ThreadId, ms)
+import qualified Data.DList               as D
+import           Data.List                (isInfixOf)
+import qualified Data.Text                as T
+import           Data.Time.Units          (toMicroseconds)
+import           Formatting               (build, left, sformat, stext, (%))
+import           GHC.IO.Unsafe            (unsafePerformIO)
+import qualified System.Console.ANSI      as ANSI
+import           Universum                hiding (pass)
 
-import           Sdn.Extra.Util                 (MonadicMark (..), coloredF, gray)
+import           Sdn.Extra.Util           (MonadicMark (..), coloredF, gray)
 
 -- * Util
 
@@ -108,14 +106,16 @@ instance MonadLog m => MonadLog (StateT r m)
 instance MonadLog m => MonadLog (MaybeT m)
 instance MonadLog m => MonadLog (MonadicMark mark m)
 
-logBuffer :: TBM.TBMChan LogEntry
+logBuffer :: IORef [LogEntry]
 logBuffer = unsafePerformIO $ do
-    chan <- TBM.newTBMChanIO 100
-    _ <- forkIO . void . runMaybeT . forever $ do
-        entry <- MaybeT . atomically $ TBM.readTBMChan chan
-        lift . putText $ loggingFormatter entry
+    var <- newIORef []
+    _ <- forkIO . forever $ do
+        entries <- atomicModifyIORef var (\es -> ([], es))
+        forM_ (reverse entries) $ \entry ->
+            putText $ loggingFormatter entry
+        threadDelay (fromIntegral . toMicroseconds $ ms 10)
 
-    return chan
+    return var
 {-# NOINLINE logBuffer #-}
 
 instance With [MonadIO, MonadTimed] m => MonadLog (LoggerNameBox m) where
@@ -124,7 +124,7 @@ instance With [MonadIO, MonadTimed] m => MonadLog (LoggerNameBox m) where
         name <- getLoggerName
         let entry = LogEntry name time msg
         unless (isDropName name) $
-            atomically $ TBM.writeTBMChan logBuffer entry
+            liftIO $ atomicModifyIORef logBuffer (\es -> (entry : es, ()))
 
 -- * Error reporting
 

@@ -62,7 +62,6 @@ library
                      , mtl
                      , reflection
                      , stm
-                     , stm-chans
                      , tagged
                      , template-haskell
                      , text
