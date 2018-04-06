@@ -52,7 +52,7 @@ withProcessStateAtomically
 withProcessStateAtomically modifier = do
     ProcessContext{..} <- ask
     MemStorage{..} <- getMemStorage
-    launchPureLog (atomicallyModifyMemStorage pcState) modifier
+    launchPureLog ({-# SCC state_modification #-} atomicallyModifyMemStorage pcState) modifier
 
 data ForBothRoundTypes a = ForBothRoundTypes
     { _forClassic :: a

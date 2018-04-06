@@ -11,7 +11,8 @@ module Sdn.Protocol.Fast.Phases
     , detectConflicts
     ) where
 
-import           Control.Lens                  (at, non, (%=), (.=))
+import           Control.Exception             (assert)
+import           Control.Lens                  (at, non, (%%=), (%=), (.=))
 import qualified Data.Map                      as M
 import qualified Data.Set                      as S
 import           Formatting                    (build, sformat, (%))
@@ -19,8 +20,8 @@ import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra                     (compose, decompose, listF, logInfo,
-                                                presence, takeNoMoreThanOne, throwOnFail,
-                                                whenJust', zoom, zoomOnPresense)
+                                                panicOnFail, presence, takeNoMoreThanOne,
+                                                throwOnFail, whenJust', zoom)
 import qualified Sdn.Protocol.Classic.Messages as Classic
 import qualified Sdn.Protocol.Classic.Phases   as Classic
 import           Sdn.Protocol.Common.Phases
@@ -73,11 +74,17 @@ learn
     => LearningCallback m -> Fast.Phase2bMsg cstruct -> m ()
 learn callback (Fast.Phase2bMsg accId (toList -> cstructDiff)) = do
     -- TODO perf: use foldlM
-    voteUpdates <- fmap catMaybes $ forM cstructDiff $ \policyAcceptance ->
-        withProcessStateAtomically $
-        rememberVoteForPolicy @cstruct learnerFastVotes accId policyAcceptance
+    -- let rememberPolicy policyAcceptance !acc = do
+    --         mp <- withProcessStateAtomically $
+    --             rememberVoteForPolicy @cstruct learnerFastVotes accId policyAcceptance
+    --         return $ maybe identity (:) mp acc
+    -- voteUpdates <- foldrM rememberPolicy [] cstructDiff
 
-    fixatedValues <- forM voteUpdates $ \(policy, _, votesForPolicy) -> do
+    voteUpdates <- withProcessStateAtomically $
+        fmap catMaybes . forM cstructDiff $ \acceptancePolicy ->
+        rememberVoteForPolicy @cstruct learnerFastVotes accId acceptancePolicy
+
+    fixatedValues <- fmap catMaybes . forM voteUpdates $ \(policy, _, votesForPolicy) -> do
         let perValueVotes = transposeVotes votesForPolicy
 
         mValueFixated <-
@@ -90,14 +97,15 @@ learn callback (Fast.Phase2bMsg accId (toList -> cstructDiff)) = do
             logInfo $ sformat ("Policy "%build%" has been fixated")
                       policyAcceptance
 
-            withProcessStateAtomically $
-                use learnerLearned
-                    >>= throwOnFail ProtocolError . addCommand policyAcceptance
-                    >>= (learnerLearned .= )
-
             return policyAcceptance
 
-    whenNotNull (catMaybes fixatedValues) $
+    withProcessStateAtomically $
+        learnerLearned %=
+            let addOne cstruct value =
+                    panicOnFail ProtocolError $ addCommand value cstruct
+            in  \learned -> foldl addOne learned fixatedValues
+
+    whenNotNull fixatedValues $
         runLearningCallback callback
 
 -- * Recovery detection and initialition
@@ -121,15 +129,15 @@ rememberVoteForPolicy
     -- TODO: distinguish old & new
 rememberVoteForPolicy atVotesL accId policyAcceptance =
     let (acceptance, policy) = decompose policyAcceptance
-    in  lift . zoomOnPresense (atVotesL . at policy . non mempty) $ do
-            curValue <- use $ at accId
-            when (curValue /= Nothing && curValue /= Just acceptance) $
-                    throwM $ ProtocolError "Rebinded vote"
-
-            oldVotes <- get
-            at accId .= Just acceptance
-            newVotes <- get
-            return (policy, oldVotes, newVotes)
+    in  lift . fmap getAlt $ atVotesL . at policy . non mempty %%= \oldVotes ->
+            let newVotes = oldVotes & at accId .~ Just acceptance
+            in assertNoRebind oldVotes acceptance $
+               (Alt $ Just (policy, oldVotes, newVotes), newVotes)
+  where
+    -- checks we are not changing existing vote for particular "acceptance" value
+    assertNoRebind oldVotes newAcceptance =
+        let oldAcceptance = oldVotes ^. at accId
+        in  assert (oldAcceptance == Nothing || oldAcceptance == Just newAcceptance)
 
 data PolicyChoiceStatus
     = TooFewVotes

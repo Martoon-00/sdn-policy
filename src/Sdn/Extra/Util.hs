@@ -147,6 +147,12 @@ throwOnFail
     => (e -> e') -> Either e a -> m a
 throwOnFail mkException = either (throwM . mkException) pure
 
+-- | Move from pure exception to pure error.
+panicOnFail
+    :: (Exception e')
+    => (e -> e') -> Either e a -> a
+panicOnFail mkException = either (throw . mkException) identity
+
 -- | Modify text produced by formatter.
 mapfText :: (Builder -> Builder) -> Format a b -> Format a b
 mapfText how (Format f) = Format $ f . \g t -> g $ how t
