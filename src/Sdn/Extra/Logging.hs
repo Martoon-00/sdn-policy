@@ -14,6 +14,7 @@ module Sdn.Extra.Logging
     , withColor
     , resetColoring
     , setDropLoggerName
+    , isDropLoggerName
     , logInfo
     , logError
 
@@ -24,6 +25,8 @@ module Sdn.Extra.Logging
     , reportError
     , PureLog
     , launchPureLog
+    , DroppingLog
+    , runDroppingLog
     ) where
 
 import           Control.Concurrent       (forkIO, threadDelay)
@@ -80,10 +83,10 @@ loggingFormatter (LogEntry name (toMicroseconds -> time) msg) =
         in sformat (left 3 '0'%":"%left 2 '0') seconds centiseconds
 
 dropName :: LoggerName
-dropName = "*no-logging*"
+dropName = "-"
 
-isDropName :: LoggerName -> Bool
-isDropName (LoggerName name) =
+isDropLoggerName :: LoggerName -> Bool
+isDropLoggerName (LoggerName name) =
     let LoggerName dropName' = dropName
     in  (dropName' <> ".") `isInfixOf` name
 
@@ -93,11 +96,14 @@ setDropLoggerName = modifyLoggerName (dropName <> )
 -- * Logging
 
 class Monad m => MonadLog m where
-    logInfo :: Text -> m ()
-    default logInfo
+    logInfoPack :: [Text] -> m ()
+    default logInfoPack
         :: (MonadTrans t, Monad n, MonadLog n, t n ~ m)
-        => Text -> m ()
-    logInfo = lift . logInfo
+        => [Text] -> m ()
+    logInfoPack = lift . logInfoPack
+
+logInfo :: MonadLog m => Text -> m ()
+logInfo = logInfoPack . one
 
 instance MonadLog m => MonadLog (ReaderT r m)
 instance MonadLog m => MonadLog (StateT r m)
@@ -117,12 +123,12 @@ logBuffer = unsafePerformIO $ do
 {-# NOINLINE logBuffer #-}
 
 instance With [MonadIO, MonadTimed] m => MonadLog (LoggerNameBox m) where
-    logInfo msg = do
-        time <- virtualTime
+    logInfoPack msgs = do
         name <- getLoggerName
-        let entry = LogEntry name time msg
-        unless (isDropName name) $
-            liftIO $ atomicModifyIORef logBuffer (\es -> (entry : es, ()))
+        unless (isDropLoggerName name) $ do
+            time <- virtualTime
+            let entries = LogEntry name time <$> msgs
+            liftIO $ atomicModifyIORef logBuffer (\es -> (entries ++ es, ()))
 
 -- * Error reporting
 
@@ -162,6 +168,7 @@ runErrorReporting (ErrorReporting action) = do
     res <- runReaderT action var
     errs <- readTVarIO var
     return (reverse errs, res)
+
 
 instance (MonadIO m, WithNamedLogger m) =>
          MonadReporting (ErrorReporting m) where
@@ -208,6 +215,7 @@ instance Monoid LogAndError where
     LogAndError l1 e1 `mappend` LogAndError l2 e2 =
         LogAndError (l1 <> l2) (e1 <> e2)
 
+-- | Monad which carries made logs.
 newtype PureLog m a = PureLog (StateT LogAndError m a)
     deriving ( Functor, Applicative, Monad, MonadIO, MonadTrans
              , MonadThrow, MonadCatch, MonadReader __)
@@ -217,7 +225,7 @@ launchPureLog
     => (forall x. m (x, a) -> n (x, b)) -> PureLog m a -> n b
 launchPureLog hoist' (PureLog action) = do
     (logs, res) <- hoist' $ swap <$> runStateT action mempty
-    mapM_ logInfo (_logsPart logs)
+    logInfoPack (_logsPart logs)
     mapM_ reportError (_errsPart logs)
     return res
 
@@ -227,8 +235,24 @@ instance MonadState s m => MonadState s (PureLog m) where
     state = lift . state
 
 instance Monad m => MonadLog (PureLog m) where
-    logInfo msg = PureLog $
-        logsPart %= (msg :)
+    logInfoPack msgs = PureLog $
+        logsPart %= (msgs ++)
 
 instance Monad m => MonadReporting (PureLog m) where
     reportError err = PureLog $ errsPart %= (err :)
+
+-- | Monad which drops logs.
+newtype DroppingLog m a = DroppingLog
+    { runDroppingLog :: m a
+    } deriving ( Functor, Applicative, Monad, MonadIO
+               , MonadThrow, MonadCatch, MonadReader __, MonadState __)
+
+instance MonadTrans DroppingLog where
+    lift = DroppingLog
+
+instance Monad m => MonadLog (DroppingLog m) where
+    logInfoPack _ = return ()
+
+instance Monad m => MonadReporting (DroppingLog m) where
+    reportError _ = return ()
+
