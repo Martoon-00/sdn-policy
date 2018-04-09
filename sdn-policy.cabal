@@ -137,8 +137,8 @@ executable demo
                        ExplicitForAll
   ghc-options:         -Wall
 
-executable controller
-  hs-source-dirs:      controller
+executable bench
+  hs-source-dirs:      bench
   main-is:             Main.hs
   ghc-options:         -threaded -O2 -rtsopts -with-rtsopts=-N
   build-depends:       base
