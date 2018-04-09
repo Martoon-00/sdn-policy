@@ -2,6 +2,9 @@
 set -e
 set -o pipefail
 
+# Script provides special way of profiling where graphical report on object
+# allocations is made.
+
 report_name="report-profiling"
 
 # note: this line will do nothing if project is already built without profiling
