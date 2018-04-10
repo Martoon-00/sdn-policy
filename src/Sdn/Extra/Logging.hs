@@ -29,22 +29,25 @@ module Sdn.Extra.Logging
     , runDroppingLog
     ) where
 
-import           Control.Concurrent       (forkIO, threadDelay)
-import           Control.Lens             (Iso', iso, makeLenses, (%=))
-import           Control.Monad.Reader     (mapReaderT)
-import           Control.TimeWarp.Logging (LoggerName (..), LoggerNameBox (..),
-                                           WithNamedLogger (..))
-import           Control.TimeWarp.Rpc     (DelaysLayer, ExtendedRpcOptions, MonadRpc)
-import           Control.TimeWarp.Timed   (Microsecond, MonadTimed (..), ThreadId, ms)
-import           Data.List                (isInfixOf)
-import qualified Data.Text                as T
-import           Data.Time.Units          (toMicroseconds)
-import           Formatting               (build, left, sformat, stext, (%))
-import           GHC.IO.Unsafe            (unsafePerformIO)
-import qualified System.Console.ANSI      as ANSI
-import           Universum                hiding (pass)
+import           Control.Concurrent          (forkIO, threadDelay)
+import           Control.Lens                (Iso', iso, makeLenses, (%=))
+import           Control.Monad.Base          (MonadBase)
+import           Control.Monad.Reader        (mapReaderT)
+import           Control.Monad.Trans.Control (MonadBaseControl (..))
+import           Control.TimeWarp.Logging    (LoggerName (..), LoggerNameBox (..),
+                                              WithNamedLogger (..))
+import           Control.TimeWarp.Rpc        (DelaysLayer, ExtendedRpcOptions, MonadRpc)
+import           Control.TimeWarp.Timed      (Microsecond, MonadTimed (..), ThreadId, ms)
+import           Data.List                   (isInfixOf)
+import qualified Data.Text                   as T
+import           Data.Time.Units             (toMicroseconds)
+import           Formatting                  (build, left, sformat, stext, (%))
+import           GHC.IO.Unsafe               (unsafePerformIO)
+import qualified System.Console.ANSI         as ANSI
+import           Universum                   hiding (pass)
 
-import           Sdn.Extra.Util           (MonadicMark (..), coloredF, gray)
+import           Sdn.Extra.Util              (DefaultStM, MonadicMark (..), WrappedM (..),
+                                              coloredF, gray)
 
 -- * Util
 
@@ -152,8 +155,11 @@ instance MonadReporting m => MonadReporting (MonadicMark __ m)
 newtype ErrorReporting m a = ErrorReporting
     { getErrorReporting :: ReaderT (TVar [Text]) m a
     } deriving ( Functor, Applicative, Monad, MonadIO, MonadTrans
-               , MonadThrow, MonadCatch
+               , MonadThrow, MonadCatch, MonadBase __
                , MonadState __, MonadTimed, MonadRpc (os :: [*]), WithNamedLogger, MonadLog)
+
+instance WrappedM (ErrorReporting m) where
+    type UnwrappedM (ErrorReporting m) = ReaderT (TVar [Text]) m
 
 type instance ThreadId (ErrorReporting m) = ThreadId m
 
@@ -161,6 +167,11 @@ instance MonadReader r m => MonadReader r (ErrorReporting m) where
     reader = lift . reader
     ask = lift ask
     local modifier = ErrorReporting . mapReaderT (local modifier) . getErrorReporting
+
+instance MonadBaseControl b m => MonadBaseControl b (ErrorReporting m) where
+    type StM (ErrorReporting m) a = DefaultStM (ErrorReporting m) a
+    liftBaseWith f = packM $ liftBaseWith $ \runInBase -> f (runInBase . unpackM)
+    restoreM = packM . restoreM
 
 runErrorReporting :: MonadIO m => ErrorReporting m a -> m ([Text], a)
 runErrorReporting (ErrorReporting action) = do
@@ -185,13 +196,21 @@ newtype NoErrorReporting m a = NoErrorReporting
     { runNoErrorReporting :: m a
     } deriving ( Functor, Applicative, Monad, MonadIO
                , MonadThrow, MonadCatch
-               , MonadState __
+               , MonadState __, MonadBase __
                , MonadTimed, MonadRpc (os :: [*]), WithNamedLogger, MonadLog)
 
+instance WrappedM (NoErrorReporting m) where
+    type UnwrappedM (NoErrorReporting m) = m
+
 instance MonadTrans NoErrorReporting where
-    lift = NoErrorReporting
+    lift = packM
 
 type instance ThreadId (NoErrorReporting m) = ThreadId m
+
+instance MonadBaseControl b m => MonadBaseControl b (NoErrorReporting m) where
+    type StM (NoErrorReporting m) a = StM m a
+    liftBaseWith f = packM $ liftBaseWith @_ @m $ \runInBase -> f (runInBase . unpackM)
+    restoreM = packM . restoreM
 
 instance Monad m => MonadReporting (NoErrorReporting m) where
     reportError _ = return ()

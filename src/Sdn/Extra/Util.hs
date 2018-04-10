@@ -1,3 +1,4 @@
+{-# LANGUAGE DefaultSignatures          #-}
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE FunctionalDependencies     #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -13,38 +14,40 @@
 
 module Sdn.Extra.Util where
 
-import           Control.Exception        (Handler (..), throw)
-import           Control.Lens             (Getting, Iso, Iso', LensRules, Wrapped (..),
-                                           from, has, involuted, iso, lens, lensField,
-                                           lensRules, makeLenses, mappingNamer, review)
-import           Control.Monad.Catch      (MonadCatch (..), MonadThrow (..))
-import           Control.Monad.Catch.Pure (Catch, runCatch)
-import           Control.Monad.Random     (MonadRandom, getRandom)
-import           Control.Monad.STM.Class  (MonadSTM (..))
-import           Control.Spoon            (teaspoonWithHandles)
-import           Control.TimeWarp.Logging (WithNamedLogger)
-import           Control.TimeWarp.Rpc     (MonadRpc (..), NetworkAddress, RpcRequest (..),
-                                           mkRequest)
-import qualified Control.TimeWarp.Rpc     as Rpc
-import           Control.TimeWarp.Timed   (Microsecond, MonadTimed (..), ThreadId,
-                                           TimedTOptions (..))
-import           Data.Coerce              (coerce)
-import           Data.MessagePack         (MessagePack (..))
+import           Control.Exception           (Handler (..), throw)
+import           Control.Lens                (Getting, Iso, Iso', LensRules, Wrapped (..),
+                                              from, has, involuted, iso, lens, lensField,
+                                              lensRules, makeLenses, mappingNamer, review)
+import           Control.Monad.Base          (MonadBase (..))
+import           Control.Monad.Catch         (MonadCatch (..), MonadThrow (..))
+import           Control.Monad.Catch.Pure    (Catch, runCatch)
+import           Control.Monad.Random        (MonadRandom, getRandom)
+import           Control.Monad.STM.Class     (MonadSTM (..))
+import           Control.Monad.Trans.Control (MonadBaseControl (..))
+import           Control.Spoon               (teaspoonWithHandles)
+import           Control.TimeWarp.Logging    (WithNamedLogger)
+import           Control.TimeWarp.Rpc        (MonadRpc (..), NetworkAddress,
+                                              RpcRequest (..), mkRequest)
+import qualified Control.TimeWarp.Rpc        as Rpc
+import           Control.TimeWarp.Timed      (Microsecond, MonadTimed (..), ThreadId,
+                                              TimedTOptions (..))
+import           Data.Coerce                 (coerce)
+import           Data.MessagePack            (MessagePack (..))
 import qualified Data.Text.Buildable
-import           Data.Text.Lazy.Builder   (Builder)
-import           Data.Time.Units          (Millisecond, Second)
-import           Formatting               (Format, bprint, build, later, sformat,
-                                           shortest, string, (%))
-import           Formatting.Internal      (Format (..))
-import           GHC.Exts                 (IsList (..))
-import qualified GHC.Exts                 as Exts
-import qualified Language.Haskell.TH      as TH
-import qualified System.Console.ANSI      as ANSI
-import           Test.QuickCheck          (Gen, choose, suchThat)
-import           Test.QuickCheck.Gen      (unGen)
-import           Test.QuickCheck.Random   (mkQCGen)
-import           Universum                hiding (throwM, toList)
-import           Unsafe                   (unsafeFromJust)
+import           Data.Text.Lazy.Builder      (Builder)
+import           Data.Time.Units             (Millisecond, Second)
+import           Formatting                  (Format, bprint, build, later, sformat,
+                                              shortest, string, (%))
+import           Formatting.Internal         (Format (..))
+import           GHC.Exts                    (IsList (..))
+import qualified GHC.Exts                    as Exts
+import qualified Language.Haskell.TH         as TH
+import qualified System.Console.ANSI         as ANSI
+import           Test.QuickCheck             (Gen, choose, suchThat)
+import           Test.QuickCheck.Gen         (unGen)
+import           Test.QuickCheck.Random      (mkQCGen)
+import           Universum                   hiding (throwM, toList)
+import           Unsafe                      (unsafeFromJust)
 
 -- | Declare instance for one-way message.
 declareMessage :: TH.Name -> TH.Q [TH.Dec]
@@ -310,22 +313,44 @@ type family Covered item :: [*]
 
 type Whole (constr :: * -> Constraint) item = Each '[constr] (Covered item)
 
+-- | Similar to 'Wrapped', but for monads.
+class WrappedM (m :: * -> *) where
+    type UnwrappedM m :: * -> *
+
+    packM :: UnwrappedM m a -> m a
+    default packM :: Coercible (UnwrappedM m a) (m a) => UnwrappedM m a -> m a
+    packM = coerce
+
+    unpackM :: m a -> UnwrappedM m a
+    default unpackM :: Coercible (m a) (UnwrappedM m a) => m a -> UnwrappedM m a
+    unpackM = coerce
+
+type DefaultStM m a = StM (UnwrappedM m) a
+
 -- | Attaches a type-level mark to a monad.
 --
 -- It then can be extracted with closed type family.
 -- Useful to make type parameters inferred from type of monad stack.
 newtype MonadicMark mark m a = MonadicMark (m a)
     deriving (Functor, Applicative, Monad, MonadIO,
-              MonadThrow, MonadCatch, MonadMask,
+              MonadThrow, MonadCatch, MonadMask, MonadBase __,
               MonadTimed, MonadRpc (o :: [*]), WithNamedLogger)
 
 declareMonadicMark :: forall mark m a. MonadicMark mark m a -> m a
 declareMonadicMark (MonadicMark action) = action
 
+instance WrappedM (MonadicMark mark m) where
+    type UnwrappedM (MonadicMark mark m) = m
+
 type instance ThreadId (MonadicMark mark m) = ThreadId m
 
 instance MonadTrans (MonadicMark mark) where
     lift = MonadicMark
+
+instance MonadBaseControl b m => MonadBaseControl b (MonadicMark mark m) where
+    type StM (MonadicMark mark m) a = DefaultStM (MonadicMark mark m) a
+    liftBaseWith f = packM $ liftBaseWith @_ @m $ \runInBase -> f (runInBase . unpackM)
+    restoreM = packM . restoreM
 
 type family DeclaredMark markType (m :: * -> *) where
     DeclaredMark markType (MonadicMark (markType a) m) = a
@@ -360,3 +385,18 @@ whenJust' (Just x) f = Just <$> f x
 data PreparedAction a m = PreparedAction
     { prepareToAct :: m (a -> m ())
     }
+
+-- | Take action in complex monad, return this action in base monad via using current context.
+-- Context changes induced by action will be dropped.
+embed0_ :: MonadBaseControl b m => m a -> m (b ())
+embed0_ action = liftBaseWith $ \runInBase -> pure . void $ runInBase action
+
+class MFunctored (s :: (* -> *) -> *) where
+    type MFunctoredConstr s (n :: * -> *) (m :: * -> *) :: Constraint
+    type MFunctoredConstr s n m = ()
+    hoistItem
+        :: MFunctoredConstr s n m
+        => (forall a. n a -> m a) -> s n -> s m
+
+instance MFunctored (Rpc.Method (o :: [*])) where
+    hoistItem = Rpc.hoistMethod

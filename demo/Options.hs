@@ -15,6 +15,7 @@ import           Control.Lens         (Setter')
 import           Control.Monad.Random (MonadRandom)
 import           Control.Monad.Writer (WriterT (..))
 import qualified Control.TimeWarp.Rpc as D
+import           Data.Default         (def)
 import qualified Data.Text.Buildable
 import           Data.Time.Units      (Microsecond, convertUnit)
 import           Data.Yaml            (FromJSON (..), Value (..), decodeFileEither,
@@ -59,6 +60,10 @@ choose = foldr (<|>) empty
 
 choose1 :: Alternative f => [a -> f b] -> a -> f b
 choose1 l a = choose $ map ($ a) l
+
+-- | Everywhere in demo we use predefined addresses mapping for processes.
+defAddrsLayout :: (HasMembersAddresses => a) -> a
+defAddrsLayout = withMembersAddresses def
 
 -- * Datatypes with options
 
@@ -295,7 +300,7 @@ instance FromJSON (WithDesc D.Delays) where
         blackoutParser = fmap (WithDesc "blackout") . \case
             String "blackout" -> pure D.blackout
             _ -> fail "Can't parse blackout delay"
-        memberParser = withObject "for member" $ \o -> do
+        memberParser = withObject "for member" $ \o -> defAddrsLayout $ do
             -- TODO: more complex participants specification
             acceptorIds <- AcceptorId <<$>> o .: "acceptors"
             WithDesc desc delay <- o .: "delay"

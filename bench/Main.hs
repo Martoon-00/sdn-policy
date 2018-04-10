@@ -22,9 +22,7 @@ import           Sdn.Extra                (atomicModifyIORefS, declareMemStorage
 import qualified Sdn.Extra.Schedule       as S
 import           Sdn.Policy.Fake
 import           Sdn.Protocol
-import qualified Sdn.Protocol.Classic     as Classic
 import           Sdn.Protocol.Common      (BatchingSettings (..), LearningCallback (..))
-import qualified Sdn.Protocol.Fast        as Fast
 
 main :: IO ()
 main = do
@@ -43,10 +41,7 @@ main = do
 
         let topologyActions =
               (versionTopologyActions @Fast settings)
-                { learnerListeners =
-                    [ listener @Learner $ Classic.learn callback
-                    , listener @Learner $ Fast.learn callback
-                    ]
+                { topologyListeners = versionProtocolListeners @Fast callback
                 }
 
         fork_ . forever $ do

@@ -9,6 +9,7 @@ import           Universum
 
 import           Control.TimeWarp.Timed       (Microsecond, interval, sec)
 import           Data.Default                 (Default (..))
+import           Sdn.Extra.Util               (hoistItem)
 import qualified Sdn.Protocol.Classic.Phases  as Classic
 import           Sdn.Protocol.Common.Phases   (batchedOrSimpleProposals)
 import           Sdn.Protocol.Common.Topology
@@ -29,12 +30,10 @@ instance Default (CustomTopologySettings Fast) where
         }
 
 
-instance HasVersionTopologyActions Fast where
-    versionTopologyActions TopologySettings{..} =
-        TopologyActions
-        { proposeAction = batchedOrSimpleProposals topologyProposalBatchSettings Fast.propose
-        , startBallotAction = pass
-        , leaderListeners =
+instance HasVersionProtocolListeners Fast where
+    versionProtocolListeners callback =
+        ProtocolListeners
+        { leaderListeners =
             [ listener @Leader Classic.rememberProposal
             , listener @Leader Classic.phase2a
             , listener @Leader Fast.detectConflicts
@@ -45,9 +44,17 @@ instance HasVersionTopologyActions Fast where
             , listener @Acceptor Fast.phase2b
             ]
         , learnerListeners =
-            [ listener @Learner $ Classic.learn mempty
-            , listener @Learner $ Fast.learn mempty
+            [ listener @Learner $ Classic.learn (hoistItem lift callback)
+            , listener @Learner $ Fast.learn (hoistItem lift callback)
             ]
+        }
+
+instance HasVersionTopologyActions Fast where
+    versionTopologyActions TopologySettings{..} =
+        TopologyActions
+        { proposeAction = batchedOrSimpleProposals topologyProposalBatchSettings Fast.propose
+        , startBallotAction = pass
+        , topologyListeners = versionProtocolListeners mempty
         }
       where
         FastTopologySettingsPart{..} = topologyCustomSettings

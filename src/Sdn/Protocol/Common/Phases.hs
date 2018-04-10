@@ -1,6 +1,7 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE Rank2Types          #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE AllowAmbiguousTypes  #-}
+{-# LANGUAGE Rank2Types           #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- | Utilities for various phases of Paxos.
 
@@ -30,7 +31,7 @@ import           Formatting                   (build, sformat, (%))
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra                    (MonadLog, MonadReporting,
+import           Sdn.Extra                    (MFunctored (..), MonadLog, MonadReporting,
                                                PreparedAction (..), RpcOptions, listF,
                                                logError, logInfo, presence, submit,
                                                throwOnFail)
@@ -66,6 +67,10 @@ newtype LearningCallback m = LearningCallback
     { runLearningCallback :: NonEmpty (DeclaredCmd m) -> m ()
     }
 
+instance MFunctored LearningCallback where
+    type MFunctoredConstr LearningCallback n m = DeclaredCmd n ~ DeclaredCmd m
+    hoistItem modifyM = LearningCallback . fmap modifyM . runLearningCallback
+
 -- | Common constraints for all phases.
 type MonadPhase cstruct m =
     ( MonadIO m
@@ -74,7 +79,7 @@ type MonadPhase cstruct m =
     , MonadRpc RpcOptions m
     , MonadLog m
     , MonadReporting m
-    , HasMembers
+    , HasMembersInfo
     , cstruct ~ DeclaredCStruct m
     , PracticalCStruct cstruct
     )

@@ -8,10 +8,11 @@
 
 module Sdn.Protocol.Processes where
 
-import           Control.Lens             (from)
+import           Control.Lens             (from, ix)
 import           Control.TimeWarp.Logging (LoggerName)
-import           Control.TimeWarp.Rpc     (NetworkAddress, Port, localhost)
+import           Control.TimeWarp.Rpc     (NetworkAddress, Port)
 import           Data.Default             (Default (..))
+import           GHC.Exts                 (fromList)
 import qualified System.Console.ANSI      as ANSI
 import           Universum
 
@@ -34,7 +35,7 @@ class Process p where
 
     -- | Address binded to given process.
     -- All processes have predefined determined addresses.
-    processAddress :: p -> NetworkAddress
+    processAddress :: HasMembersAddresses => p -> NetworkAddress
 
     -- | Number of processes of this kind.
     processesNumber :: HasMembers => Int
@@ -47,6 +48,9 @@ class Process p where
         :: Default (ProcessState p pv cstruct)
         => p -> ProcessState p pv cstruct
     initProcessState _ = def
+
+    -- | Return all processes of this kind.
+    takeAllProcesses :: HasMembers => NonEmpty p
 
 -- | Constraint for having context with specified mutable state.
 type HasContext s m =
@@ -63,11 +67,13 @@ type HasContextOf p pv m =
 
 -- | Port binded to given process.
 processPort
-    :: Process p
+    :: (Process p, HasMembersAddresses)
     => p -> Port
 processPort = snd . processAddress
 
 -- | Get all the processes of this kind.
+-- Unlike 'takeAllProcesses', this function accepts term-level identifier of
+-- process kind.
 processesOf
     :: forall p i.
        (HasMembers, Process p, Integral i)
@@ -76,10 +82,19 @@ processesOf maker =
     let number = fromIntegral $ processesNumber @p
     in  map maker [1 .. number]
 
+-- | By given identifier, return some process, possibly the one specified by identitifer.
+takeSomeProcess
+    :: forall p i.
+       (HasMembers, Process p, Integral i)
+    => i -> p
+takeSomeProcess (fromIntegral -> i) =
+    let processes@(firstProcess :| _) = takeAllProcesses @p
+    in  fromMaybe firstProcess (processes ^? ix i)
+
 -- | Get all addresses of processes of this kind.
 processesAddresses
     :: forall p i.
-       (HasMembers, Process p, Integral i)
+       (HasMembersInfo, Process p, Integral i)
     => (i -> p)
     -> [NetworkAddress]
 processesAddresses maker =
@@ -88,7 +103,7 @@ processesAddresses maker =
 -- | Same as 'processesAddresses', but for single process, for compiance.
 processAddresses
     :: forall p.
-       Process p
+       (Process p, HasMembersAddresses)
     => p -> [NetworkAddress]
 processAddresses p = one (processAddress p)
 
@@ -108,8 +123,11 @@ instance Process Proposer where
 
     processName _ = "proposer"
     processColor = (ANSI.Dull, ANSI.Magenta)
-    processAddress Proposer = (localhost, 4000)
+    processAddress Proposer =
+        fromMaybe (error "Proposer in anonymous") $  -- TODO: redesign this part
+        proposerAddrInfo getMembersAddresses
     processesNumber = 1
+    takeAllProcesses = one Proposer
 
 
 data Leader = Leader
@@ -119,9 +137,10 @@ instance Process Leader where
 
     processName _ = "leader"
     processColor = (ANSI.Vivid, ANSI.Magenta)
-    processAddress Leader = (localhost, 5000)
+    processAddress Leader = leaderAddrInfo getMembersAddresses
     processesNumber = 1
     initProcessState Leader = def
+    takeAllProcesses = one Leader
 
 
 data Acceptor = Acceptor AcceptorId
@@ -132,9 +151,13 @@ instance Process Acceptor where
     processName (Acceptor (AcceptorId id)) =
         "acceptor" <> (pretty id ^. from loggerNameT)
     processColor = (ANSI.Vivid, ANSI.Yellow)
-    processAddress (Acceptor id) = (localhost, 6000 + fromIntegral id)
+    processAddress (Acceptor id) =
+        acceptorsAddrInfos getMembersAddresses $ fromIntegral id
     processesNumber = acceptorsNum getMembers
     initProcessState (Acceptor id) = defAcceptorState id
+    takeAllProcesses =
+        let n = fromIntegral $ acceptorsNum getMembers
+        in  map Acceptor $ fromList [1..n]
 
 
 data Learner = Learner Int
@@ -145,5 +168,9 @@ instance Process Learner where
     processName (Learner id) =
         "learner" <> (pretty id ^. from loggerNameT)
     processColor = (ANSI.Vivid, ANSI.Cyan)
-    processAddress (Learner id) = (localhost, 7000 + id)
+    processAddress (Learner id) =
+        learnersAddrInfos getMembersAddresses id
     processesNumber = learnersNum getMembers
+    takeAllProcesses =
+        let n = fromIntegral $ acceptorsNum getMembers
+        in  map Learner $ fromList [1..n]

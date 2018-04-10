@@ -3,7 +3,7 @@
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
 
--- | Running bunch of processes of various roles.
+-- | Running all of processes required for consensus.
 
 module Sdn.Protocol.Common.Topology where
 
@@ -30,8 +30,9 @@ import           Sdn.Extra.MemStorage
 import qualified Sdn.Extra.Schedule           as S
 import qualified Sdn.Policy.Fake              as Fake
 import           Sdn.Protocol.Common.Messages
-import           Sdn.Protocol.Common.Phases   (BatchingSettings, MakeProposal,
-                                               confirmCommitted, isPolicyUnconfirmed)
+import           Sdn.Protocol.Common.Phases   (BatchingSettings, LearningCallback,
+                                               MakeProposal, confirmCommitted,
+                                               isPolicyUnconfirmed)
 import           Sdn.Protocol.Context
 import           Sdn.Protocol.Processes
 import           Sdn.Protocol.Versions
@@ -108,6 +109,7 @@ type ProcessEnv p pv m =
 type ProcessM p pv m = ReaderT (ProcessEnv p pv m) m
 
 -- | Create single process.
+-- Return handler to read process state.
 newProcess
     :: forall p pv m.
        ( MonadIO m
@@ -123,7 +125,7 @@ newProcess
     -> m (DeclaredMemStoreTxMonad m (ProcessState p pv (DeclaredCStruct m)))
 newProcess process action = do
     memStorage <- getMemStorage
-    stateBox <- liftIO $ mkMemStorage memStorage (initProcessState process)
+    stateBox <- mkMemStorage memStorage (initProcessState process)
     fork_ $
         flip runReaderT (ProcessContext stateBox) $
         modifyLoggerName (<> coloredProcessName process) $
@@ -169,13 +171,18 @@ type TopologyLauncher pv m =
     MonadTopology m =>
     StdGen -> TopologySettings pv (DeclaredCStruct m) -> m (TopologyMonitor pv m)
 
+-- | How should various processes react on events.
+data ProtocolListeners pv m = ProtocolListeners
+    { leaderListeners   :: HasMembersInfo => [Listener Leader pv m]
+    , acceptorListeners :: HasMembersInfo => [Listener Acceptor pv m]
+    , learnerListeners  :: HasMembersInfo => [Listener Learner pv m]
+    }
+
 -- | How processes of various roles are supposed to work.
 data TopologyActions pv m = TopologyActions
-    { proposeAction     :: HasMembers => MakeProposal (ProcessM Proposer pv m)
-    , startBallotAction :: HasMembers => ProcessM Leader pv m ()
-    , leaderListeners   :: HasMembers => [Listener Leader pv m]
-    , acceptorListeners :: HasMembers => [Listener Acceptor pv m]
-    , learnerListeners  :: HasMembers => [Listener Learner pv m]
+    { proposeAction     :: HasMembersInfo => MakeProposal (ProcessM Proposer pv m)
+    , startBallotAction :: HasMembersInfo => ProcessM Leader pv m ()
+    , topologyListeners :: ProtocolListeners pv m
     }
 
 -- | Launch Paxos algorithm.
@@ -184,8 +191,11 @@ launchPaxosWith
     :: forall pv m.
        ProtocolVersion pv
     => TopologyActions pv m -> TopologyLauncher pv m
-launchPaxosWith TopologyActions{..} seed TopologySettings{..} = withMembers topologyMembers $ do
+launchPaxosWith TopologyActions{..} seed TopologySettings{..} =
+  withMembers topologyMembers $
+  withMembersAddresses def $ do
     let (proposalSeed, ballotSeed) = split seed
+    let ProtocolListeners{..} = topologyListeners
 
     proposerState <- newProcess Proposer . work (for topologyLifetime) $ do
         skipFirst <- S.maskExecutions (False : repeat True)
@@ -236,7 +246,7 @@ launchPaxosWith TopologyActions{..} seed TopologySettings{..} = withMembers topo
     -- launch required number of servers, for processes of given type,
     -- serving given listeners
     startListeningProcessesOf
-        :: (HasMembers, MonadTopology m, Process p, Integral i, ProtocolVersion pv, DeclaresMemStore m, Default (DeclaredCStruct m))
+        :: (HasMembersInfo, MonadTopology m, Process p, Integral i, ProtocolVersion pv, DeclaresMemStore m, Default (DeclaredCStruct m))
         => (i -> p)
         -> [Listener p pv m]
         -> m [DeclaredMemStoreTxMonad m $ ProcessState p pv (DeclaredCStruct m)]
@@ -246,6 +256,15 @@ launchPaxosWith TopologyActions{..} seed TopologySettings{..} = withMembers topo
                 serve (processPort process) =<< sequence listeners
 
 {-# NOINLINE launchPaxosWith #-}
+
+-- | Version-custom topology settings.
+class ProtocolVersion pv =>
+      HasVersionProtocolListeners pv where
+    -- | On which messages and how should each process respond.
+    versionProtocolListeners
+        :: forall m.
+           MonadTopology m
+        => LearningCallback m -> ProtocolListeners pv m
 
 -- | Version-custom topology settings.
 class ProtocolVersion pv =>
