@@ -69,12 +69,13 @@ controllerOptionsParser = do
             , Opt.help "How much controllers would participate."
             ]
 
-        protocolLeaderId <- Opt.option Opt.auto $ mconcat
+        protocolLeaderId <- Opt.option (ProcessId <$> Opt.auto) $ mconcat
             [ Opt.short 'l'
             , Opt.long "leader"
             , Opt.metavar "PROCESS-ID"
             , Opt.help "Identifier of leader process. Should be manually \
                        \specified for now."
+            , Opt.value 1
             ]
 
         protocolProposalsBatching <- do
@@ -98,11 +99,11 @@ controllerOptionsParser = do
 
         return ProtocolOptions{..}
 
-    curProcessId <- Opt.option Opt.auto $ mconcat
+    curProcessId <- Opt.option (ProcessId <$> Opt.auto) $ mconcat
         [ Opt.short 'i'
         , Opt.long "process-id"
         , Opt.metavar "PROCESS_ID"
-        , Opt.help "Identifier of this process."
+        , Opt.help "Identifier of this process. Numeration starts from 1."
         ]
 
     return ControllerOptions{..}

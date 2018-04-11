@@ -14,7 +14,7 @@ import           Control.TimeWarp.Logging     (WithNamedLogger, modifyLoggerName
 import           Control.TimeWarp.Rpc         (Method, MsgPackUdpOptions (..), Port,
                                                hoistMethod, localhost, runMsgPackUdpOpts,
                                                serve)
-import           Control.TimeWarp.Timed       (for, fork, killThread, ms, wait)
+import           Control.TimeWarp.Timed       (fork_)
 import           Data.Default                 (Default (..))
 import           Data.Tagged                  (Tagged (..), untag)
 import           Universum
@@ -22,7 +22,7 @@ import           Universum
 import           Sdn.Base
 import           Sdn.Extra.Logging
 import           Sdn.Extra.MemStorage
-import           Sdn.Extra.Util               (declareMonadicMark, embed0_, prepareToAct)
+import           Sdn.Extra.Util               (declareMonadicMark, prepareToAct)
 import           Sdn.Protocol.Common.Phases   (BatchingSettings (..),
                                                LearningCallback (..), batchingProposal)
 import           Sdn.Protocol.Common.Topology (ProcessEnv, ProcessM,
@@ -37,8 +37,6 @@ import           Sdn.Protocol.Versions
 -- | Identifier of controller process.
 newtype ProcessId = ProcessId Int
     deriving (Eq, Ord, Enum, Show, Num, Real, Integral)
-
-deriving instance Read ProcessId
 
 -- | Options assosiated with policies compoition protocol.
 data ProtocolOptions = ProtocolOptions
@@ -116,14 +114,15 @@ inListenerM
     -> SuperProcessM pv m (Method o (SuperProcessM pv m))
 inListenerM getter = inProcess getter . fmap (hoistMethod $ inProcess getter)
 
-runNodeProtocol
+runProtocolNode
     :: forall cstruct.
        (PracticalCStruct cstruct)
     => ProtocolOptions
     -> ProcessId
     -> ProtocolCallbacks cstruct
-    -> IO (ProtocolHandlers cstruct)
-runNodeProtocol ProtocolOptions{..} curProcessId ProtocolCallbacks{..} = do
+    -> (ProtocolHandlers cstruct -> IO ())
+    -> IO ()
+runProtocolNode ProtocolOptions{..} curProcessId ProtocolCallbacks{..} fillProtocolHandlers = do
     let runLogging = runNoErrorReporting . usingLoggerName mempty
         networkOptions = def{ udpMessageSizeLimit = 15000 }
 
@@ -137,6 +136,13 @@ runNodeProtocol ProtocolOptions{..} curProcessId ProtocolCallbacks{..} = do
         withMembers members $
         withMembersAddresses membersAddresses $
         withSuperProcessCtx curProcessId $ do
+            protocolMakeProposal <- inProcess subProposerState $ do
+                makeProposal <- prepareToAct $ batchingProposal protocolProposalsBatching Fast.propose
+                embed_ makeProposal
+            protocolShutdown <- pure $ return ()
+
+            liftIO $ fillProtocolHandlers ProtocolHandlers{..}
+
             let ProtocolListeners{..} = versionProtocolListeners @Fast callback
 
             listeners <- sequence $ mconcat
@@ -145,18 +151,8 @@ runNodeProtocol ProtocolOptions{..} curProcessId ProtocolCallbacks{..} = do
                 , inListenerM subLearnerState <$> learnerListeners
                 ]
 
-            serverTid <- fork $ serve curPort listeners
+            fork_ $ serve curPort listeners
 
-            -- give some time for server to be brought up
-            wait (for 20 ms)
-            logInfo "Consensus protocol initiated"
-
-            protocolMakeProposal <- inProcess subProposerState $ do
-                makeProposal <- prepareToAct $ batchingProposal protocolProposalsBatching Fast.propose
-                embed_ makeProposal
-            protocolShutdown <- embed0_ $ killThread serverTid
-
-            return ProtocolHandlers{..}
   where
      curPort = protocolPorts curProcessId
      members =

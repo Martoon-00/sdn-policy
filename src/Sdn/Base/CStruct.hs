@@ -5,7 +5,7 @@
 
 module Sdn.Base.CStruct where
 
-import           Control.Lens         (Index, Ixed, makePrisms)
+import           Control.Lens         (makePrisms)
 import           Control.Monad.Except (MonadError, throwError)
 import           Data.Default         (Default (..))
 import           Data.MessagePack     (MessagePack)
@@ -51,7 +51,6 @@ type SuperConflict a b =
     ( Conflict a a
     , Conflict a b
     , Conflict b a
-    , Conflict b b
     )
 
 -- | Command can be either accepted or denied.
@@ -122,7 +121,9 @@ instance MessagePack p => MessagePack (Acceptance p)
 -- | Defines basic operations with commands and cstructs.
 -- Requires "conflict" relationship to be defined for them,
 -- and "bottom" cstruct to exist.
-class ( SuperConflict (Cmd cstruct) cstruct
+class ( Conflict (Cmd cstruct) (Cmd cstruct)
+      , Conflict (Cmd cstruct) cstruct
+      , Conflict cstruct (Cmd cstruct)
       , Default cstruct
       , Buildable cstruct
       ) => CStruct cstruct where
@@ -266,8 +267,6 @@ class ( CStruct cstruct
       , MessagePack cstruct
       , MessagePack (RawCmd cstruct)
       , Acceptance (RawCmd cstruct) ~ Cmd cstruct
-      , Ixed cstruct
-      , Index cstruct ~ Cmd cstruct
       ) =>
       PracticalCStruct cstruct
 

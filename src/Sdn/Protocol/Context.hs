@@ -76,7 +76,7 @@ type PerBallots a = ForBothRoundTypes $ PerBallot a
 ballotMapF
     :: Buildable BallotId
     => Format Builder (a -> Builder) -> Format r (PerBallot a -> r)
-ballotMapF f = listF "\n  " (pairF ": " build f)
+ballotMapF f = listF "\n  " (pairF (build%": "%f))
 
 -- | This is where commands from proposer are stored.
 -- We need to cache all policies proposed upon specified ballot.
@@ -242,7 +242,7 @@ instance PracticalCStruct cstruct =>
     build LearnerState{..} =
         bprint
             ("\n    heard: "%build%
-             "\n    heard fast: "%listF ",\n    " (pairF ": " build build)%
+             "\n    heard fast: "%listF ",\n    " (pairF (build%": "%build))%
              "\n    learned: "%build)
             _learnerVotes
             _learnerFastVotes

@@ -33,6 +33,7 @@ import           Control.TimeWarp.Timed      (Microsecond, MonadTimed (..), Thre
                                               TimedTOptions (..))
 import           Data.Coerce                 (coerce)
 import           Data.MessagePack            (MessagePack (..))
+import qualified Data.Set                    as S
 import qualified Data.Text.Buildable
 import           Data.Text.Lazy.Builder      (Builder)
 import           Data.Time.Units             (Millisecond, Second)
@@ -75,12 +76,10 @@ listF delim buildElem =
          one "[ " <> (intersperse delim $ bprint buildElem <$> values) <> one " ]"
 
 pairF
-    :: Builder
-    -> Format Builder (a -> Builder)
-    -> Format Builder (b -> Builder)
+    :: Format Builder (a -> b -> Builder)
     -> Format r ((a, b) -> r)
-pairF delim buildA buildB =
-    later $ \(a, b) -> bprint buildA a <> delim <> bprint buildB b
+pairF buildAB =
+    later $ \(a, b) -> bprint buildAB a b
 
 -- | Extended modifier for 'TVar'.
 modifyTVarS :: (Monad m, MonadSTM m) => TVar s -> StateT s m a -> m a
@@ -272,6 +271,14 @@ instance MessagePack a => MessagePack (NonEmpty a) where
     toObject = toObject . toList
     fromObject = maybe (fail "MessagePack NonEmpty: got empty list") pure
              <=< fmap nonEmpty . fromObject
+
+instance (MessagePack a, Ord a) => MessagePack (S.Set a) where
+    toObject = toObject . toList
+    fromObject = fmap fromList . fromObject
+
+instance MessagePack Word32 where
+    toObject = toObject . fromIntegral @_ @Int
+    fromObject = fmap (fromIntegral @Int) . fromObject
 
 -- | Alias for 'mzero'.
 exit :: MonadPlus m => m a

@@ -24,7 +24,6 @@ library
                        Sdn.Extra.Util
                        Sdn.Policy
                        Sdn.Policy.Fake
-                       Sdn.Policy.OpenFlow
                        Sdn.Protocol
                        Sdn.Protocol.Common
                        Sdn.Protocol.Classic
@@ -39,6 +38,7 @@ library
                        Sdn.Protocol.Classic.Messages
                        Sdn.Protocol.Classic.Phases
                        Sdn.Protocol.Classic.Topology
+                       Sdn.Protocol.Common.Node
                        Sdn.Protocol.Common.Messages
                        Sdn.Protocol.Common.Phases
                        Sdn.Protocol.Common.Topology
@@ -179,13 +179,19 @@ executable bench
 executable controller
   hs-source-dirs:      controller
   main-is:             Main.hs
+  other-modules:       Options
+                       Sdn.Policy.OpenFlow
   ghc-options:         -threaded -O2 -rtsopts -with-rtsopts=-N
   build-depends:       base
+                     , binary
+                     , containers
                      , data-default
                      , formatting
                      , lens
                      , monad-control
+                     , msgpack
                      , mtl
+                     , openflow
                      , optparse-applicative
                      , random
                      , sdn-policy

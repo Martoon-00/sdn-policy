@@ -13,6 +13,10 @@ packages:
     git: https://github.com/serokell/time-warp.git
     commit: 5d4151e95606e40f759c0df4cb294b7370c1a7c
   extra-dep: true
+- location:
+    git: https://github.com/Martoon-00/openflow
+    commit: f40d057e356ee5270213baa36f0b089596ce2da6
+  extra-dep: true
 
 extra-deps:
 - acid-state-0.14.3
