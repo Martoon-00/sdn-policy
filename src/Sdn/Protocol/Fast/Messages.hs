@@ -8,7 +8,7 @@
 
 module Sdn.Protocol.Fast.Messages
     ( ProposalMsg (..)
-    , Phase2bMsg (..)
+    , AcceptedMsg (..)
     ) where
 
 import           Data.MessagePack
@@ -38,18 +38,18 @@ instance MessagePack (RawCmd cstruct) =>
 declareMessage ''ProposalMsg
 
 
-data Phase2bMsg cstruct = Phase2bMsg AcceptorId (NonEmpty $ Cmd cstruct)
+data AcceptedMsg cstruct = AcceptedMsg AcceptorId (NonEmpty $ Cmd cstruct)
     deriving (Generic)
 
 instance Buildable (Cmd cstruct) =>
-         Buildable (Phase2bMsg cstruct) where
-    build (Phase2bMsg a c) =
+         Buildable (AcceptedMsg cstruct) where
+    build (AcceptedMsg a c) =
         bprint ("Phase 2b message from "%build%": "%listF "," build) a c
 
-instance HasMessageShortcut (Phase2bMsg cstruct) where
+instance HasMessageShortcut (AcceptedMsg cstruct) where
     messageShortcut = "f"
 
-instance MessagePack (Cmd cstruct) => MessagePack (Phase2bMsg cstruct)
+instance MessagePack (Cmd cstruct) => MessagePack (AcceptedMsg cstruct)
 
-declareMessage ''Phase2bMsg
+declareMessage ''AcceptedMsg
 

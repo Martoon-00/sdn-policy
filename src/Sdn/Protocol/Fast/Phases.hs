@@ -62,7 +62,7 @@ phase2b (Fast.ProposalMsg policiesToApply) = do
                 appliedPolicies
 
         accId <- use acceptorId
-        pure $ Fast.Phase2bMsg @cstruct accId appliedPolicies
+        pure $ Fast.AcceptedMsg @cstruct accId appliedPolicies
 
     broadcastTo (processesAddresses Learner <> processAddresses Leader) msg
 
@@ -71,8 +71,8 @@ phase2b (Fast.ProposalMsg policiesToApply) = do
 learn
     :: forall cstruct m.
        (MonadPhase cstruct m, HasContextOf Learner Fast m)
-    => LearningCallback m -> Fast.Phase2bMsg cstruct -> m ()
-learn callback (Fast.Phase2bMsg accId (toList -> cstructDiff)) = do
+    => LearningCallback m -> Fast.AcceptedMsg cstruct -> m ()
+learn callback (Fast.AcceptedMsg accId (toList -> cstructDiff)) = do
     -- TODO perf: use foldlM
     -- let rememberPolicy policyAcceptance !acc = do
     --         mp <- withProcessStateAtomically $
@@ -117,7 +117,7 @@ delegateToRecovery
     => AcceptorId -> BallotId -> cstruct -> m ()
 delegateToRecovery accId bal cstruct = do
     let recoveryBallotId = bal
-    Classic.phase2a (Classic.Phase1bMsg accId recoveryBallotId cstruct)
+    Classic.phase2a (Classic.PromiseMsg accId recoveryBallotId cstruct)
 
 rememberVoteForPolicy
     :: forall cstruct qf s.
@@ -177,8 +177,8 @@ decideOnPolicyStatus votesForPolicy = do
 detectConflicts
     :: forall cstruct m.
        (MonadPhase cstruct m, HasContextOf Leader Fast m)
-    => Fast.Phase2bMsg cstruct -> m ()
-detectConflicts (Fast.Phase2bMsg accId (toList -> cstructDiff)) = do
+    => Fast.AcceptedMsg cstruct -> m ()
+detectConflicts (Fast.AcceptedMsg accId (toList -> cstructDiff)) = do
     voteUpdates <- fmap catMaybes . forM cstructDiff $ \policyAcceptance ->
         withProcessStateAtomically $
         rememberVoteForPolicy @cstruct leaderFastVotes accId policyAcceptance

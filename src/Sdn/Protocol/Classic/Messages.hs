@@ -6,10 +6,10 @@
 
 module Sdn.Protocol.Classic.Messages
     ( ProposalMsg (..)
-    , Phase1aMsg (..)
-    , Phase1bMsg (..)
-    , Phase2aMsg (..)
-    , Phase2bMsg (..)
+    , PrepareMsg (..)
+    , PromiseMsg (..)
+    , AcceptRequestMsg (..)
+    , AcceptedMsg (..)
     ) where
 
 import           Data.MessagePack             (MessagePack)
@@ -40,68 +40,68 @@ declareMessage ''ProposalMsg
 
 -- | Message sent by leader to acceptors in order to initiate a new ballot and
 -- request recent acceptors' state.
-data Phase1aMsg = Phase1aMsg BallotId
+data PrepareMsg = PrepareMsg BallotId
     deriving (Generic)
 
-instance Buildable Phase1aMsg where
-    build (Phase1aMsg b) = bprint ("Phase 1a message "%build) b
+instance Buildable PrepareMsg where
+    build (PrepareMsg b) = bprint ("Phase 1a message "%build) b
 
-instance HasMessageShortcut Phase1aMsg where
+instance HasMessageShortcut PrepareMsg where
     messageShortcut = "1b"
 
-instance MessagePack Phase1aMsg
+instance MessagePack PrepareMsg
 
-declareMessage ''Phase1aMsg
+declareMessage ''PrepareMsg
 
 
 -- | "Promise" message sent from acceptor to leader.
-data Phase1bMsg cstruct = Phase1bMsg AcceptorId BallotId cstruct
+data PromiseMsg cstruct = PromiseMsg AcceptorId BallotId cstruct
     deriving (Generic)
 
 instance Buildable cstruct =>
-         Buildable (Phase1bMsg cstruct) where
-    build (Phase1bMsg a b c) =
+         Buildable (PromiseMsg cstruct) where
+    build (PromiseMsg a b c) =
         bprint ("Phase 1b message from "%build%" "%build%" "%build) a b c
 
-instance HasMessageShortcut (Phase1bMsg cstruct) where
+instance HasMessageShortcut (PromiseMsg cstruct) where
     messageShortcut = "2a"
 
-instance MessagePack cstruct => MessagePack (Phase1bMsg cstruct)
+instance MessagePack cstruct => MessagePack (PromiseMsg cstruct)
 
-declareMessage ''Phase1bMsg
+declareMessage ''PromiseMsg
 
 
 -- | Message sent by leader to acceptors to order them to accept a new cstruct.
-data Phase2aMsg cstruct = Phase2aMsg BallotId cstruct
+data AcceptRequestMsg cstruct = AcceptRequestMsg BallotId cstruct
     deriving (Generic)
 
 instance Buildable cstruct =>
-         Buildable (Phase2aMsg cstruct) where
-    build (Phase2aMsg b c) =
+         Buildable (AcceptRequestMsg cstruct) where
+    build (AcceptRequestMsg b c) =
         bprint ("Phase 2a message "%build%" "%build) b c
 
-instance HasMessageShortcut (Phase2aMsg cstruct) where
+instance HasMessageShortcut (AcceptRequestMsg cstruct) where
     messageShortcut = "2b"
 
-instance MessagePack cstruct => MessagePack (Phase2aMsg cstruct)
+instance MessagePack cstruct => MessagePack (AcceptRequestMsg cstruct)
 
-declareMessage ''Phase2aMsg
+declareMessage ''AcceptRequestMsg
 
 
 -- | Message sent by acceptor to learner in order to make learner fixate new
 -- cstruct.
-data Phase2bMsg cstruct = Phase2bMsg AcceptorId cstruct
+data AcceptedMsg cstruct = AcceptedMsg AcceptorId cstruct
     deriving (Generic)
 
 instance Buildable cstruct =>
-         Buildable (Phase2bMsg cstruct) where
-    build (Phase2bMsg a c) =
+         Buildable (AcceptedMsg cstruct) where
+    build (AcceptedMsg a c) =
         bprint ("Phase 2b message from "%build%" "%build) a c
 
-instance HasMessageShortcut (Phase2bMsg cstruct) where
+instance HasMessageShortcut (AcceptedMsg cstruct) where
     messageShortcut = mempty
 
-instance MessagePack cstruct => MessagePack (Phase2bMsg cstruct)
+instance MessagePack cstruct => MessagePack (AcceptedMsg cstruct)
 
-declareMessage ''Phase2bMsg
+declareMessage ''AcceptedMsg
 

@@ -67,19 +67,19 @@ phase1a = do
         _ <- zoom (leaderProposedPolicies . forClassic) $
              dumpProposedCommands newBallotId
         -- make up an "1a" message
-        Phase1aMsg <$> use leaderBallotId
+        PrepareMsg <$> use leaderBallotId
 
     broadcastTo (processesAddresses Acceptor) msg
 
 phase1b
     :: (MonadPhase cstruct m, HasContextOf Acceptor pv m)
-    => Phase1aMsg -> m ()
-phase1b (Phase1aMsg bal) = do
+    => PrepareMsg -> m ()
+phase1b (PrepareMsg bal) = do
     msg <- withProcessStateAtomically $ do
         -- promise not to accept messages of lesser ballot numbers
         -- make stored ballot id not lesser than @bal@
         acceptorLastKnownBallotId %= max bal
-        Phase1bMsg
+        PromiseMsg
             <$> use acceptorId
             <*> use acceptorLastKnownBallotId
             <*> use (acceptorCStruct . forClassic)
@@ -90,8 +90,8 @@ phase1b (Phase1aMsg bal) = do
 
 phase2a
     :: (MonadPhase cstruct m, HasContextOf Leader pv m)
-    => Phase1bMsg cstruct -> m ()
-phase2a (Phase1bMsg accId bal cstruct) = do
+    => PromiseMsg cstruct -> m ()
+phase2a (PromiseMsg accId bal cstruct) = do
     maybeMsg <- withProcessStateAtomically $ runMaybeT $ do
         -- add received vote to set of votes stored locally for this ballot,
         -- initializing this set if doesn't exist yet
@@ -120,7 +120,7 @@ phase2a (Phase1bMsg accId bal cstruct) = do
                       bal appliedPolicies
             logInfo $ "Broadcasting new cstruct: " <> pretty cstructWithNewPolicies
 
-            pure $ Phase2aMsg bal cstructWithNewPolicies
+            pure $ AcceptRequestMsg bal cstructWithNewPolicies
         else exit
 
     -- when got a message to submit - broadcast it
@@ -129,8 +129,8 @@ phase2a (Phase1bMsg accId bal cstruct) = do
 
 phase2b
     :: (MonadPhase cstruct m, HasContextOf Acceptor pv m)
-    => Phase2aMsg cstruct -> m ()
-phase2b (Phase2aMsg bal cstruct) = do
+    => AcceptRequestMsg cstruct -> m ()
+phase2b (AcceptRequestMsg bal cstruct) = do
     maybeMsg <- withProcessStateAtomically $ runMaybeT $ do
         localBallotId <- use $ acceptorLastKnownBallotId
         localCstruct <- use $ acceptorCStruct . forClassic
@@ -149,7 +149,7 @@ phase2b (Phase2aMsg bal cstruct) = do
 
         -- form message
         accId <- use acceptorId
-        pure $ Phase2bMsg accId cstruct
+        pure $ AcceptedMsg accId cstruct
 
     whenJust maybeMsg $
         broadcastTo (processesAddresses Learner)
@@ -158,5 +158,5 @@ phase2b (Phase2aMsg bal cstruct) = do
 
 learn
     :: (MonadPhase cstruct m, HasContextOf Learner pv m)
-    => LearningCallback m -> Phase2bMsg cstruct -> m ()
-learn callback (Phase2bMsg accId cstruct) = learnCStruct callback combination accId cstruct
+    => LearningCallback m -> AcceptedMsg cstruct -> m ()
+learn callback (AcceptedMsg accId cstruct) = learnCStruct callback combination accId cstruct
