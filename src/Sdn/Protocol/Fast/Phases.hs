@@ -1,6 +1,9 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE Rank2Types          #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE AllowAmbiguousTypes   #-}
+{-# LANGUAGE PartialTypeSignatures #-}
+{-# LANGUAGE Rank2Types            #-}
+{-# LANGUAGE TemplateHaskell       #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# OPTIONS_GHC -Wno-partial-type-signatures #-}
 
 -- | Phases of Fast Paxos.
 
@@ -12,16 +15,18 @@ module Sdn.Protocol.Fast.Phases
     ) where
 
 import           Control.Exception             (assert)
-import           Control.Lens                  (at, non, (%%=), (%=), (.=))
+import           Control.Lens                  (at, makePrisms, non, (%%=), (%=), (.=))
+import           Control.Monad.Trans.Cont      (ContT (..), evalContT)
 import qualified Data.Map                      as M
 import qualified Data.Set                      as S
 import           Formatting                    (build, sformat, (%))
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra                     (compose, decompose, listF, logInfo,
-                                                panicOnFail, presence, takeNoMoreThanOne,
-                                                throwOnFail, whenJust', zoom)
+import           Sdn.Extra                     (OldNew (..), compose, decompose, listF,
+                                                logInfo, panicOnFail, presence,
+                                                takeNoMoreThanOne, throwOnFail,
+                                                wasChanged, whenJust', zoom)
 import qualified Sdn.Protocol.Classic.Messages as Classic
 import qualified Sdn.Protocol.Classic.Phases   as Classic
 import           Sdn.Protocol.Common.Phases
@@ -29,6 +34,63 @@ import           Sdn.Protocol.Context
 import qualified Sdn.Protocol.Fast.Messages    as Fast
 import           Sdn.Protocol.Processes
 import           Sdn.Protocol.Versions
+
+-- * Helpers
+
+-- | For one who receives a bunch of decisions from acceptors,
+-- this type represents a decision based on received values.
+data PolicyChoiceStatus
+      -- | We still didn't get enough votes to make any decisions.
+    = TooFewVotes
+      -- | Some value gained so many votes, that no any quorum can accept
+      -- another value.
+    | OnlyPossible AcceptanceType
+      -- | Policy gained a quorum of votes.
+    | PolicyFixated AcceptanceType
+      -- | We suggest that votes are too contradictory and round is failed.
+    | Undecidable
+    deriving (Eq, Show)
+
+makePrisms ''PolicyChoiceStatus
+
+-- | Based on votes for policy, build a decision on its opportunity of
+-- being fixated.
+decideOnPolicyStatus
+    :: (HasMembers, QuorumFamily qf)
+    => Votes qf AcceptanceType -> Either Text PolicyChoiceStatus
+decideOnPolicyStatus votesForPolicy = evalContT $ do
+    let perValueVotes = transposeVotes votesForPolicy
+
+    -- TODO: another quorum can go here
+    -- optimization
+    do
+        let heardFromSome = excludesOtherQuorum votesForPolicy
+        unless heardFromSome $
+            finishWith TooFewVotes
+
+    do
+        mValueFixated <-
+            lift . takeNoMoreThanOne "fixated value" $
+            M.keys $ M.filter isQuorum perValueVotes
+        whenJust mValueFixated $ \acceptance ->
+            finishWith $ PolicyFixated acceptance
+
+    do
+        mValueCouldBeChosen <-
+            lift . takeNoMoreThanOne "possibly chosen value" $
+            M.keys $ M.filter excludesOtherQuorum perValueVotes
+        whenJust mValueCouldBeChosen $ \acceptance ->
+            finishWith $ OnlyPossible acceptance
+
+    -- TODO: another quorum can go here
+    do
+        let heardFromQuorum = isQuorum votesForPolicy
+        unless heardFromQuorum $
+            finishWith TooFewVotes
+
+    finishWith Undecidable
+  where
+    finishWith x = ContT $ \_ -> return x
 
 -- * Proposal
 
@@ -84,20 +146,19 @@ learn callback (Fast.AcceptedMsg accId (toList -> cstructDiff)) = do
         fmap catMaybes . forM cstructDiff $ \acceptancePolicy ->
         rememberVoteForPolicy @cstruct learnerFastVotes accId acceptancePolicy
 
-    fixatedValues <- fmap catMaybes . forM voteUpdates $ \(policy, _, votesForPolicy) -> do
-        let perValueVotes = transposeVotes votesForPolicy
+    fixatedValues <- fmap catMaybes . forM voteUpdates $ \(policy, votesForPolicy) -> do
+        policyStatus <- forM votesForPolicy $
+            throwOnFail ProtocolError . decideOnPolicyStatus
 
-        mValueFixated <-
-            throwOnFail ProtocolError $
-            takeNoMoreThanOne "fixated value" $
-            M.keys $ M.filter isQuorum perValueVotes
+        if wasChanged policyStatus
+        then do
+            whenJust' (getNew policyStatus ^? _PolicyFixated) $ \acceptance -> do
+                let policyAcceptance = compose (acceptance, policy)
+                logInfo $ sformat ("Policy "%build%" has been fixated")
+                        policyAcceptance
 
-        whenJust' mValueFixated $ \acceptance -> do
-            let policyAcceptance = compose (acceptance, policy)
-            logInfo $ sformat ("Policy "%build%" has been fixated")
-                      policyAcceptance
-
-            return policyAcceptance
+                return policyAcceptance
+        else return Nothing
 
     withProcessStateAtomically $
         learnerLearned %=
@@ -125,54 +186,19 @@ rememberVoteForPolicy
     => Traversal' s (PerCmdVotes qf cstruct)
     -> AcceptorId
     -> Cmd cstruct
-    -> TransactionM s (Maybe (RawCmd cstruct, Votes qf AcceptanceType, Votes qf AcceptanceType))
-    -- TODO: distinguish old & new
+    -> TransactionM s (Maybe (RawCmd cstruct, OldNew (Votes qf AcceptanceType)))
 rememberVoteForPolicy atVotesL accId policyAcceptance =
     let (acceptance, policy) = decompose policyAcceptance
     in  lift . fmap getAlt $ atVotesL . at policy . non mempty %%= \oldVotes ->
             let newVotes = oldVotes & at accId .~ Just acceptance
+                allVotes = OldNew { getOld = oldVotes, getNew = newVotes }
             in assertNoRebind oldVotes acceptance $
-               (Alt $ Just (policy, oldVotes, newVotes), newVotes)
+               (Alt $ Just (policy, allVotes), newVotes)
   where
     -- checks we are not changing existing vote for particular "acceptance" value
     assertNoRebind oldVotes newAcceptance =
         let oldAcceptance = oldVotes ^. at accId
         in  assert (oldAcceptance == Nothing || oldAcceptance == Just newAcceptance)
-
-data PolicyChoiceStatus
-    = TooFewVotes
-    | OnlyPossible AcceptanceType
-    | PolicyFixated AcceptanceType
-    | Undecidable
-    deriving (Eq, Show)
-
-decideOnPolicyStatus
-    :: (HasMembers, QuorumFamily qf)
-    => Votes qf AcceptanceType -> Either Text PolicyChoiceStatus
-decideOnPolicyStatus votesForPolicy = do
-    let perValueVotes = transposeVotes votesForPolicy
-
-    -- TODO: another quorum can go here
-    let heardFromQuorum = isQuorum votesForPolicy
-
-    mValueFixated <-
-        takeNoMoreThanOne "fixated value" $
-        M.keys $ M.filter isQuorum perValueVotes
-    mValueCouldBeChosen <-
-        takeNoMoreThanOne "possibly chosen value" $
-        M.keys $ M.filter excludesOtherQuorum perValueVotes
-
-    if | Just acceptance <- mValueFixated ->
-        return $ PolicyFixated acceptance
-
-       | Just acceptance <- mValueCouldBeChosen ->
-        return $ OnlyPossible acceptance
-
-       | heardFromQuorum ->
-        return Undecidable
-
-       | otherwise ->
-        return TooFewVotes
 
 detectConflicts
     :: forall cstruct m.
@@ -184,12 +210,12 @@ detectConflicts (Fast.AcceptedMsg accId (toList -> cstructDiff)) = do
         rememberVoteForPolicy @cstruct leaderFastVotes accId policyAcceptance
 
 
-    forM_ voteUpdates $ \(policy, oldVotesForPolicy, votesForPolicy) -> do
-        oldPolicyStatus <- throwOnFail ProtocolError $ decideOnPolicyStatus oldVotesForPolicy
-        policyStatus <- throwOnFail ProtocolError $ decideOnPolicyStatus votesForPolicy
+    forM_ voteUpdates $ \(policy, votesForPolicy :: OldNew _) -> do
+        policyStatus <- forM votesForPolicy $
+            throwOnFail ProtocolError . decideOnPolicyStatus
 
-        when (policyStatus /= oldPolicyStatus) $ do
-          case policyStatus of
+        when (wasChanged policyStatus) $ do
+          case getNew policyStatus of
             TooFewVotes -> return ()
 
             PolicyFixated acceptance -> do
@@ -198,7 +224,8 @@ detectConflicts (Fast.AcceptedMsg accId (toList -> cstructDiff)) = do
                                    \not tracking it further")
                         policyAcceptance
 
-                -- TODO: stop tracking
+                -- no need to do anything, since decision on policy will never
+                -- change
 
             OnlyPossible acceptance -> do
                 let policyAcceptance = compose (acceptance, policy)

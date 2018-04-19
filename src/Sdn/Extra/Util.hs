@@ -1,5 +1,6 @@
 {-# LANGUAGE DefaultSignatures          #-}
 {-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE DeriveTraversable          #-}
 {-# LANGUAGE FunctionalDependencies     #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE PolyKinds                  #-}
@@ -407,3 +408,11 @@ class MFunctored (s :: (* -> *) -> *) where
 
 instance MFunctored (Rpc.Method (o :: [*])) where
     hoistItem = Rpc.hoistMethod
+
+data OldNew a = OldNew
+    { getOld :: a
+    , getNew :: a
+    } deriving (Eq, Ord, Show, Functor, Foldable, Traversable)
+
+wasChanged :: Eq a => OldNew a -> Bool
+wasChanged OldNew{..} = getOld /= getNew
