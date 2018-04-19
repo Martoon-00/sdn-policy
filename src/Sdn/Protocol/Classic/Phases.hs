@@ -12,14 +12,14 @@ module Sdn.Protocol.Classic.Phases
     , learn
     ) where
 
-import           Control.Lens                  (at, non, (%=), (.=), (<%=), (<+=))
+import           Control.Lens                  (at, non, (%=), (.=), (<+=))
 import qualified Data.Set                      as S
 import           Formatting                    (build, sformat, (%))
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra                     (exit, listF, logInfo, submit, throwOnFail,
-                                                zoom)
+import           Sdn.Extra                     (OldNew (..), exit, listF, logInfo, submit,
+                                                throwOnFail, wasChanged, zoom, (<<<%=))
 import           Sdn.Protocol.Classic.Messages
 import           Sdn.Protocol.Common.Phases
 import           Sdn.Protocol.Context
@@ -60,16 +60,25 @@ phase1a
 phase1a = do
     logInfo "Starting new ballot"
 
-    msg <- withProcessStateAtomically $ do
+    mmsg <- withProcessStateAtomically $ runMaybeT $ do
         -- increment ballot id
         newBallotId <- leaderBallotId <+= 1
         -- fixate pending policies as attached to newly started ballot
-        _ <- zoom (leaderProposedPolicies . forClassic) $
+        curBallotProposals <-
+             zoom (leaderProposedPolicies . forClassic) $
              dumpProposedCommands newBallotId
-        -- make up an "1a" message
+        -- don't publicly start ballot if there is no proposals
+        when (null curBallotProposals) $ do
+            logInfo $
+                sformat ("Skipping "%build%" (no proposals)")
+                newBallotId
+            exit
+        -- make up an "prepare" message
         PrepareMsg <$> use leaderBallotId
 
-    broadcastTo (processesAddresses Acceptor) msg
+    -- if decided to initiate ballot, notify acceptors about its start
+    whenJust mmsg $
+        broadcastTo (processesAddresses Acceptor)
 
 phase1b
     :: (MonadPhase cstruct m, HasContextOf Acceptor pv m)
@@ -95,25 +104,21 @@ phase2a (PromiseMsg accId bal cstruct) = do
     maybeMsg <- withProcessStateAtomically $ runMaybeT $ do
         -- add received vote to set of votes stored locally for this ballot,
         -- initializing this set if doesn't exist yet
-        (oldVotes, newVotes) <- zoom (leaderVotes . at bal . non mempty) $ do
-            oldVotes <- get
-            newVotes <- identity <%= addVote accId cstruct
-            return (oldVotes, newVotes)
+        votes <- leaderVotes . at bal . non mempty <<<%= addVote accId cstruct
 
-        when (isMinQuorum newVotes) $
+        when (isMinQuorum $ getNew votes) $
             logInfo $ "Just got 1b from quorum of acceptors at " <> pretty bal
 
         -- evaluate old and new Gamma
-        oldCombined <- throwOnFail ProtocolError $ combination oldVotes
-        newCombined <- throwOnFail ProtocolError $ combination newVotes
+        combined <- forM votes $ throwOnFail ProtocolError . combination
 
         -- if there is something new, recalculate Gamma and apply pending policies
-        if isMinQuorum newVotes || oldCombined /= newCombined
+        if isMinQuorum (getNew votes) || wasChanged combined
         then do
             policiesToApply <-
                     use $ leaderProposedPolicies . forClassic . at bal . non mempty
             let (appliedPolicies, cstructWithNewPolicies) =
-                    usingState newCombined $
+                    usingState (getNew combined) $
                     mapM acceptOrRejectCommandS policiesToApply
 
             logInfo $ sformat ("Applied policies at "%build%": "%listF "," build)

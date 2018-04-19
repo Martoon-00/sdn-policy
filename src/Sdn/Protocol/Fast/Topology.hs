@@ -23,6 +23,7 @@ data instance CustomTopologySettings Fast =
     { topologyRecoveryDelay :: Microsecond
     }
 
+-- TODO: probably remove this stuff
 instance Default (CustomTopologySettings Fast) where
     def =
         FastTopologySettingsPart
@@ -52,9 +53,17 @@ instance HasVersionProtocolListeners Fast where
 instance HasVersionTopologyActions Fast where
     versionTopologyActions TopologySettings{..} =
         TopologyActions
-        { proposeAction = batchedOrSimpleProposals topologyProposalBatchSettings Fast.propose
-        , startBallotAction = pass
-        , topologyListeners = versionProtocolListeners mempty
+        { proposeAction =
+            batchedOrSimpleProposals topologyProposalBatchSettings Fast.propose
+        , startBallotAction =
+            -- here we use classic phase1a since there are no ballots in our
+            -- Fast version, rather policies are installed immediatelly.
+            -- At the same time classic rounds are still used to periodically
+            -- (which is quite dumb as-is, but anyway) pick and apply
+            -- conflicting policies "Classically".
+            Classic.phase1a
+        , topologyListeners =
+            versionProtocolListeners mempty
         }
       where
         FastTopologySettingsPart{..} = topologyCustomSettings

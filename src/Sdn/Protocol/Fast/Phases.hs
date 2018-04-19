@@ -175,10 +175,9 @@ learn callback (Fast.AcceptedMsg accId (toList -> cstructDiff)) = do
 -- acts like if it received classic 1b messsage.
 delegateToRecovery
     :: (MonadPhase cstruct m, HasContextOf Leader Fast m)
-    => AcceptorId -> BallotId -> cstruct -> m ()
-delegateToRecovery accId bal cstruct = do
-    let recoveryBallotId = bal
-    Classic.phase2a (Classic.PromiseMsg accId recoveryBallotId cstruct)
+    => NonEmpty (RawCmd cstruct) -> m ()
+delegateToRecovery conflictingPolicies = do
+    Classic.rememberProposal (Classic.ProposalMsg conflictingPolicies)
 
 rememberVoteForPolicy
     :: forall cstruct qf s.
@@ -220,25 +219,32 @@ detectConflicts (Fast.AcceptedMsg accId (toList -> cstructDiff)) = do
 
             PolicyFixated acceptance -> do
                 let policyAcceptance = compose (acceptance, policy)
-                logInfo $ sformat ("Policy "%build%" supposedly has been learned, \
-                                   \not tracking it further")
-                        policyAcceptance
+                logInfo $ supposedlyLearnedLog policyAcceptance
 
-                -- no need to do anything, since decision on policy will never
-                -- change
+                -- no need to do anything specific, since decision on policy
+                -- will never change anymore
 
             OnlyPossible acceptance -> do
                 let policyAcceptance = compose (acceptance, policy)
-                logInfo $ sformat ("Policy "%build%" is considered possibly chosen")
-                        policyAcceptance
+                logInfo $ onlyChosenLog policyAcceptance
 
                 withProcessStateAtomically $
                     leaderFastPreferredPolicies . at policyAcceptance . presence .= True
                 -- TODO: periodically send
 
             Undecidable -> do
-                logInfo $ sformat ("Heard about "%build%" by quorum, but no value \
-                                \still has been chosen, declaring conflict!")
+                logInfo $ conflictLog
                         policy
 
-                -- TODO: conflict!
+                delegateToRecovery (one policy)
+                logInfo "Policy ^ proposed for next classic ballot"
+  where
+    supposedlyLearnedLog =
+        sformat ("Policy "%build%" supposedly has been learned, \
+                 \not tracking it further")
+    onlyChosenLog =
+        sformat ("Policy "%build%" is considered possibly chosen")
+    conflictLog =
+        sformat ("Heard about "%build%" by quorum, but no value \
+                 \still has been even potentially chosen. \
+                 \Declaring policy conflict!")

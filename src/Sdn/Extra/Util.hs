@@ -409,6 +409,8 @@ class MFunctored (s :: (* -> *) -> *) where
 instance MFunctored (Rpc.Method (o :: [*])) where
     hoistItem = Rpc.hoistMethod
 
+-- | When some object is being changed, this keeps old and new changed
+-- versions of this object.
 data OldNew a = OldNew
     { getOld :: a
     , getNew :: a
@@ -416,3 +418,12 @@ data OldNew a = OldNew
 
 wasChanged :: Eq a => OldNew a -> Bool
 wasChanged OldNew{..} = getOld /= getNew
+
+-- | Similar to '<%=' and '<<%=', returns both old and new versions of value.
+(<<<%=) :: MonadState s m => Lens s s a a -> (a -> a) -> m (OldNew a)
+l <<<%= f = state $ \s ->
+    let a = s ^. l
+        a' = f a
+        s' = s & l .~ a'
+    in  (OldNew{ getOld = a, getNew = a' }, s')
+infix 4 <<<%=
