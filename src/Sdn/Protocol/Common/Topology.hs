@@ -29,11 +29,11 @@ import           Sdn.Extra                    (Message, MonadLog, MonadReporting
 import           Sdn.Extra.MemStorage
 import qualified Sdn.Extra.Schedule           as S
 import qualified Sdn.Policy.Fake              as Fake
+import           Sdn.Protocol.Common.Context
 import           Sdn.Protocol.Common.Messages
 import           Sdn.Protocol.Common.Phases   (BatchingSettings, LearningCallback,
                                                MakeProposal, confirmCommitted,
                                                isPolicyUnconfirmed)
-import           Sdn.Protocol.Context
 import           Sdn.Protocol.Processes
 import           Sdn.Protocol.Versions
 

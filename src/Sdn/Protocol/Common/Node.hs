@@ -23,12 +23,12 @@ import           Sdn.Base
 import           Sdn.Extra.Logging
 import           Sdn.Extra.MemStorage
 import           Sdn.Extra.Util               (declareMonadicMark, prepareToAct)
+import           Sdn.Protocol.Common.Context
 import           Sdn.Protocol.Common.Phases   (BatchingSettings (..),
                                                LearningCallback (..), batchingProposal)
 import           Sdn.Protocol.Common.Topology (ProcessEnv, ProcessM,
                                                ProtocolListeners (..),
                                                versionProtocolListeners)
-import           Sdn.Protocol.Context
 import qualified Sdn.Protocol.Fast            as Fast
 import           Sdn.Protocol.Processes
 import           Sdn.Protocol.Versions

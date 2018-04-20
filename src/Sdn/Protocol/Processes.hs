@@ -8,18 +8,18 @@
 
 module Sdn.Protocol.Processes where
 
-import           Control.Lens             (from, ix)
-import           Control.TimeWarp.Logging (LoggerName)
-import           Control.TimeWarp.Rpc     (NetworkAddress, Port)
-import           Data.Default             (Default (..))
-import           GHC.Exts                 (fromList)
-import qualified System.Console.ANSI      as ANSI
+import           Control.Lens                (from, ix)
+import           Control.TimeWarp.Logging    (LoggerName)
+import           Control.TimeWarp.Rpc        (NetworkAddress, Port)
+import           Data.Default                (Default (..))
+import           GHC.Exts                    (fromList)
+import qualified System.Console.ANSI         as ANSI
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra.Logging        (loggerNameT, withColor)
+import           Sdn.Extra.Logging           (loggerNameT, withColor)
 import           Sdn.Extra.MemStorage
-import           Sdn.Protocol.Context
+import           Sdn.Protocol.Common.Context
 import           Sdn.Protocol.Versions
 
 -- | Unique features of each process.

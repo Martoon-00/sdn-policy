@@ -34,7 +34,6 @@ library
                        Sdn.Base.Quorum
                        Sdn.Base.Types
 
-                       Sdn.Protocol.Context
                        Sdn.Protocol.Classic.Messages
                        Sdn.Protocol.Classic.Phases
                        Sdn.Protocol.Classic.Topology
@@ -42,6 +41,10 @@ library
                        Sdn.Protocol.Common.Messages
                        Sdn.Protocol.Common.Phases
                        Sdn.Protocol.Common.Topology
+                       Sdn.Protocol.Common.Context
+                       Sdn.Protocol.Common.Context.States
+                       Sdn.Protocol.Common.Context.Storage
+                       Sdn.Protocol.Common.Context.Types
                        Sdn.Protocol.Fast.Messages
                        Sdn.Protocol.Fast.Phases
                        Sdn.Protocol.Fast.Topology

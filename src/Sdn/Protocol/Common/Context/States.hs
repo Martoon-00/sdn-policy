@@ -1,125 +1,23 @@
-{-# LANGUAGE GADTs                #-}
-{-# LANGUAGE Rank2Types           #-}
-{-# LANGUAGE TemplateHaskell      #-}
-{-# LANGUAGE TypeFamilies         #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE KindSignatures  #-}
+{-# LANGUAGE TemplateHaskell #-}
 
--- | Various contexts of processes
+-- | States kept by different processes.
 
-module Sdn.Protocol.Context where
+module Sdn.Protocol.Common.Context.States where
 
-import           Control.Lens           (At (..), Index, IxValue, Ixed (..), at,
-                                         makeLenses, (.=), (<<.=))
-import           Control.TimeWarp.Rpc   (MonadRpc, NetworkAddress)
-import           Control.TimeWarp.Timed (MonadTimed)
-import           Data.Default           (Default (def))
-import qualified Data.Set               as S
+import           Control.Lens                      (makeLenses)
+import           Data.Default                      (Default (def))
+import qualified Data.Set                          as S
 import qualified Data.Text.Buildable
-import           Data.Text.Lazy.Builder (Builder)
-import           Formatting             (Format, bprint, build, later, (%))
+import           Formatting                        (bprint, build, (%))
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra              (Message, MonadLog, MonadReporting, PureLog,
-                                         RpcOptions, launchPureLog, listF, pairF, submit)
-import           Sdn.Extra.MemStorage
+import           Sdn.Extra                         (listF, pairF)
+import           Sdn.Protocol.Common.Context.Types
 import           Sdn.Protocol.Versions
 
--- * General
-
--- | Context kept by single process.
-data ProcessContext ctx = ProcessContext
-    { pcState :: ctx  -- ^ Process'es mutable state
-    }
-
--- | Envorinment for transaction modifying process state.
-type TransactionM s a = forall n. (MonadCatch n) => PureLog (StateT s n) a
-
--- | Constraints for transaction.
-type MonadTransaction ctx m =
-    ( MonadIO m
-    , MonadThrow m
-    , MonadLog m
-    , MonadReporting m
-    , MonadReader (ProcessContext ctx) m
-    )
-
--- | Atomically modify state stored by process.
--- If exception is thrown in the process, no changes apply.
-withProcessStateAtomically
-    :: (MonadTransaction (DeclaredMemStore m s) m, DeclaresMemStore m)
-    => TransactionM s a -> m a
-withProcessStateAtomically modifier = do
-    ProcessContext{..} <- ask
-    MemStorage{..} <- getMemStorage
-    launchPureLog ({-# SCC state_modification #-} atomicallyModifyMemStorage pcState) modifier
-
-data ForBothRoundTypes a = ForBothRoundTypes
-    { _forClassic :: a
-    , _forFast    :: a
-    }
-
-makeLenses ''ForBothRoundTypes
-
-instance Monoid a => Monoid (ForBothRoundTypes a) where
-    mempty = ForBothRoundTypes mempty mempty
-    ForBothRoundTypes a1 b1 `mappend` ForBothRoundTypes a2 b2
-        = ForBothRoundTypes (a1 <> a2) (b1 <> b2)
-
-instance Default a => Default (ForBothRoundTypes a) where
-    def = ForBothRoundTypes def def
-
-type PerBallot a = Map BallotId a
-type PerBallots a = ForBothRoundTypes $ PerBallot a
-
--- | Formatter for ballot id map
-ballotMapF
-    :: Buildable BallotId
-    => Format Builder (a -> Builder) -> Format r (PerBallot a -> r)
-ballotMapF f = listF "\n  " (pairF (build%": "%f))
-
--- | This is where commands from proposer are stored.
--- We need to cache all policies proposed upon specified ballot.
-data ProposedCommands a = ProposedCommands
-    { _ballotProposedCommands  :: PerBallot [a]
-      -- ^ Commands proposed upon given ballots.
-    , _pendingProposedCommands :: [a]
-      -- ^ Proposed commands to attach to next ballot.
-    }
-
-makeLenses ''ProposedCommands
-
-instance Default (ProposedCommands a) where
-    def = ProposedCommands mempty mempty
-
-instance Buildable a => Buildable (ProposedCommands a) where
-    build ProposedCommands{..} =
-        bprint ("pending: "%listF ", " build%"\n"
-               %"fixed: "%ballotMapF (listF ", " build))
-            _pendingProposedCommands
-            _ballotProposedCommands
-
-instance Ixed (ProposedCommands a) where
-instance At (ProposedCommands a) where
-    at i = ballotProposedCommands . at i
-type instance Index (ProposedCommands a) = Index (PerBallot [a])
-type instance IxValue (ProposedCommands a) = IxValue (PerBallot [a])
-
-rememberProposedCommandsAt :: BallotId -> ProposedCommands a -> ProposedCommands a
-rememberProposedCommandsAt ballotId = execState $ do
-    pending <- pendingProposedCommands <<.= []
-    ballotProposedCommands . at ballotId .= Just pending
-
-dumpProposedCommands :: MonadState (ProposedCommands a) m => BallotId -> m [a]
-dumpProposedCommands ballotId =
-    use pendingProposedCommands <* modify (rememberProposedCommandsAt ballotId)
-
--- * Per-process contexts
--- ** Proposer
-
-data PolicyConfirmation
-    = UnconfirmedSince BallotId
-    | Confirmed
+-- * Proposer
 
 -- | State held by proposer.
 data ProposerState pv cstruct = ProposerState
@@ -144,9 +42,7 @@ instance Default cstruct =>
          Default (ProposerState pv cstruct) where
     def = ProposerState mempty def
 
--- ** Leader
-
-type PerCmdVotes qf cstruct = Map (RawCmd cstruct) $ Votes qf AcceptanceType
+-- * Leader
 
 -- TODO full Buildable instances
 
@@ -166,11 +62,6 @@ data LeaderState pv cstruct = LeaderState
 
 makeLenses ''LeaderState
 
-bothRoundsF :: Format Builder (a -> Builder) -> Format r (ForBothRoundTypes a -> r)
-bothRoundsF fmt = later $ \ForBothRoundTypes{..} ->
-    bprint ("_fast_: "%fmt) _forClassic <>
-    bprint ("\n  _classic_: "%fmt) _forFast
-
 instance (ProtocolVersion pv, PracticalCStruct cstruct) =>
          Buildable (LeaderState pv cstruct) where
     build LeaderState {..} =
@@ -186,7 +77,7 @@ instance (ProtocolVersion pv, PracticalCStruct cstruct) =>
 instance Default (LeaderState pv cstruct) where
     def = LeaderState def def mempty def def
 
--- ** Acceptor
+-- * Acceptor
 
 -- | State kept by acceptor.
 data AcceptorState pv cstruct = AcceptorState
@@ -222,7 +113,7 @@ defAcceptorState
     => AcceptorId -> (AcceptorState pv cstruct)
 defAcceptorState id = AcceptorState id def def def
 
--- ** Learner
+-- * Learner
 
 -- | State kept by learner.
 data LearnerState pv cstruct = LearnerState
@@ -252,7 +143,7 @@ instance PracticalCStruct cstruct =>
 instance Default cstruct => Default (LearnerState pv cstruct) where
     def = LearnerState mempty def def
 
--- * Misc
+-- * Overall
 
 data AllStates pv cstruct = AllStates
     { proposerState   :: ProposerState pv cstruct
@@ -273,16 +164,3 @@ instance (ProtocolVersion pv, PracticalCStruct cstruct) =>
             acceptorsStates
             learnersStates
 
--- | Send a message to given participants.
-broadcastTo
-    :: ( MonadCatch m
-       , MonadTimed m
-       , MonadRpc RpcOptions m
-       , MonadReader (ProcessContext ctx) m
-       , Message msg
-       , HasMembers
-       )
-    => [NetworkAddress] -> msg -> m ()
-broadcastTo getAddresses msg = do
-    let addresses = getAddresses
-    forM_ addresses $ \addr -> submit addr msg

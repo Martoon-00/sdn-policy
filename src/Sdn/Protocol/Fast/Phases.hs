@@ -23,14 +23,14 @@ import           Formatting                    (build, sformat, (%))
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra                     (OldNew (..), compose, decompose, listF,
-                                                logInfo, panicOnFail, presence,
-                                                takeNoMoreThanOne, throwOnFail,
+import           Sdn.Extra                     (OldNew (..), broadcastTo, compose,
+                                                decompose, listF, logInfo, panicOnFail,
+                                                presence, takeNoMoreThanOne, throwOnFail,
                                                 wasChanged, whenJust', zoom)
 import qualified Sdn.Protocol.Classic.Messages as Classic
 import qualified Sdn.Protocol.Classic.Phases   as Classic
+import           Sdn.Protocol.Common.Context
 import           Sdn.Protocol.Common.Phases
-import           Sdn.Protocol.Context
 import qualified Sdn.Protocol.Fast.Messages    as Fast
 import           Sdn.Protocol.Processes
 import           Sdn.Protocol.Versions
@@ -62,8 +62,8 @@ decideOnPolicyStatus votesForPolicy = evalContT $ do
     let perValueVotes = transposeVotes votesForPolicy
 
     -- TODO: another quorum can go here
-    -- optimization
     do
+        -- optimization
         let heardFromSome = excludesOtherQuorum votesForPolicy
         unless heardFromSome $
             finishWith TooFewVotes

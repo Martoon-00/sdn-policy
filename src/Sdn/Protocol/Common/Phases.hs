@@ -36,11 +36,12 @@ import           Sdn.Extra                    (MFunctored (..), MonadLog, MonadR
                                                logError, logInfo, presence, submit,
                                                throwOnFail)
 import           Sdn.Extra.Batching
+import           Sdn.Protocol.Common.Context
 import           Sdn.Protocol.Common.Messages
-import           Sdn.Protocol.Context
 import           Sdn.Protocol.Processes
 import           Sdn.Protocol.Versions
 
+-- | Action which makes a proposal.
 type MakeProposal m = PreparedAction (DeclaredRawCmd m) m
 
 simpleProposal :: Applicative m => (DeclaredRawCmd m -> m ()) -> MakeProposal m

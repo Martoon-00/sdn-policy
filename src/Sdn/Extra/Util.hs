@@ -65,6 +65,14 @@ submit
     => NetworkAddress -> msg -> m ()
 submit = Rpc.send
 
+-- | Send a message to multiple given participants.
+broadcastTo
+    :: (MonadCatch m, MonadTimed m, MonadRpc RpcOptions m, Message msg)
+    => [NetworkAddress] -> msg -> m ()
+broadcastTo getAddresses msg = do
+    let addresses = getAddresses
+    forM_ addresses $ \addr -> submit addr msg
+
 -- | Builder for list.
 listF
     :: IsList l

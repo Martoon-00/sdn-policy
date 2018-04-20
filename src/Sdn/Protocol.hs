@@ -5,8 +5,8 @@ module Sdn.Protocol
     ) where
 
 import           Sdn.Protocol.Classic.Topology as X
+import           Sdn.Protocol.Common.Context   as X
 import           Sdn.Protocol.Common.Topology  as X
-import           Sdn.Protocol.Context          as X
 import           Sdn.Protocol.Fast.Topology    as X
 import           Sdn.Protocol.Processes        as X
 import           Sdn.Protocol.Versions         as X
