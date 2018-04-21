@@ -1,3 +1,4 @@
+{-# LANGUAGE Rank2Types   #-}
 {-# LANGUAGE TypeFamilies #-}
 
 -- | Phases of Classic Paxos.
@@ -12,15 +13,15 @@ module Sdn.Protocol.Classic.Phases
     , learn
     ) where
 
-import           Control.Lens                  (at, non, (%=), (.=), (<+=))
+import           Control.Lens                  (at, non, to, (%=), (.=), (<+=))
 import qualified Data.Set                      as S
 import           Formatting                    (build, sformat, (%))
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra                     (OldNew (..), broadcastTo, exit, listF,
-                                                logInfo, submit, throwOnFail, wasChanged,
-                                                zoom, (<<<%=))
+import           Sdn.Extra                     (OldNew (..), broadcastTo, exit, foldlF',
+                                                listF, logInfo, pairF, submit,
+                                                throwOnFail, wasChanged, zoom, (<<<%=))
 import           Sdn.Protocol.Classic.Messages
 import           Sdn.Protocol.Common.Context
 import           Sdn.Protocol.Common.Phases
@@ -39,7 +40,7 @@ propose policies = do
     -- remember policy (for testing purposes)
     withProcessStateAtomically $ do
         proposerProposedPolicies %= (toList policies <>)
-        proposerUnconfirmedPolicies %= \s -> foldl (flip S.insert) s policies
+        proposerUnconfirmedPolicies %= foldlF' S.insert policies
     -- and send it to leader
     broadcastTo (processAddresses Leader) (ProposalMsg @cstruct policies)
 
@@ -50,8 +51,9 @@ rememberProposal
     => ProposalMsg cstruct -> m ()
 rememberProposal (ProposalMsg policies) = do
     -- atomically modify process'es state
+    let policiesSet = S.fromList $ toList policies
     withProcessStateAtomically $ do
-        leaderProposedPolicies . forClassic . pendingProposedCommands %= (toList policies <>)
+        leaderProposedPolicies . forClassic . pendingProposedCommands %= (policiesSet <>)
 
 -- * Phase 1
 
@@ -92,11 +94,32 @@ phase1b (PrepareMsg bal) = do
         PromiseMsg
             <$> use acceptorId
             <*> use acceptorLastKnownBallotId
-            <*> use (acceptorCStruct . forClassic)
+            <*> use (acceptorCStruct . to totalCStruct)
 
     submit (processAddress Leader) msg
 
 -- * Phase 2
+
+-- | Take hint policies and pending policies and apply them to given cstruct.
+applyWaitingPolicies
+    :: PracticalCStruct cstruct
+    => BallotId -> cstruct -> TransactionM (LeaderState pv cstruct) cstruct
+applyWaitingPolicies bal cstruct0 = do
+    hintPolicies <- use leaderHintPolicies
+    let (unduePolicies, cstruct1) = applyHintCommands (toList hintPolicies) cstruct0
+    leaderHintPolicies %= foldlF' S.delete (map snd unduePolicies)
+    logInfo $ logUndueHints unduePolicies
+
+    pendingPolicies <- use $ leaderProposedPolicies . forClassic . at bal . non mempty
+    let (appliedPolicies, cstruct2) = acceptOrRejectCommands pendingPolicies cstruct1
+    logInfo $ logAppliedPending bal appliedPolicies
+
+    return cstruct2
+  where
+    logAppliedPending =
+        sformat ("Applied policies at "%build%": "%listF "," build)
+    logUndueHints =
+        sformat ("Undue hints on policies: "%listF ", " (pairF (build%" ("%build%")")))
 
 phase2a
     :: (MonadPhase cstruct m, HasContextOf Leader pv m)
@@ -105,33 +128,27 @@ phase2a (PromiseMsg accId bal cstruct) = do
     maybeMsg <- withProcessStateAtomically $ runMaybeT $ do
         -- add received vote to set of votes stored locally for this ballot,
         -- initializing this set if doesn't exist yet
-        votes <- leaderVotes . at bal . non mempty <<<%= addVote accId cstruct
+        oldnewVotes <- leaderVotes . at bal . non mempty <<<%= addVote accId cstruct
 
-        when (isMinQuorum $ getNew votes) $
+        when (isMinQuorum $ getNew oldnewVotes) $
             logInfo $ "Just got 1b from quorum of acceptors at " <> pretty bal
 
         -- evaluate old and new Gamma
-        combined <- forM votes $ throwOnFail ProtocolError . combination
+        oldnewCombined <- forM oldnewVotes $ throwOnFail ProtocolError . combination
 
         -- if there is something new, recalculate Gamma and apply pending policies
-        if isMinQuorum (getNew votes) || wasChanged combined
+        if isMinQuorum (getNew oldnewVotes) || wasChanged oldnewCombined
         then do
-            policiesToApply <-
-                    use $ leaderProposedPolicies . forClassic . at bal . non mempty
-            let (appliedPolicies, cstructWithNewPolicies) =
-                    usingState (getNew combined) $
-                    mapM acceptOrRejectCommandS policiesToApply
+            cstructWithNewPolicies <- lift $ applyWaitingPolicies bal (getNew oldnewCombined)
 
-            logInfo $ sformat ("Applied policies at "%build%": "%listF "," build)
-                      bal appliedPolicies
             logInfo $ "Broadcasting new cstruct: " <> pretty cstructWithNewPolicies
-
             pure $ AcceptRequestMsg bal cstructWithNewPolicies
         else exit
 
     -- when got a message to submit - broadcast it
     whenJust maybeMsg $
         broadcastTo (processesAddresses Acceptor)
+  where
 
 phase2b
     :: (MonadPhase cstruct m, HasContextOf Acceptor pv m)
@@ -139,23 +156,30 @@ phase2b
 phase2b (AcceptRequestMsg bal cstruct) = do
     maybeMsg <- withProcessStateAtomically $ runMaybeT $ do
         localBallotId <- use $ acceptorLastKnownBallotId
-        localCstruct <- use $ acceptorCStruct . forClassic
+        coreCstruct <- use $ acceptorCStruct . to coreCStruct
 
-        -- check whether did we promise to ignore this message
+        -- Check whether did we promise to ignore this message.
+        -- Case when we get message from this ballot is also checked,
+        -- because leader can submit updates during ballot, although
+        -- they are not oblidged to receive in FIFO.
         let meetsPromise =
                 localBallotId < bal ||
-                localBallotId == bal && (cstruct `extends` localCstruct)
+                localBallotId == bal && (cstruct `extends` coreCstruct)
         unless meetsPromise $ do
            logInfo "Received cstruct was rejected"
            exit
 
         -- if ok, remember received info
         acceptorLastKnownBallotId .= bal
-        acceptorCStruct . forClassic .= cstruct
+
+        use acceptorCStruct
+            >>= throwOnFail ProtocolError . extendCoreCStruct cstruct
+            >>= (acceptorCStruct .=)
 
         -- form message
-        accId <- use acceptorId
-        pure $ AcceptedMsg accId cstruct
+        AcceptedMsg
+            <$> use acceptorId
+            <*> use (acceptorCStruct . to totalCStruct)
 
     whenJust maybeMsg $
         broadcastTo (processesAddresses Learner)

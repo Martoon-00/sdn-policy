@@ -1,9 +1,7 @@
-{-# LANGUAGE AllowAmbiguousTypes   #-}
-{-# LANGUAGE PartialTypeSignatures #-}
-{-# LANGUAGE Rank2Types            #-}
-{-# LANGUAGE TemplateHaskell       #-}
-{-# LANGUAGE TypeFamilies          #-}
-{-# OPTIONS_GHC -Wno-partial-type-signatures #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE Rank2Types          #-}
+{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 -- | Phases of Fast Paxos.
 
@@ -38,7 +36,7 @@ import           Sdn.Protocol.Versions
 -- * Helpers
 
 -- | For one who receives a bunch of decisions from acceptors,
--- this type represents a decision based on received values.
+-- this type represents a decision on policy acceptance based on received votes.
 data PolicyChoiceStatus
       -- | We still didn't get enough votes to make any decisions.
     = TooFewVotes
@@ -48,6 +46,8 @@ data PolicyChoiceStatus
       -- | Policy gained a quorum of votes.
     | PolicyFixated AcceptanceType
       -- | We suggest that votes are too contradictory and round is failed.
+      -- Some value can still be fixated in soonest future, but we don't rely
+      -- on that and going to start a recovery (i.e. leader is going).
     | Undecidable
     deriving (Eq, Show)
 
@@ -115,8 +115,8 @@ phase2b
 phase2b (Fast.ProposalMsg policiesToApply) = do
     msg <- withProcessStateAtomically $ do
         appliedPolicies <-
-            zoom (acceptorCStruct . forFast) $
-            mapM acceptOrRejectCommandS policiesToApply
+            zoom (acceptorCStruct) $
+            mapM acceptOrRejectIntoStoreS policiesToApply
 
         logInfo $
             sformat ("List of fast applied policies:"
@@ -209,12 +209,12 @@ detectConflicts (Fast.AcceptedMsg accId (toList -> cstructDiff)) = do
         rememberVoteForPolicy @cstruct leaderFastVotes accId policyAcceptance
 
 
-    forM_ voteUpdates $ \(policy, votesForPolicy :: OldNew _) -> do
-        policyStatus <- forM votesForPolicy $
+    forM_ voteUpdates $ \(policy, oldnewVotesForPolicy) -> do
+        oldnewPolicyStatus <- forM oldnewVotesForPolicy $
             throwOnFail ProtocolError . decideOnPolicyStatus
 
-        when (wasChanged policyStatus) $ do
-          case getNew policyStatus of
+        when (wasChanged oldnewPolicyStatus) $ do
+          case getNew oldnewPolicyStatus of
             TooFewVotes -> return ()
 
             PolicyFixated acceptance -> do
@@ -229,12 +229,10 @@ detectConflicts (Fast.AcceptedMsg accId (toList -> cstructDiff)) = do
                 logInfo $ onlyChosenLog policyAcceptance
 
                 withProcessStateAtomically $
-                    leaderFastPreferredPolicies . at policyAcceptance . presence .= True
-                -- TODO: periodically send
+                    leaderHintPolicies . at policyAcceptance . presence .= True
 
             Undecidable -> do
-                logInfo $ conflictLog
-                        policy
+                logInfo $ conflictLog policy
 
                 delegateToRecovery (one policy)
                 logInfo "Policy ^ proposed for next classic ballot"

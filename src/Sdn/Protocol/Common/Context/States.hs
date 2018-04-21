@@ -5,16 +5,16 @@
 
 module Sdn.Protocol.Common.Context.States where
 
-import           Control.Lens                      (makeLenses)
-import           Data.Default                      (Default (def))
-import qualified Data.Set                          as S
+import           Control.Lens                     (makeLenses)
+import           Data.Default                     (Default (def))
+import qualified Data.Set                         as S
 import qualified Data.Text.Buildable
-import           Formatting                        (bprint, build, (%))
+import           Formatting                       (bprint, build, (%))
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra                         (listF, pairF)
-import           Sdn.Protocol.Common.Context.Types
+import           Sdn.Extra                        (listF, specifyF)
+import           Sdn.Protocol.Common.Context.Data
 import           Sdn.Protocol.Versions
 
 -- * Proposer
@@ -52,12 +52,12 @@ data LeaderState pv cstruct = LeaderState
       -- ^ Number of current ballot
     , _leaderProposedPolicies :: ForBothRoundTypes $ ProposedCommands (RawCmd cstruct)
       -- ^ Policies ever proposed on this classic / fast ballot, in latter case used in recovery
+    , _leaderHintPolicies     :: Set (Cmd cstruct)
+      -- ^ Policies for which only one acceptance type is (mostly probably) possible.
     , _leaderVotes            :: Map BallotId $ Votes ClassicMajorityQuorum cstruct
       -- ^ CStructs received in 2b messages
     , _leaderFastVotes        :: PerCmdVotes FastMajorityQuorum cstruct
       -- ^ CStructs detected in 2b messages of fast ballot
-    , _leaderFastPreferredPolicies :: Set $ Cmd cstruct
-      -- ^ Policies for which only one acceptance type is (mostly probably) possible.
     }
 
 makeLenses ''LeaderState
@@ -68,27 +68,29 @@ instance (ProtocolVersion pv, PracticalCStruct cstruct) =>
         bprint
             ("\n    current ballod id: " %build%
              "\n    proposed policies: " %bothRoundsF build%
-             "\n    votes: " %ballotMapF build)
+             "\n    hints: "%listF ", " build%
+             "\n    votes: " %ballotMapF build%
+             "\n    fast votes: " %listF ", " specifyF)
             _leaderBallotId
             _leaderProposedPolicies
+            _leaderHintPolicies
             _leaderVotes
+            _leaderFastVotes
 
 -- | Initial state of the leader.
 instance Default (LeaderState pv cstruct) where
-    def = LeaderState def def mempty def def
+    def = LeaderState def def def def def
 
 -- * Acceptor
 
 -- | State kept by acceptor.
 data AcceptorState pv cstruct = AcceptorState
-    { _acceptorId                   :: AcceptorId
+    { _acceptorId                :: AcceptorId
       -- ^ Identificator of this acceptor, should be read-only
-    , _acceptorLastKnownBallotId    :: BallotId
+    , _acceptorLastKnownBallotId :: BallotId
       -- ^ Last heard ballotId from leader
-    , _acceptorCStruct              :: ForBothRoundTypes cstruct
+    , _acceptorCStruct           :: CStructStore cstruct
       -- ^ Gathered CStruct so far
-    , _acceptorFastProposedPolicies :: ProposedCommands (RawCmd cstruct)
-      -- ^ Policies proposed upon each fast ballot
     }
 
 makeLenses ''AcceptorState
@@ -99,19 +101,17 @@ instance (ProtocolVersion pv, PracticalCStruct cstruct) =>
         bprint
             ("\n    my id: "%build%
              "\n    last known ballot id: "%build%
-             "\n    cstruct: "%bothRoundsF build%
-             "\n    proposed policies at fast ballots: "%build)
+             "\n    cstruct: "%build)
             _acceptorId
             _acceptorLastKnownBallotId
             _acceptorCStruct
-            _acceptorFastProposedPolicies
 
 -- | Initial state of acceptor.
 defAcceptorState
     :: forall pv cstruct.
        Default cstruct
     => AcceptorId -> (AcceptorState pv cstruct)
-defAcceptorState id = AcceptorState id def def def
+defAcceptorState id = AcceptorState id def def
 
 -- * Learner
 
@@ -133,7 +133,7 @@ instance PracticalCStruct cstruct =>
     build LearnerState{..} =
         bprint
             ("\n    heard: "%build%
-             "\n    heard fast: "%listF ",\n    " (pairF (build%": "%build))%
+             "\n    heard fast: "%listF ",\n    " specifyF%
              "\n    learned: "%build)
             _learnerVotes
             _learnerFastVotes

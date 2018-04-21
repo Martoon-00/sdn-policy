@@ -90,6 +90,11 @@ pairF
 pairF buildAB =
     later $ \(a, b) -> bprint buildAB a b
 
+specifyF
+    :: (Buildable a, Buildable b)
+    => Format r ((a, b) -> r)
+specifyF = pairF (build%": "%build)
+
 -- | Extended modifier for 'TVar'.
 modifyTVarS :: (Monad m, MonadSTM m) => TVar s -> StateT s m a -> m a
 modifyTVarS var modifier = do
@@ -435,3 +440,9 @@ l <<<%= f = state $ \s ->
         s' = s & l .~ a'
     in  (OldNew{ getOld = a, getNew = a' }, s')
 infix 4 <<<%=
+
+-- | Sometimes more convenient version of 'foldl\''.
+foldlF'
+    :: NontrivialContainer t
+    => (Element t -> b -> b) -> t -> b -> b
+foldlF' f e l = foldl' (flip f) l e

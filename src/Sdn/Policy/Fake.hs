@@ -210,4 +210,5 @@ instance CStruct Configuration where
          sanityCheck =
              first ("intersectingCombination: " <> ) . checkingConsistency
 
+
 instance PracticalCStruct Configuration

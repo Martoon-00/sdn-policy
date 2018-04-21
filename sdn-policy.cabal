@@ -44,7 +44,7 @@ library
                        Sdn.Protocol.Common.Context
                        Sdn.Protocol.Common.Context.States
                        Sdn.Protocol.Common.Context.Storage
-                       Sdn.Protocol.Common.Context.Types
+                       Sdn.Protocol.Common.Context.Data
                        Sdn.Protocol.Fast.Messages
                        Sdn.Protocol.Fast.Phases
                        Sdn.Protocol.Fast.Topology
@@ -99,6 +99,7 @@ library
                        ExplicitForAll
                        DeriveGeneric
                        DataKinds
+                       BangPatterns
   ghc-options:         -Wall
 
 

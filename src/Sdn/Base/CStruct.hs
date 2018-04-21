@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveFunctor   #-}
+{-# LANGUAGE Rank2Types      #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies    #-}
 
@@ -5,7 +7,7 @@
 
 module Sdn.Base.CStruct where
 
-import           Control.Lens         (makePrisms)
+import           Control.Lens         (makePrisms, _Just)
 import           Control.Monad.Except (MonadError, throwError)
 import           Data.Default         (Default (..))
 import           Data.MessagePack     (MessagePack)
@@ -217,6 +219,41 @@ acceptOrRejectCommandS
     => cmd -> StateT cstruct m (Acceptance cmd)
 acceptOrRejectCommandS = state . acceptOrRejectCommand
 
+-- | 'acceptOrRejectCommand' for multiple commands.
+acceptOrRejectCommands
+    :: CStructA cstruct cmd
+    => [cmd] -> cstruct -> ([Acceptance cmd], cstruct)
+acceptOrRejectCommands cmds cstruct = usingState cstruct $ mapM acceptOrRejectCommandS cmds
+
+-- | Indicates something unnecessary, extra.
+data UndueType
+    = UndueConflict
+    | UnduePresent
+
+instance Buildable UndueType where
+    build = \case
+        UndueConflict -> "conflict"
+        UnduePresent -> "present"
+
+-- | Try to add given accepted/rejected commands to cstruct.
+-- Along with resulting cstruct, returns list of conflicting or already
+-- present commands.
+applyHintCommands
+    :: CStructA cstruct cmd
+    => [Acceptance cmd] -> cstruct -> ([(UndueType, Acceptance cmd)], cstruct)
+applyHintCommands hints cstruct =
+    foldl' addHint ([], cstruct) hints
+  where
+    addHint (!hs, !cs) hint =
+        case addCommand hint cs of
+            _ | cs `extends` liftCommand hint ->
+                ((UnduePresent, hint) : hs, cs)
+            Left _ ->
+                ((UndueConflict, hint) : hs, cs)
+            Right cs' ->
+                (hs, cs')
+
+
 -- | Take list of lists of cstructs, 'lub's inner lists and then 'gdb's results.
 -- None of given 'cstruct's should be empty.
 mergeCStructs
@@ -255,6 +292,15 @@ intersectingCombinationDefault
 intersectingCombinationDefault =
     mergeCStructs . filter (not . null) . getQuorumsSubIntersections
 
+
+-- | Allows to get decision taken about single policy.
+class AtCmd cstruct where
+    atCmd :: RawCmd cstruct -> Lens' cstruct (Maybe AcceptanceType)
+
+ixCmd
+    :: AtCmd cstruct
+    => RawCmd cstruct -> Traversal' cstruct AcceptanceType
+ixCmd p = atCmd p . _Just
 
 -- | Declares that implementation of cstruct has many other practically useful
 -- instances.
