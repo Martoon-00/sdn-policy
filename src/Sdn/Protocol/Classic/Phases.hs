@@ -70,8 +70,10 @@ phase1a = do
         curBallotProposals <-
              zoom (leaderProposedPolicies . forClassic) $
              dumpProposedCommands newBallotId
+        -- get policies advised at fast ballots
+        hintPolicies <- use leaderHintPolicies
         -- don't publicly start ballot if there is no proposals
-        when (null curBallotProposals) $ do
+        when (null curBallotProposals && null hintPolicies) $ do
             logInfo $
                 sformat ("Skipping "%build%" (no proposals)")
                 newBallotId

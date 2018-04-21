@@ -3,7 +3,7 @@ type: fast
 
 # participants of concensus
 members:
-  acceptors: 1
+  acceptors: 3
   learners: 1
 
 # schedules. See `topologies/schedules.yaml` for fine-tuning examples.
