@@ -17,6 +17,7 @@ module Sdn.Protocol.Common.Phases
     , updateLearnedValue
     , warnOnPartialCStructApply
     , warnOnPartialCommandsApply
+    , onFixatedPolicies
     , learnCStruct
     , confirmCommitted
     , isPolicyUnconfirmed
@@ -32,8 +33,8 @@ import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra                    (MFunctored (..), MonadLog, MonadReporting,
-                                               PreparedAction (..), RpcOptions, listF,
-                                               logError, logInfo, presence, submit,
+                                               PreparedAction (..), RpcOptions, foldlF',
+                                               listF, logError, logInfo, presence, submit,
                                                throwOnFail)
 import           Sdn.Extra.Batching
 import           Sdn.Protocol.Common.Context
@@ -150,6 +151,19 @@ instance Applicative m => Monoid (LearningCallback m) where
     mempty = LearningCallback $ \_ -> pure ()
     LearningCallback a `mappend` LearningCallback b = LearningCallback $ \p -> a p *> b p
 
+-- | Set of actions, invoked when learner finds some new policies fixated.
+onFixatedPolicies
+    :: forall cstruct pv m.
+       (MonadPhase cstruct m, HasContextOf Learner pv m)
+    => LearningCallback m -> NonEmpty (Cmd cstruct) -> m ()
+onFixatedPolicies (LearningCallback callback) policyAcceptances = do
+    -- notify proposer that it can stop reproposing policy
+    let policies = map acceptanceCmd policyAcceptances
+    submit (processAddress Proposer) (CommittedMsg @cstruct policies)
+
+    -- invoke callback
+    callback policyAcceptances
+
 -- | Learning phase of algorithm.
 learnCStruct
     :: (MonadPhase cstruct m, HasContextOf Learner pv m)
@@ -158,7 +172,7 @@ learnCStruct
     -> AcceptorId
     -> cstruct
     -> m ()
-learnCStruct (LearningCallback callback) combinator accId (cstruct :: cstruct) = do
+learnCStruct callback combinator accId (cstruct :: cstruct) = do
     newLearnedPolicies <- withProcessStateAtomically $ do
         -- rewrite cstruct kept for this acceptor
 
@@ -180,10 +194,7 @@ learnCStruct (LearningCallback callback) combinator accId (cstruct :: cstruct) =
 
         return learnedDifference
 
-    whenNotNull newLearnedPolicies $ \policyAcceptances -> do
-        let policies = map acceptanceCmd policyAcceptances
-        submit (processAddress Proposer) (CommittedMsg @cstruct policies)
-        callback policyAcceptances
+    whenNotNull newLearnedPolicies $ onFixatedPolicies callback
 
 -- * Confirmation to proposal
 
@@ -192,9 +203,8 @@ confirmCommitted
     :: (MonadPhase cstruct m, HasContextOf Proposer pv m)
     => CommittedMsg cstruct -> m ()
 confirmCommitted (CommittedMsg policies) = do
-    withProcessStateAtomically $ do
-        for_ policies $ \policy ->
-            proposerUnconfirmedPolicies %= S.delete policy
+    withProcessStateAtomically $
+        proposerUnconfirmedPolicies %= foldlF' S.delete policies
 
 -- | Helper to check whether policy is in list of unconfirmed policies.
 isPolicyUnconfirmed

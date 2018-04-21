@@ -166,8 +166,7 @@ learn callback (Fast.AcceptedMsg accId (toList -> cstructDiff)) = do
                     panicOnFail ProtocolError $ addCommand value cstruct
             in  \learned -> foldl addOne learned fixatedValues
 
-    whenNotNull fixatedValues $
-        runLearningCallback callback
+    whenNotNull fixatedValues $ onFixatedPolicies callback
 
 -- * Recovery detection and initialition
 
