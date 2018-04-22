@@ -12,8 +12,7 @@ module Sdn.Protocol.Fast.Phases
     , detectConflicts
     ) where
 
-import           Control.Exception             (assert)
-import           Control.Lens                  (at, makePrisms, non, (%%=), (%=), (.=))
+import           Control.Lens                  (at, makePrisms, (%=), (.=))
 import           Control.Monad.Trans.Cont      (ContT (..), evalContT)
 import qualified Data.Map                      as M
 import qualified Data.Set                      as S
@@ -21,9 +20,9 @@ import           Formatting                    (build, sformat, (%))
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra                     (OldNew (..), broadcastTo, compose,
-                                                decompose, listF, logInfo, panicOnFail,
-                                                presence, takeNoMoreThanOne, throwOnFail,
+import           Sdn.Extra                     (OldNew (..), broadcastTo, compose, listF,
+                                                logInfo, panicOnFail, presence,
+                                                takeNoMoreThanOne, throwOnFail,
                                                 wasChanged, whenJust', zoom)
 import qualified Sdn.Protocol.Classic.Messages as Classic
 import qualified Sdn.Protocol.Classic.Phases   as Classic
@@ -135,16 +134,8 @@ learn
        (MonadPhase cstruct m, HasContextOf Learner Fast m)
     => LearningCallback m -> Fast.AcceptedMsg cstruct -> m ()
 learn callback (Fast.AcceptedMsg accId (toList -> cstructDiff)) = do
-    -- TODO perf: use foldlM
-    -- let rememberPolicy policyAcceptance !acc = do
-    --         mp <- withProcessStateAtomically $
-    --             rememberVoteForPolicy @cstruct learnerFastVotes accId policyAcceptance
-    --         return $ maybe identity (:) mp acc
-    -- voteUpdates <- foldrM rememberPolicy [] cstructDiff
-
     voteUpdates <- withProcessStateAtomically $
-        fmap catMaybes . forM cstructDiff $ \acceptancePolicy ->
-        rememberVoteForPolicy @cstruct learnerFastVotes accId acceptancePolicy
+        forM cstructDiff $ rememberUnstableCmdVote learnerVotes accId
 
     fixatedValues <- fmap catMaybes . forM voteUpdates $ \(policy, votesForPolicy) -> do
         policyStatus <- forM votesForPolicy $
@@ -178,35 +169,14 @@ delegateToRecovery
 delegateToRecovery conflictingPolicies = do
     Classic.rememberProposal (Classic.ProposalMsg conflictingPolicies)
 
-rememberVoteForPolicy
-    :: forall cstruct qf s.
-       PracticalCStruct cstruct
-    => Traversal' s (PerCmdVotes qf cstruct)
-    -> AcceptorId
-    -> Cmd cstruct
-    -> TransactionM s (Maybe (RawCmd cstruct, OldNew (Votes qf AcceptanceType)))
-rememberVoteForPolicy atVotesL accId policyAcceptance =
-    let (acceptance, policy) = decompose policyAcceptance
-    in  lift . fmap getAlt $ atVotesL . at policy . non mempty %%= \oldVotes ->
-            let newVotes = oldVotes & at accId .~ Just acceptance
-                allVotes = OldNew { getOld = oldVotes, getNew = newVotes }
-            in assertNoRebind oldVotes acceptance $
-               (Alt $ Just (policy, allVotes), newVotes)
-  where
-    -- checks we are not changing existing vote for particular "acceptance" value
-    assertNoRebind oldVotes newAcceptance =
-        let oldAcceptance = oldVotes ^. at accId
-        in  assert (oldAcceptance == Nothing || oldAcceptance == Just newAcceptance)
-
 detectConflicts
     :: forall cstruct m.
        (MonadPhase cstruct m, HasContextOf Leader Fast m)
     => Fast.AcceptedMsg cstruct -> m ()
 detectConflicts (Fast.AcceptedMsg accId (toList -> cstructDiff)) = do
-    voteUpdates <- fmap catMaybes . forM cstructDiff $ \policyAcceptance ->
+    voteUpdates <- forM cstructDiff $ \policyAcceptance ->
         withProcessStateAtomically $
-        rememberVoteForPolicy @cstruct leaderFastVotes accId policyAcceptance
-
+            rememberVoteForPolicy @cstruct leaderFastVotes accId policyAcceptance
 
     forM_ voteUpdates $ \(policy, oldnewVotesForPolicy) -> do
         oldnewPolicyStatus <- forM oldnewVotesForPolicy $

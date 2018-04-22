@@ -8,7 +8,7 @@ module Sdn.Policy.OpenFlow
     , Configuration
     ) where
 
-import           Control.Lens          (at, makeLenses, non)
+import           Control.Lens          (at, has, ix, makeLenses, non, to)
 import qualified Data.Binary           as Bin
 import           Data.Default          (Default (..))
 import qualified Data.Map              as M
@@ -53,7 +53,7 @@ instance MessagePack Policy where
 data Configuration = Configuration
     { _configEntry    :: M.Map OF.TransactionID $ S.Set Policy
     , _configRejected :: S.Set Policy
-    } deriving (Eq, Generic)
+    } deriving (Eq, Show, Generic)
 
 makeLenses ''Configuration
 
@@ -103,5 +103,13 @@ instance CStruct Configuration where
         , map Rejected . toList $ _configRejected c1 `S.difference` _configRejected c2
         ]
 
+
+instance AtCmd Configuration where
+    atCmd raw@Policy{..} = to getter
+      where
+        getter config =
+            if | (configEntry . ix policyXid . ix raw) `has` config -> Just AcceptedT
+               | (configRejected . ix raw) `has` config -> Just RejectedT
+               | otherwise -> Nothing
 
 instance PracticalCStruct Configuration

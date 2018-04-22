@@ -16,7 +16,8 @@ module Sdn.Policy.Fake
     ) where
 
 import           Control.Lens        (AsEmpty (..), At (..), Index, Iso', IxValue,
-                                      Ixed (..), Wrapped (..), iso, mapping, _Wrapped')
+                                      Ixed (..), Wrapped (..), iso, mapping, to,
+                                      _Wrapped')
 import           Data.Default        (Default (..))
 import qualified Data.Map.Strict     as M
 import           Data.MessagePack    (MessagePack (..))
@@ -210,5 +211,12 @@ instance CStruct Configuration where
          sanityCheck =
              first ("intersectingCombination: " <> ) . checkingConsistency
 
+instance AtCmd Configuration where
+    atCmd raw = _Wrapped' . to getter
+      where
+        getter config =
+            if | S.member (Accepted raw) config -> Just AcceptedT
+               | S.member (Rejected raw) config -> Just RejectedT
+               | otherwise -> Nothing
 
 instance PracticalCStruct Configuration

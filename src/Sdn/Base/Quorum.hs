@@ -21,7 +21,7 @@ import           GHC.Exts            (IsList (..))
 import           Test.QuickCheck     (Arbitrary (..), Gen, sublistOf)
 import           Universum           hiding (toList)
 import qualified Universum           as U
-import           Unsafe              (unsafeHead)
+import           Unsafe              (unsafeFromJust, unsafeHead)
 
 import           Sdn.Base.Settings
 import           Sdn.Base.Types
@@ -91,6 +91,10 @@ coerceVotes (Votes v) = Votes v
 -- | Remains votes for values which comply the predicate.
 filterVotes :: (a -> Bool) -> Votes f a -> Votes f a
 filterVotes p = listL %~ filter (p . snd)
+
+-- | Remain only 'Just' values.
+catMaybesVotes :: Votes f (Maybe a) -> Votes f a
+catMaybesVotes = fmap unsafeFromJust . filterVotes isJust
 
 -- | Add vote to votes.
 addVote :: AcceptorId -> a -> Votes f a -> Votes f a

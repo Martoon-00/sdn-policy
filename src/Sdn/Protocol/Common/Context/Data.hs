@@ -1,3 +1,4 @@
+{-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE TemplateHaskell      #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -26,6 +27,7 @@ module Sdn.Protocol.Common.Context.Data
     , coreCStruct
     , totalCStruct
     , addUnstableCmd
+    , addUnstableCmds
     , extendCoreCStruct
     , acceptOrRejectIntoStoreS
     ) where
@@ -136,8 +138,7 @@ data CStructStore cstruct = CStructStore
 
 makeLensesFor [("_storedUnstableCmds", "storedUnstableCmds")] ''CStructStore
 
-instance Default cstruct => Default (CStructStore cstruct) where
-    def = CStructStore def def
+deriving instance (Eq cstruct, Eq (Cmd cstruct)) => Eq (CStructStore cstruct)
 
 instance (Buildable cstruct, Buildable (Cmd cstruct), Ord (Cmd cstruct)) =>
          Buildable (CStructStore cstruct) where
@@ -147,6 +148,9 @@ instance (Buildable cstruct, Buildable (Cmd cstruct), Ord (Cmd cstruct)) =>
              "unstable:" %listF ", " build)
             _storedCoreCStruct
             _storedUnstableCmds
+
+instance Default cstruct => Default (CStructStore cstruct) where
+    def = CStructStore def def
 
 -- | Safe getter for core.
 coreCStruct :: CStructStore cstruct -> cstruct
@@ -163,11 +167,21 @@ totalCStruct CStructStore{..} =
 -- nothing happens.
 addUnstableCmd
     :: PracticalCStruct cstruct
-    => Cmd cstruct -> CStructStore cstruct -> CStructStore cstruct
-addUnstableCmd policyAcceptance store =
-    if totalCStruct store `conflicts` policyAcceptance
-        then store
-        else store & storedUnstableCmds . at policyAcceptance . presence .~ True
+    => Cmd cstruct -> CStructStore cstruct -> (Bool, CStructStore cstruct)
+addUnstableCmd cmd store =
+    if totalCStruct store `conflicts` cmd
+        then (False, store)
+        else (True, store & storedUnstableCmds . at cmd . presence .~ True)
+
+-- | Multiple-version of 'addUnstableCmd'. Returns list of successfully added commands.
+addUnstableCmds
+    :: PracticalCStruct cstruct
+    => [Cmd cstruct] -> CStructStore cstruct -> ([Cmd cstruct], CStructStore cstruct)
+addUnstableCmds cmds initStore = foldl' attach ([], initStore) cmds
+  where
+    attach (!applied, !store) cmd =
+        let (added, store') = addUnstableCmd cmd store
+        in  (if added then cmd : applied else applied, store')
 
 -- | Replaces core cstruct. It's only valid to extend core cstruct,
 -- otherwise error happens.

@@ -15,15 +15,16 @@ module Sdn.Protocol.Common.Phases
 
     , MonadPhase
     , updateLearnedValue
-    , warnOnPartialCStructApply
-    , warnOnPartialCommandsApply
     , onFixatedPolicies
     , learnCStruct
+    , rememberVoteForPolicy
+    , rememberUnstableCmdVote
     , confirmCommitted
     , isPolicyUnconfirmed
     ) where
 
-import           Control.Lens                 (at, non, (%=), (.=), (<%=))
+import           Control.Exception            (assert)
+import           Control.Lens                 (at, non, (%%=), (%=), (.=))
 import           Control.TimeWarp.Rpc         (MonadRpc)
 import           Control.TimeWarp.Timed       (MonadTimed (..))
 import           Data.Default                 (Default (..))
@@ -33,9 +34,10 @@ import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra                    (MFunctored (..), MonadLog, MonadReporting,
-                                               PreparedAction (..), RpcOptions, foldlF',
-                                               listF, logError, logInfo, presence, submit,
-                                               throwOnFail)
+                                               OldNew (..), PreparedAction (..),
+                                               RpcOptions, decompose, foldlF', logError,
+                                               logInfo, presence, submit, throwOnFail,
+                                               zoom, (<<<%=))
 import           Sdn.Extra.Batching
 import           Sdn.Protocol.Common.Context
 import           Sdn.Protocol.Common.Messages
@@ -86,39 +88,12 @@ type MonadPhase cstruct m =
     , PracticalCStruct cstruct
     )
 
--- * Common
-
--- | Drop a warning if we are going to merge received cstruct, but
--- dropping some of its policies in the process.
-warnOnPartialCStructApply
-    :: (MonadLog m, CStruct cstruct)
-    => cstruct -> cstruct -> m ()
-warnOnPartialCStructApply incoming updated = do
-    unless (updated `extends` incoming) $
-        logInfo $
-        sformat ("Some policies were dropped while applying incoming cstruct:\
-                 \\n  incoming:  "%build%
-                 "\n  new value: "%build)
-              incoming updated
-
--- | Drop a warning if some of commands were not applied.
-warnOnPartialCommandsApply
-    :: forall cstruct m.
-       (MonadLog m, PracticalCStruct cstruct)
-    => [Cmd cstruct] -> [Cmd cstruct] -> m ()
-warnOnPartialCommandsApply incoming update = do
-    unless (S.fromList update /= S.fromList incoming) $
-        logInfo $
-        sformat ("Some policies were dropped while applying incoming cstruct:\
-                 \\n  incoming:  "%listF ", " build%
-                 "\n  new value: "%listF ", " build)
-              incoming update
 
 -- * Learning
 
 -- | Update learned value with all checks and cautions.
 updateLearnedValue
-    :: (CStruct cstruct, Eq cstruct)
+    :: (CStruct cstruct, Eq cstruct, Buildable cstruct)
     => cstruct
     -> TransactionM (ProcessState Learner pv cstruct) [Cmd cstruct]
 updateLearnedValue newLearned = do
@@ -176,11 +151,15 @@ learnCStruct callback combinator accId (cstruct :: cstruct) = do
     newLearnedPolicies <- withProcessStateAtomically $ do
         -- rewrite cstruct kept for this acceptor
 
-        -- we should check here that new cstruct extends previous one.
-        -- but the contrary is not an error, because of not-FIFO channels
-        let replaceOrRemainOld = maxOrSecond
-        updated <- learnerVotes . at accId . non def <%= replaceOrRemainOld cstruct
-        warnOnPartialCStructApply cstruct updated
+        zoom (learnerVotes . at accId . non def) $ do
+            store <- get
+            case extendCoreCStruct cstruct store of
+                Left err ->
+                    -- if new cstruct doesn't extend previous one,
+                    -- it is not an error due to usage of non-FIFO channels
+                    logInfo $ cstructIgnored err
+                Right store' ->
+                    put store'
 
         -- update total learned cstruct
         -- it should be safe (i.e. it does not induce commands losses)
@@ -189,12 +168,52 @@ learnCStruct callback combinator accId (cstruct :: cstruct) = do
         -- always holds.
         learnedDifference <-
             use learnerVotes
-            >>= throwOnFail ProtocolError . combinator
+            >>= throwOnFail ProtocolError . combinator . fmap totalCStruct
             >>= updateLearnedValue
 
         return learnedDifference
 
     whenNotNull newLearnedPolicies $ onFixatedPolicies callback
+  where
+    cstructIgnored =
+        sformat ("New cstruct doesn't extend the old one and so is ignored: "%build)
+
+-- | Adds vote for a single policy to given 'PerCmdVotes'.
+rememberVoteForPolicy
+    :: forall cstruct qf s.
+       PracticalCStruct cstruct
+    => Lens' s (PerCmdVotes qf cstruct)
+    -> AcceptorId
+    -> Cmd cstruct
+    -> TransactionM s (RawCmd cstruct, OldNew (Votes qf AcceptanceType))
+rememberVoteForPolicy atVotesL accId policyAcceptance =
+    let (acceptance, policy) = decompose policyAcceptance
+    in  lift $ atVotesL . at policy . non mempty %%= \oldVotes ->
+            let newVotes = oldVotes & at accId .~ Just acceptance
+                allVotes = OldNew { getOld = oldVotes, getNew = newVotes }
+            in assertNoRebind oldVotes acceptance $
+               ((policy, allVotes), newVotes)
+  where
+    -- checks we are not changing existing vote for particular "acceptance" value
+    assertNoRebind oldVotes newAcceptance =
+        let oldAcceptance = oldVotes ^. at accId
+        in  assert (oldAcceptance == Nothing || oldAcceptance == Just newAcceptance)
+
+-- | Add vote for a single policy to 'CStructStore' related to a given acceptor.
+rememberUnstableCmdVote
+    :: PracticalCStruct cstruct
+    => Lens' s (Votes qf $ CStructStore cstruct)
+    -> AcceptorId
+    -> Cmd cstruct
+    -> TransactionM s (RawCmd cstruct, OldNew (Votes qf AcceptanceType))
+rememberUnstableCmdVote atStore accId policyAcc = do
+    change <- atStore <<<%= (at accId . non def %~ snd . addUnstableCmd policyAcc)
+    let policyVotes = fmap @OldNew takeVotesForPolicy change
+    return (acceptanceCmd policyAcc, policyVotes)
+  where
+    policy = acceptanceCmd policyAcc
+    takeVotesForPolicy =
+        catMaybesVotes . fmap @(Votes _) (view (atCmd policy) . totalCStruct)
 
 -- * Confirmation to proposal
 

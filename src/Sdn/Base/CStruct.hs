@@ -1,13 +1,15 @@
-{-# LANGUAGE DeriveFunctor   #-}
-{-# LANGUAGE Rank2Types      #-}
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TypeFamilies    #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE DefaultSignatures   #-}
+{-# LANGUAGE DeriveFunctor       #-}
+{-# LANGUAGE Rank2Types          #-}
+{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TypeFamilies        #-}
 
 -- | Interface for commands and cstructs.
 
 module Sdn.Base.CStruct where
 
-import           Control.Lens         (makePrisms, _Just)
+import           Control.Lens         (Getter, makePrisms)
 import           Control.Monad.Except (MonadError, throwError)
 import           Data.Default         (Default (..))
 import           Data.MessagePack     (MessagePack)
@@ -294,13 +296,10 @@ intersectingCombinationDefault =
 
 
 -- | Allows to get decision taken about single policy.
+-- This is only 'Getter', not 'Lens', because changing decision on single policy
+-- is not always possible without inducing a conflict.
 class AtCmd cstruct where
-    atCmd :: RawCmd cstruct -> Lens' cstruct (Maybe AcceptanceType)
-
-ixCmd
-    :: AtCmd cstruct
-    => RawCmd cstruct -> Traversal' cstruct AcceptanceType
-ixCmd p = atCmd p . _Just
+    atCmd :: RawCmd cstruct -> Getter cstruct (Maybe AcceptanceType)
 
 -- | Declares that implementation of cstruct has many other practically useful
 -- instances.
@@ -308,11 +307,13 @@ ixCmd p = atCmd p . _Just
 class ( CStruct cstruct
       , Buildable cstruct
       , Buildable (RawCmd cstruct)
+      , Show cstruct
       , Ord (RawCmd cstruct)
       , Eq cstruct  -- TODO: remove?
       , MessagePack cstruct
       , MessagePack (RawCmd cstruct)
       , Acceptance (RawCmd cstruct) ~ Cmd cstruct
+      , AtCmd cstruct
       ) =>
       PracticalCStruct cstruct
 

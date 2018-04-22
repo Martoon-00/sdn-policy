@@ -53,7 +53,7 @@ data LeaderState pv cstruct = LeaderState
     , _leaderProposedPolicies :: ForBothRoundTypes $ ProposedCommands (RawCmd cstruct)
       -- ^ Policies ever proposed on this classic / fast ballot, in latter case used in recovery
     , _leaderHintPolicies     :: Set (Cmd cstruct)
-      -- ^ Policies for which only one acceptance type is (mostly probably) possible.
+      -- ^ Policies for which only one acceptance type is (most probably) possible.
     , _leaderVotes            :: Map BallotId $ Votes ClassicMajorityQuorum cstruct
       -- ^ CStructs received in 2b messages
     , _leaderFastVotes        :: PerCmdVotes FastMajorityQuorum cstruct
@@ -117,12 +117,9 @@ defAcceptorState id = AcceptorState id def def
 
 -- | State kept by learner.
 data LearnerState pv cstruct = LearnerState
-    { _learnerVotes     :: Votes (VersionQuorum pv) cstruct
+    { _learnerVotes   :: Votes (VersionQuorum pv) (CStructStore cstruct)
       -- ^ CStructs received from acceptors so far
-    , _learnerFastVotes :: Map (RawCmd cstruct) $ Votes (VersionQuorum pv) AcceptanceType
-      -- ^ What has been choosen on policy.
-      -- Used only in fast ballots for now - TODO: merge
-    , _learnerLearned   :: cstruct
+    , _learnerLearned :: cstruct
       -- ^ Eventually learned cstruct, result of consensus
     }
 
@@ -133,15 +130,13 @@ instance PracticalCStruct cstruct =>
     build LearnerState{..} =
         bprint
             ("\n    heard: "%build%
-             "\n    heard fast: "%listF ",\n    " specifyF%
              "\n    learned: "%build)
             _learnerVotes
-            _learnerFastVotes
             _learnerLearned
 
 -- | Initial state of the learner.
 instance Default cstruct => Default (LearnerState pv cstruct) where
-    def = LearnerState mempty def def
+    def = LearnerState mempty def
 
 -- * Overall
 
