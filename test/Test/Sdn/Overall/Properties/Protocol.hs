@@ -5,7 +5,7 @@
 
 module Test.Sdn.Overall.Properties.Protocol where
 
-import           Control.Lens                     (Prism', has)
+import           Control.Lens                     (Prism', has, traversed)
 import           Control.Monad.Error.Class        (throwError)
 import qualified Data.Map                         as M
 import qualified Data.Set                         as S
@@ -13,7 +13,7 @@ import           Formatting                       (build, sformat, text, (%))
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra                        (listF)
+import           Sdn.Extra                        (listF, viewListOf)
 import           Sdn.Policy.Fake
 import           Sdn.Protocol
 import           Test.Sdn.Overall.Properties.Util
@@ -22,9 +22,9 @@ import           Test.Sdn.Overall.Properties.Util
 -- * Property primitives
 
 proposedPoliciesWereLearned :: PropertyChecker pv Configuration
-proposedPoliciesWereLearned AllStates{..} = do
-    let proposed's = _proposerProposedPolicies proposerState
-    let learned's = _learnerLearned <$> learnersStates
+proposedPoliciesWereLearned = do
+    proposed's <- view $ proposerState . proposerProposedPolicies
+    learned's <- viewListOf $ learnersStates . traversed . learnerLearned
 
     forM_ proposed's $ \p ->
         forM_ (zip [1..] learned's) $ \(learnerId, learned) ->
@@ -36,10 +36,10 @@ proposedPoliciesWereLearned AllStates{..} = do
         sformat ("Proposed "%build%" wasn't leart by learner "%build) p li
 
 learnedPoliciesWereProposed :: PropertyChecker pv Configuration
-learnedPoliciesWereProposed AllStates{..} = do
-    let proposed's = _proposerProposedPolicies proposerState
+learnedPoliciesWereProposed = do
+    proposed's <- view $ proposerState . proposerProposedPolicies
     let validOutcomes = S.fromList $ [Accepted, Rejected] <*> proposed's
-    let learned's = _learnerLearned <$> learnersStates
+    learned's <- viewListOf $ learnersStates . traversed . learnerLearned
     forM_ (zip [1..] learned's) $ \(learnerId, learned) ->
         forM_ learned $ \l ->
             unless (l `S.member` validOutcomes) $ failProp l learnerId
@@ -49,18 +49,18 @@ learnedPoliciesWereProposed AllStates{..} = do
         sformat ("Learned "%build%" by "%build%" was never proposed") p li
 
 learnersAgree :: PropertyChecker pv Configuration
-learnersAgree AllStates{..} = do
-    let learned = _learnerLearned <$> learnersStates
-    l :| ls <- maybe (Left "No learners") Right $ nonEmpty learned
+learnersAgree = do
+    learned <- viewListOf $ learnersStates . traversed . learnerLearned
+    l :| ls <- maybe (throwError "No learners") pure $ nonEmpty learned
     forM_ ls $ \l' ->
-        when (l /= l') $ Left "learners disagree"
+        when (l /= l') $ throwError "learners disagree"
 
 -- | Checks that number of learned policies matches predicate.
 numberOfLearnedPolicies :: (Prism' (Acceptance Policy) a)
                         -> (Word -> Bool)
                         -> PropertyChecker pv Configuration
-numberOfLearnedPolicies predicate cmp AllStates{..} = do
-    let learned's = _learnerLearned <$> learnersStates
+numberOfLearnedPolicies predicate cmp = do
+    learned's <- viewListOf $ learnersStates . traversed . learnerLearned
     forM_ (zip [1..] learned's) $ \(learnerId, learned) -> do
         let fit = filter (has predicate) $ toList learned
             ok = cmp $ fromIntegral (length fit)
@@ -72,10 +72,10 @@ numberOfLearnedPolicies predicate cmp AllStates{..} = do
                 %", but "%build%" are present:"%build) li (length l) l
 
 recoveryWasUsed :: Bool -> PropertyChecker pv cstruct
-recoveryWasUsed used AllStates{..} =
+recoveryWasUsed used = do
     -- in Fast version all proposals which leader receives occur due to recovery
-    let recoveries = _ballotProposedCommands $ _leaderProposedPolicies leaderState
-    in  unless (null recoveries /= used) $
+    recoveries <- view $ leaderState . leaderProposedPolicies . ballotProposedCommands
+    unless (null recoveries /= used) $
             failProp recoveries
   where
     failProp recoveries =

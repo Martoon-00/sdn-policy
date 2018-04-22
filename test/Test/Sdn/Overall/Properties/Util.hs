@@ -23,7 +23,7 @@ type ProtocolProperty pv m =
     STM (AllStates pv (DeclaredCStruct m))
     -> m (m (AllStates pv (DeclaredCStruct m), PropertyOutcome))
 
-type PropertyChecker pv cstruct = AllStates pv cstruct -> Either Text ()
+type PropertyChecker pv cstruct = ReaderT (AllStates pv cstruct) (Either Text) ()
 
 type MemStorageOnSTM m = DeclaredMemStoreTxMonad m ~ STM
 
@@ -58,7 +58,7 @@ eventually
     => PropertyChecker pv cstruct -> ProtocolProperty pv m
 eventually checker readState = return $ do
     allStates <- atomically readState
-    return (allStates, checker allStates)
+    return (allStates, runReaderT checker allStates)
 
 -- | Property checked every time state of some process changes.
 invariant
@@ -69,7 +69,7 @@ invariant checker readState = do
     checkerThread <-
         liftIO . async . atomically $ do
             allStates <- readState
-            case checker allStates of
+            case runReaderT checker allStates of
                 Left err -> return (allStates, Left err)
                 Right () -> fmap ((allStates, ) . Right) $
                             STM.check =<< readTVar finished

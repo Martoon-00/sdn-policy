@@ -18,7 +18,8 @@ module Sdn.Extra.Util where
 import           Control.Exception           (Handler (..), throw)
 import           Control.Lens                (Getting, Iso, Iso', LensRules, Wrapped (..),
                                               from, has, involuted, iso, lens, lensField,
-                                              lensRules, makeLenses, mappingNamer, review)
+                                              lensRules, makeLenses, mappingNamer, review,
+                                              toListOf)
 import           Control.Monad.Base          (MonadBase (..))
 import           Control.Monad.Catch         (MonadCatch (..), MonadThrow (..))
 import           Control.Monad.Catch.Pure    (Catch, runCatch)
@@ -446,3 +447,6 @@ foldlF'
     :: NontrivialContainer t
     => (Element t -> b -> b) -> t -> b -> b
 foldlF' f e l = foldl' (flip f) l e
+
+viewListOf :: MonadReader s m => Getting (Endo [a]) s a -> m [a]
+viewListOf = reader . toListOf

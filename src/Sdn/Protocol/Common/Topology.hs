@@ -197,7 +197,7 @@ launchPaxosWith TopologyActions{..} seed TopologySettings{..} =
     let (proposalSeed, ballotSeed) = split seed
     let ProtocolListeners{..} = topologyListeners
 
-    proposerState <- newProcess Proposer . work (for topologyLifetime) $ do
+    getProposerState <- newProcess Proposer . work (for topologyLifetime) $ do
         skipFirst <- S.maskExecutions (False : repeat True)
         makeProposal <- prepareToAct proposeAction
 
@@ -216,7 +216,7 @@ launchPaxosWith TopologyActions{..} seed TopologySettings{..} =
             [ listener @Proposer confirmCommitted
             ]
 
-    leaderState <- newProcess Leader . work (for topologyLifetime) $ do
+    getLeaderState <- newProcess Leader . work (for topologyLifetime) $ do
         -- wait for first proposal before start
         S.runSchedule_ ballotSeed $ do
             S.delayed (interval 20 ms)
@@ -225,18 +225,18 @@ launchPaxosWith TopologyActions{..} seed TopologySettings{..} =
 
         serve (processPort Leader) =<< sequence leaderListeners
 
-    acceptorsStates <-
+    getAcceptorsStates <-
         startListeningProcessesOf Acceptor acceptorListeners
 
-    learnersStates <-
+    getLearnersStates <-
         startListeningProcessesOf Learner learnerListeners
 
     let readAllStates =
             AllStates
-            <$> proposerState
-            <*> leaderState
-            <*> sequence acceptorsStates
-            <*> sequence learnersStates
+            <$> getProposerState
+            <*> getLeaderState
+            <*> sequence getAcceptorsStates
+            <*> sequence getLearnersStates
 
     curTime <- virtualTime
     let awaitTermination = wait (till 100 ms (curTime + topologyLifetime))

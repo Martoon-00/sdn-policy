@@ -142,11 +142,13 @@ instance Default cstruct => Default (LearnerState pv cstruct) where
 -- * Overall
 
 data AllStates pv cstruct = AllStates
-    { proposerState   :: ProposerState pv cstruct
-    , leaderState     :: (LeaderState pv cstruct)
-    , acceptorsStates :: [AcceptorState pv cstruct]
-    , learnersStates  :: [LearnerState pv cstruct]
+    { _proposerState   :: ProposerState pv cstruct
+    , _leaderState     :: (LeaderState pv cstruct)
+    , _acceptorsStates :: [AcceptorState pv cstruct]
+    , _learnersStates  :: [LearnerState pv cstruct]
     }
+
+makeLenses ''AllStates
 
 instance (ProtocolVersion pv, PracticalCStruct cstruct) =>
          Buildable (AllStates pv cstruct) where
@@ -155,8 +157,8 @@ instance (ProtocolVersion pv, PracticalCStruct cstruct) =>
             ("\n  Proposer state: " %build % "\n\n  Leader state: " %build %
              "\n\n  Acceptors states: " %listF "\n  , " build %
              "\n\n  Learners states: " %listF "\n  , " build)
-            proposerState
-            leaderState
-            acceptorsStates
-            learnersStates
+            _proposerState
+            _leaderState
+            _acceptorsStates
+            _learnersStates
 
