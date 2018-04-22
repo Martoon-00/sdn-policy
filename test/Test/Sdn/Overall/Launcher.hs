@@ -18,7 +18,7 @@ import           Universum
 
 import           Control.Lens                (makeLensesFor)
 import           Control.TimeWarp.Logging    (usingLoggerName)
-import           Control.TimeWarp.Rpc        ((:<<) (Evi), Dict (..), runDelaysLayer,
+import           Control.TimeWarp.Rpc        (Dict (..), pickEvi, runDelaysLayer,
                                               runPureRpcExt, withExtendedRpcOptions)
 import qualified Control.TimeWarp.Rpc        as D
 import           Data.Default
@@ -81,23 +81,11 @@ testLaunch TestLaunchParams{..} =
                 launchPaxos gen2 testSettings
             runMemStorage = declareMemStorage stmMemStorage
             delays = withMembersAddresses def testDelays
-            failProp err = do
-                lift $
-                    runPureRpcExt emulationOptions .
-                    withExtendedRpcOptions (Evi Dict) .
-                    runDelaysLayer delays gen1 .
-                    runNoErrorReporting .
-                    usingLoggerName mempty $
-                    runMemStorage $
-                    declareMonadicMark @(CStructType Configuration) $
-                        awaitTermination =<< launch
-                stop failed{ reason = toString err }
 
-        monadicIO $ do
+        let mainLaunch =
             -- launch silently
-            (errors, propErrors) <- lift $
                 runPureRpcExt emulationOptions $
-                withExtendedRpcOptions (Evi Dict) $
+                withExtendedRpcOptions (pickEvi Dict) $
                 runDelaysLayer delays gen1 $
                 runErrorReporting $
                 usingLoggerName mempty $
@@ -105,7 +93,22 @@ testLaunch TestLaunchParams{..} =
                 declareMonadicMark @(CStructType Configuration) $ do
                     monitor <- setDropLoggerName launch
                     protocolProperties monitor testProperties
+            reproducingLaunch =
+                runPureRpcExt emulationOptions .
+                withExtendedRpcOptions (pickEvi Dict) .
+                runDelaysLayer delays gen1 .
+                runNoErrorReporting .
+                usingLoggerName mempty $
+                runMemStorage $
+                declareMonadicMark @(CStructType Configuration) $
+                    launch >>= awaitTermination >> flushLogs
 
+            failProp err = do
+                lift reproducingLaunch
+                stop failed{ reason = toString err }
+
+        monadicIO $ do
+            (errors, propErrors) <- lift mainLaunch
             -- check errors log
             unless (null errors) $
                 failProp $

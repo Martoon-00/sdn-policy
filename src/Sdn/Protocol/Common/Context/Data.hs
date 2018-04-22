@@ -32,8 +32,8 @@ module Sdn.Protocol.Common.Context.Data
     , acceptOrRejectIntoStoreS
     ) where
 
-import           Control.Lens           (At (..), Index, IxValue, Ixed, makeLenses,
-                                         makeLensesFor, (.=), (<<.=))
+import           Control.Lens           (At (..), Index, IxValue, Ixed, makeLenses, (.=),
+                                         (<<.=))
 import           Data.Default           (Default (..))
 import qualified Data.Set               as S
 import qualified Data.Text.Buildable
@@ -136,7 +136,7 @@ data CStructStore cstruct = CStructStore
       -- when leader extends cstruct, find and remove conficting policies.
     }
 
-makeLensesFor [("_storedUnstableCmds", "storedUnstableCmds")] ''CStructStore
+makeLenses ''CStructStore
 
 deriving instance (Eq cstruct, Eq (Cmd cstruct)) => Eq (CStructStore cstruct)
 
@@ -144,7 +144,7 @@ instance (Buildable cstruct, Buildable (Cmd cstruct), Ord (Cmd cstruct)) =>
          Buildable (CStructStore cstruct) where
     build CStructStore {..} =
         bprint
-            ("core: " %build % "\n" %
+            ("core: " %build % "; " %
              "unstable:" %listF ", " build)
             _storedCoreCStruct
             _storedUnstableCmds
@@ -195,7 +195,9 @@ extendCoreCStruct newCStruct store = do
 
     let diff = newCStruct `difference` _storedCoreCStruct store
     return $ store
-           & storedUnstableCmds %~ S.filter (\cmd -> all (agrees cmd) diff)
+           & storedCoreCStruct .~ newCStruct
+           & storedUnstableCmds %~ S.filter
+               (\cmd -> all (agrees cmd) diff && all (/= cmd) diff)
 
 -- | Apply policy to store somehow, and return how it was applied.
 -- Policy will be added to unstable set.

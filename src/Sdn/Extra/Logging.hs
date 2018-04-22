@@ -17,6 +17,7 @@ module Sdn.Extra.Logging
     , isDropLoggerName
     , logInfo
     , logError
+    , flushLogs
 
     , MonadReporting
     , ErrorReporting (..)
@@ -114,16 +115,22 @@ instance MonadLog m => MonadLog (MaybeT m)
 instance MonadLog m => MonadLog (MonadicMark mark m)
 
 logBuffer :: IORef [LogEntry]
-logBuffer = unsafePerformIO $ do
+flushLogsIO :: IO ()
+(logBuffer, flushLogsIO) = unsafePerformIO $ do
     var <- newIORef []
+    let flush = do
+            entries <- atomicModifyIORef var (\es -> ([], es))
+            forM_ (reverse entries) $ \entry ->
+                putText $ loggingFormatter entry
     _ <- forkIO . forever $ do
-        entries <- atomicModifyIORef var (\es -> ([], es))
-        forM_ (reverse entries) $ \entry ->
-            putText $ loggingFormatter entry
+        flush
         threadDelay (fromIntegral . toMicroseconds $ ms 10)
 
-    return var
+    return (var, flush)
 {-# NOINLINE logBuffer #-}
+
+flushLogs :: MonadIO m => m ()
+flushLogs = liftIO flushLogsIO
 
 instance With [MonadIO, MonadTimed] m => MonadLog (LoggerNameBox m) where
     logInfoPack msgs = do

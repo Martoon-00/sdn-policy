@@ -3,8 +3,8 @@
 module Main where
 
 import           Control.TimeWarp.Logging (usingLoggerName)
-import           Control.TimeWarp.Rpc     ((:<<) (..), Dict (..), MonadRpc,
-                                           runDelaysLayer, runMsgPackUdp, runPureRpcExt,
+import           Control.TimeWarp.Rpc     (Dict (..), MonadRpc, pickEvi, runDelaysLayer,
+                                           runMsgPackUdp, runPureRpcExt,
                                            withExtendedRpcOptions)
 import           Control.TimeWarp.Timed   (MonadTimed, for, sec, wait)
 import           Prelude                  (read)
@@ -62,5 +62,5 @@ main = do
 
     -- execute in emulation/as-is
     if poQuick
-    then runPureRpcExt emulationOptions $ withExtendedRpcOptions (Evi Dict) stuff
-    else runMsgPackUdp $ withExtendedRpcOptions (Evi Dict) stuff
+    then runPureRpcExt emulationOptions $ withExtendedRpcOptions (pickEvi Dict) stuff
+    else runMsgPackUdp $ withExtendedRpcOptions (pickEvi Dict) stuff

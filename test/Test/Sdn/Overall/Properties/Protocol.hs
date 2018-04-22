@@ -71,18 +71,19 @@ numberOfLearnedPolicies predicate cmp = do
         sformat ("Unexpected number of learned policies for learner "%build
                 %", but "%build%" are present:"%build) li (length l) l
 
-recoveryWasUsed :: Bool -> PropertyChecker pv cstruct
-recoveryWasUsed used = do
+recoveryWasUsed :: PracticalCStruct cstruct => Bool -> PropertyChecker pv cstruct
+recoveryWasUsed shouldBeUsed = do
     -- in Fast version all proposals which leader receives occur due to recovery
     recoveries <- view $ leaderState . leaderProposedPolicies . ballotProposedCommands
-    unless (null recoveries /= used) $
-            failProp recoveries
+    let recoveryOccured = not $ all null recoveries
+    unless (recoveryOccured == shouldBeUsed) $
+        failProp recoveries
   where
     failProp recoveries =
         throwError $
         sformat ("Got recoveries at ballots "%listF ", " build
                 %", despite they were "%text%"expected")
-            (M.keys recoveries) (if used then "" else "un")
+            (M.keys recoveries) (if shouldBeUsed then "" else "un")
 
 
 -- * Properties groups

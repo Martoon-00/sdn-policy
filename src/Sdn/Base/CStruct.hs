@@ -1,9 +1,11 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE DefaultSignatures   #-}
-{-# LANGUAGE DeriveFunctor       #-}
-{-# LANGUAGE Rank2Types          #-}
-{-# LANGUAGE TemplateHaskell     #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE AllowAmbiguousTypes     #-}
+{-# LANGUAGE DefaultSignatures       #-}
+{-# LANGUAGE DeriveFunctor           #-}
+{-# LANGUAGE Rank2Types              #-}
+{-# LANGUAGE TemplateHaskell         #-}
+{-# LANGUAGE TypeFamilies            #-}
+{-# LANGUAGE UndecidableInstances    #-}
+{-# LANGUAGE UndecidableSuperClasses #-}
 
 -- | Interface for commands and cstructs.
 
@@ -305,9 +307,7 @@ class AtCmd cstruct where
 -- instances.
 -- Generally, all this constraints are needed for distributed protocol.
 class ( CStruct cstruct
-      , Buildable cstruct
-      , Buildable (RawCmd cstruct)
-      , Show cstruct
+      , Each [Show, Buildable] [cstruct, RawCmd cstruct]
       , Ord (RawCmd cstruct)
       , Eq cstruct  -- TODO: remove?
       , MessagePack cstruct
