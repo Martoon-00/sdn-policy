@@ -73,7 +73,8 @@ numberOfLearnedPolicies predicate cmp AllStates{..} = do
 
 recoveryWasUsed :: Bool -> PropertyChecker pv cstruct
 recoveryWasUsed used AllStates{..} =
-    let recoveries = _leaderRecoveryUsed leaderState
+    -- in Fast version all proposals which leader receives occur due to recovery
+    let recoveries = _ballotProposedCommands $ _leaderProposedPolicies leaderState
     in  unless (null recoveries /= used) $
             failProp recoveries
   where

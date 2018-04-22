@@ -162,7 +162,7 @@ learn callback (Fast.AcceptedMsg accId (toList -> cstructDiff)) = do
 -- * Recovery detection and initialition
 
 -- | In fast round, if recovery has been initiated, leader on fast 2b messages
--- acts like if it received classic 1b messsage.
+-- acts like if it received proposal messsage.
 delegateToRecovery
     :: (MonadPhase cstruct m, HasContextOf Leader Fast m)
     => NonEmpty (RawCmd cstruct) -> m ()

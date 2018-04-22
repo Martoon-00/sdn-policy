@@ -50,8 +50,9 @@ instance Default cstruct =>
 data LeaderState pv cstruct = LeaderState
     { _leaderBallotId         :: BallotId
       -- ^ Number of current ballot
-    , _leaderProposedPolicies :: ForBothRoundTypes $ ProposedCommands (RawCmd cstruct)
-      -- ^ Policies ever proposed on this classic / fast ballot, in latter case used in recovery
+    , _leaderProposedPolicies :: ProposedCommands (RawCmd cstruct)
+      -- ^ Policies proposed to leader in classic round or in fast round
+      -- as recovery measure.
     , _leaderHintPolicies     :: Set (Cmd cstruct)
       -- ^ Policies for which only one acceptance type is (most probably) possible.
     , _leaderVotes            :: Map BallotId $ Votes ClassicMajorityQuorum cstruct
@@ -67,7 +68,7 @@ instance (ProtocolVersion pv, PracticalCStruct cstruct) =>
     build LeaderState {..} =
         bprint
             ("\n    current ballod id: " %build%
-             "\n    proposed policies: " %bothRoundsF build%
+             "\n    proposed policies: " %build%
              "\n    hints: "%listF ", " build%
              "\n    votes: " %ballotMapF build%
              "\n    fast votes: " %listF ", " specifyF)

@@ -53,7 +53,7 @@ rememberProposal (ProposalMsg policies) = do
     -- atomically modify process'es state
     let policiesSet = S.fromList $ toList policies
     withProcessStateAtomically $ do
-        leaderProposedPolicies . forClassic . pendingProposedCommands %= (policiesSet <>)
+        leaderProposedPolicies . pendingProposedCommands %= (policiesSet <>)
 
 -- * Phase 1
 
@@ -68,7 +68,7 @@ phase1a = do
         newBallotId <- leaderBallotId <+= 1
         -- fixate pending policies as attached to newly started ballot
         curBallotProposals <-
-             zoom (leaderProposedPolicies . forClassic) $
+             zoom leaderProposedPolicies $
              dumpProposedCommands newBallotId
         -- get policies advised at fast ballots
         hintPolicies <- use leaderHintPolicies
@@ -112,7 +112,7 @@ applyWaitingPolicies bal cstruct0 = do
     leaderHintPolicies %= foldlF' S.delete (map snd unduePolicies)
     logInfo $ logUndueHints unduePolicies
 
-    pendingPolicies <- use $ leaderProposedPolicies . forClassic . at bal . non mempty
+    pendingPolicies <- use $ leaderProposedPolicies . at bal . non mempty
     let (appliedPolicies, cstruct2) = acceptOrRejectCommands pendingPolicies cstruct1
     logInfo $ logAppliedPending bal appliedPolicies
 

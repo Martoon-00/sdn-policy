@@ -40,7 +40,7 @@ import           Test.Sdn.Overall.Properties
 
 data TestLaunchParams pv = TestLaunchParams
     { testSettings   :: TopologySettings pv Configuration
-    , testDelays     :: D.Delays
+    , testDelays     :: HasMembersAddresses => D.Delays
     , testProperties :: forall m. (MonadIO m, DeclaredCStruct m ~ Configuration)
                      => [ProtocolProperty pv m]
     , testStub       :: Proxy pv
@@ -80,11 +80,12 @@ testLaunch TestLaunchParams{..} =
             launch =
                 launchPaxos gen2 testSettings
             runMemStorage = declareMemStorage stmMemStorage
+            delays = withMembersAddresses def testDelays
             failProp err = do
                 lift $
                     runPureRpcExt emulationOptions .
                     withExtendedRpcOptions (Evi Dict) .
-                    runDelaysLayer testDelays gen1 .
+                    runDelaysLayer delays gen1 .
                     runNoErrorReporting .
                     usingLoggerName mempty $
                     runMemStorage $
@@ -97,7 +98,7 @@ testLaunch TestLaunchParams{..} =
             (errors, propErrors) <- lift $
                 runPureRpcExt emulationOptions $
                 withExtendedRpcOptions (Evi Dict) $
-                runDelaysLayer testDelays gen1 $
+                runDelaysLayer delays gen1 $
                 runErrorReporting $
                 usingLoggerName mempty $
                 runMemStorage $
