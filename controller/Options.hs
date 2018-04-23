@@ -80,15 +80,15 @@ controllerOptionsParser = do
 
         protocolProposalsBatching <- do
             batchMaxSize <- Opt.option Opt.auto $ mconcat
-                [ Opt.long "proposal-batch-size"
+                [ Opt.long "batch-size"
                 , Opt.metavar "NUM"
                 , Opt.help "How much proposals to collect before submitting \
                            \them to consensus protocol."
                 , Opt.value 10
                 ]
 
-            batchMaxJitter <- fmap (convertUnit @Millisecond @_) $ Opt.option Opt.auto $ mconcat
-                [ Opt.long "proposal-batch-jitter"
+            batchMaxJitter <- fmap asMillis $ Opt.option Opt.auto $ mconcat
+                [ Opt.long "batch-jitter"
                 , Opt.metavar "MILLISECONDS"
                 , Opt.help "Maximal awaitance duration before submitting \
                            \a batch of proposals to consensus protocol."
@@ -107,6 +107,8 @@ controllerOptionsParser = do
         ]
 
     return ControllerOptions{..}
+  where
+    asMillis = convertUnit @Millisecond @_ . fromInteger
 
 -- | Command line interraction, options fetching.
 getControllerOptions :: IO ControllerOptions
