@@ -32,8 +32,8 @@ import qualified Sdn.Policy.Fake              as Fake
 import           Sdn.Protocol.Common.Context
 import           Sdn.Protocol.Common.Messages
 import           Sdn.Protocol.Common.Phases   (BatchingSettings, LearningCallback,
-                                               MakeProposal, confirmCommitted,
-                                               isPolicyUnconfirmed)
+                                               MakeProposal, PolicyTargets (..),
+                                               confirmCommitted, isPolicyUnconfirmed)
 import           Sdn.Protocol.Processes
 import           Sdn.Protocol.Versions
 
@@ -257,6 +257,14 @@ launchPaxosWith TopologyActions{..} seed TopologySettings{..} =
 
 {-# NOINLINE launchPaxosWith #-}
 
+data ProtocolListenersSettings m = ProtocolListenersSettings
+    { listenersLearningCallback :: LearningCallback m
+    , listenersPolicyTargets    :: PolicyTargets (DeclaredCStruct m)
+    }
+
+instance Applicative m => Default (ProtocolListenersSettings m) where
+    def = ProtocolListenersSettings mempty def
+
 -- | Version-custom topology settings.
 class ProtocolVersion pv =>
       HasVersionProtocolListeners pv where
@@ -264,7 +272,7 @@ class ProtocolVersion pv =>
     versionProtocolListeners
         :: forall m.
            MonadTopology m
-        => LearningCallback m -> ProtocolListeners pv m
+        => ProtocolListenersSettings m -> ProtocolListeners pv m
 
 -- | Version-custom topology settings.
 class ProtocolVersion pv =>

@@ -24,7 +24,7 @@ instance Default (CustomTopologySettings Classic) where
 
 
 instance HasVersionProtocolListeners Classic where
-    versionProtocolListeners callback =
+    versionProtocolListeners ProtocolListenersSettings{..} =
         ProtocolListeners
         { leaderListeners =
             [ listener @Leader rememberProposal
@@ -38,11 +38,13 @@ instance HasVersionProtocolListeners Classic where
             [ listener @Learner $ learn (hoistItem lift callback)
             ]
         }
+      where
+        callback = listenersLearningCallback
 
 instance HasVersionTopologyActions Classic where
     versionTopologyActions _ =
         TopologyActions
         { proposeAction = simpleProposal (propose . one)
         , startBallotAction = phase1a
-        , topologyListeners = versionProtocolListeners mempty
+        , topologyListeners = versionProtocolListeners def
         }

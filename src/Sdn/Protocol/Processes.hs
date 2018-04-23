@@ -144,6 +144,7 @@ instance Process Leader where
 
 
 data Acceptor = Acceptor AcceptorId
+    deriving (Eq, Ord, Show)
 
 instance Process Acceptor where
     type ProcessState Acceptor = AcceptorState
@@ -161,6 +162,7 @@ instance Process Acceptor where
 
 
 data Learner = Learner Int
+    deriving (Eq, Ord, Show)
 
 instance Process Learner where
     type ProcessState Learner = LearnerState

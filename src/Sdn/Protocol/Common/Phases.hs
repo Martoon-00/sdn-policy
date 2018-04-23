@@ -7,11 +7,13 @@
 
 module Sdn.Protocol.Common.Phases
     ( MakeProposal
-    , simpleProposal
     , BatchingSettings (..)
+    , LearningCallback (..)
+    , PolicyTargets (..)
+    , simpleProposal
     , batchingProposal
     , batchedOrSimpleProposals
-    , LearningCallback (..)
+    , groupPolicyTargets
 
     , MonadPhase
     , updateLearnedValue
@@ -28,6 +30,8 @@ import           Control.Lens                 (at, non, (%%=), (%=), (.=))
 import           Control.TimeWarp.Rpc         (MonadRpc)
 import           Control.TimeWarp.Timed       (MonadTimed (..))
 import           Data.Default                 (Default (..))
+import qualified Data.Map                     as M
+import qualified Data.Semigroup               as Semi
 import qualified Data.Set                     as S
 import           Formatting                   (build, sformat, (%))
 import           Universum
@@ -74,6 +78,32 @@ newtype LearningCallback m = LearningCallback
 instance MFunctored LearningCallback where
     type MFunctoredConstr LearningCallback n m = DeclaredCmd n ~ DeclaredCmd m
     hoistItem modifyM = LearningCallback . fmap modifyM . runLearningCallback
+
+-- | Specifies which learners should receive a policy at Fast version of
+-- protocol.
+-- Every acceptor will follow this rule, thus it's preferred not
+-- to specify all learners in order to avoid square complexity.
+data PolicyTargets cstruct = PolicyTargets
+    { getPolicyTargets :: HasMembers => RawCmd cstruct -> [Learner]
+    }
+
+instance Default (PolicyTargets cstruct) where
+    def = PolicyTargets (\_ -> toList takeAllProcesses)
+
+-- | Distribute items in heaps, so that each heap contains values
+-- addressed to same set of targets.
+groupPolicyTargets
+    :: HasMembers
+    => PolicyTargets cstruct
+    -> (a -> RawCmd cstruct)
+    -> [a]
+    -> [([Learner], NonEmpty a)]
+groupPolicyTargets (PolicyTargets evalTargets) getPolicy values =
+    let targetsNValues =
+            [ (sort targets, one value)
+            | value <- values, let targets = evalTargets (getPolicy value)
+            ]
+    in  M.toList $ M.fromListWith (Semi.<>) targetsNValues
 
 -- | Common constraints for all phases.
 type MonadPhase cstruct m =
@@ -150,7 +180,6 @@ learnCStruct
 learnCStruct callback combinator accId (cstruct :: cstruct) = do
     newLearnedPolicies <- withProcessStateAtomically $ do
         -- rewrite cstruct kept for this acceptor
-
         zoom (learnerVotes . at accId . non def) $ do
             store <- get
             case extendCoreCStruct cstruct store of

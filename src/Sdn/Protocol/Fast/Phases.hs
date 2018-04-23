@@ -110,22 +110,32 @@ propose policies = do
 phase2b
     :: forall cstruct m.
        (MonadPhase cstruct m, HasContextOf Acceptor Fast m)
-    => Fast.ProposalMsg cstruct -> m ()
-phase2b (Fast.ProposalMsg policiesToApply) = do
-    msg <- withProcessStateAtomically $ do
+    => PolicyTargets cstruct -> Fast.ProposalMsg cstruct -> m ()
+phase2b policyTargets (Fast.ProposalMsg policiesToApply) = do
+    (leaderMsg, learnersMsg) <- withProcessStateAtomically $ do
         appliedPolicies <-
             zoom (acceptorCStruct) $
             mapM acceptOrRejectIntoStoreS policiesToApply
 
-        logInfo $
-            sformat ("List of fast applied policies:"
-                    %"\n    "%listF ", " build)
-                appliedPolicies
+        logInfo $ logFastApplied appliedPolicies
 
         accId <- use acceptorId
-        pure $ Fast.AcceptedMsg @cstruct accId appliedPolicies
+        let leaderMsg = Fast.AcceptedMsg @cstruct accId appliedPolicies
+        let learnersMsg =
+                [ (targets, Fast.AcceptedMsg @cstruct accId policies)
+                | (targets, policies) <-
+                    groupPolicyTargets policyTargets acceptanceCmd (toList appliedPolicies)
+                ]
+        pure (leaderMsg, learnersMsg)
 
-    broadcastTo (processesAddresses Learner <> processAddresses Leader) msg
+    broadcastTo (processAddresses Leader) leaderMsg
+    forM_ learnersMsg $ \(learners, msg) ->
+        broadcastTo (processAddress <$> learners) msg
+  where
+    logFastApplied =
+        sformat ("List of fast applied policies:"
+                %"\n    "%listF ", " build)
+
 
 -- * Learning
 

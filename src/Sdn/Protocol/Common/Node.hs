@@ -28,6 +28,7 @@ import           Sdn.Protocol.Common.Phases   (BatchingSettings (..),
                                                LearningCallback (..), batchingProposal)
 import           Sdn.Protocol.Common.Topology (ProcessEnv, ProcessM,
                                                ProtocolListeners (..),
+                                               ProtocolListenersSettings (..),
                                                versionProtocolListeners)
 import qualified Sdn.Protocol.Fast            as Fast
 import           Sdn.Protocol.Processes
@@ -126,7 +127,8 @@ runProtocolNode ProtocolOptions{..} curProcessId ProtocolCallbacks{..} fillProto
     let runLogging = runNoErrorReporting . usingLoggerName mempty
         networkOptions = def{ udpMessageSizeLimit = 15000 }
 
-    let callback = LearningCallback $ liftIO . protocolOnLearned
+    let learnersSettings = def
+            { listenersLearningCallback = LearningCallback $ liftIO . protocolOnLearned }
 
     -- environment initialization
     runMsgPackUdpOpts networkOptions $
@@ -143,7 +145,7 @@ runProtocolNode ProtocolOptions{..} curProcessId ProtocolCallbacks{..} fillProto
 
             liftIO $ fillProtocolHandlers ProtocolHandlers{..}
 
-            let ProtocolListeners{..} = versionProtocolListeners @Fast callback
+            let ProtocolListeners{..} = versionProtocolListeners @Fast learnersSettings
 
             listeners <- sequence $ mconcat
                 [ inListenerM subLeaderState <$> leaderListeners

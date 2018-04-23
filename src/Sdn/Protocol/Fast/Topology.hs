@@ -32,7 +32,7 @@ instance Default (CustomTopologySettings Fast) where
 
 
 instance HasVersionProtocolListeners Fast where
-    versionProtocolListeners callback =
+    versionProtocolListeners ProtocolListenersSettings{..} =
         ProtocolListeners
         { leaderListeners =
             [ listener @Leader Classic.rememberProposal
@@ -42,13 +42,15 @@ instance HasVersionProtocolListeners Fast where
         , acceptorListeners =
             [ listener @Acceptor Classic.phase1b
             , listener @Acceptor Classic.phase2b
-            , listener @Acceptor Fast.phase2b
+            , listener @Acceptor $ Fast.phase2b listenersPolicyTargets
             ]
         , learnerListeners =
             [ listener @Learner $ Classic.learn (hoistItem lift callback)
             , listener @Learner $ Fast.learn (hoistItem lift callback)
             ]
         }
+      where
+        callback = listenersLearningCallback
 
 instance HasVersionTopologyActions Fast where
     versionTopologyActions TopologySettings{..} =
@@ -63,7 +65,7 @@ instance HasVersionTopologyActions Fast where
             -- conflicting policies "Classically".
             Classic.phase1a
         , topologyListeners =
-            versionProtocolListeners mempty
+            versionProtocolListeners def
         }
       where
         FastTopologySettingsPart{..} = topologyCustomSettings

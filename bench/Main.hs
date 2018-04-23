@@ -39,9 +39,11 @@ main = do
         let callback = LearningCallback $ \policies -> do
                 atomicModifyIORefS learnedCounter (identity += length policies)
 
+        let listenersSettings =
+                def{ listenersLearningCallback = callback }
         let topologyActions =
               (versionTopologyActions @Fast settings)
-                { topologyListeners = versionProtocolListeners @Fast callback
+                { topologyListeners = versionProtocolListeners @Fast listenersSettings
                 }
 
         fork_ . forever $ do
