@@ -5,10 +5,10 @@
 
 module Main where
 
-import           Control.Lens               (at, zoom, (<<.=))
+import           Control.Lens               (at, zoom, (.=), (<<.=))
 import           Control.TimeWarp.Timed     (for, fork_, ms, runTimedIO, wait)
 import qualified Data.Map                   as M
-import           Formatting                 (formatToString, shown, (%))
+import           Formatting                 (build, formatToString, sformat, shown, (%))
 import qualified Network.Data.OF13.Handlers as OF
 import qualified Network.Data.OF13.Server   as OF
 import qualified Network.Data.OpenFlow      as OF
@@ -76,13 +76,20 @@ installPolicy
     -> IO ()
 installPolicy (ProtocolHandlers{..}, callbacksRegister) policy onLearned = do
     isNew <- atomicModifyIORefS callbacksRegister . zoom (at (policyXid policy)) $ do
-        let callback policyAcceptance = onLearned (acceptanceType policyAcceptance)
+        let callback policyAcceptance = do
+                removeCallback
+                onLearned (acceptanceType policyAcceptance)
         oldCallback <- get
         case oldCallback of
             Nothing -> put (Just callback) $> True
             Just _  -> pure False
 
-    when isNew $ protocolMakeProposal policy
+    if isNew
+        then protocolMakeProposal policy
+        else putStrLn $ sformat ("Do not request for policy "%build%" again") policy
+  where
+    removeCallback = atomicModifyIORefS callbacksRegister $
+        at (policyXid policy) .= Nothing
 
 messageHandler
     :: ProtocolAccess
@@ -95,9 +102,9 @@ messageHandler protocolAccess sw = \case
   where
     handleMsg = \case
         OF.PacketIn xid (OF.PacketInfo (Just bufferId) _ inPort reason _ _) -> do
-            putStrLn $ formatToString ("Incoming packet #"%shown%" on port "%shown
+            putStrLn $ formatToString ("Incoming packet #"%shown%" on port "%shown%" with buffer "%shown
                                       %" (reason: "%shown%")")
-                       xid inPort reason
+                       xid inPort bufferId reason
 
             let actions = OF.flood
             let out = OF.bufferedPacketOut bufferId (Just inPort) actions
@@ -105,7 +112,9 @@ messageHandler protocolAccess sw = \case
             let policy = Policy xid (OF.actionSequenceToList actions)
             installPolicy protocolAccess policy $ \case
                 RejectedT -> putStrLn $ "Policy rejected: " <> pretty policy
-                AcceptedT -> OF.sendToSwitch sw $ OF.PacketOut xid out
+                AcceptedT -> do
+                    putStrLn $ "Policy installed: " <> pretty policy
+                    OF.sendToSwitch sw $ OF.PacketOut xid out
 
         OF.PacketIn _ (OF.PacketInfo Nothing _ _ _ _ _) -> do
             putStrLn @Text "Packet in without buffer specified, skipping"

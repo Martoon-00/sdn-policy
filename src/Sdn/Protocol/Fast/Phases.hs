@@ -20,9 +20,9 @@ import           Formatting                    (build, sformat, (%))
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra                     (OldNew (..), broadcastTo, compose, listF,
-                                                logInfo, panicOnFail, presence,
-                                                takeNoMoreThanOne, throwOnFail,
+import           Sdn.Extra                     (OldNew (..), broadcastTo, compose,
+                                                foldlF', listF, logInfo, panicOnFail,
+                                                presence, takeNoMoreThanOne, throwOnFail,
                                                 wasChanged, whenJust', zoom)
 import qualified Sdn.Protocol.Classic.Messages as Classic
 import qualified Sdn.Protocol.Classic.Phases   as Classic
@@ -101,7 +101,8 @@ propose policies = do
     logInfo $ sformat ("Proposing policy (fast): "%listF "," build) policies
     withProcessStateAtomically $ do
         proposerProposedPolicies %= (toList policies <>)
-        proposerUnconfirmedPolicies %= \s -> foldl (flip S.insert) s policies
+        proposerUnconfirmedPolicies %= foldlF' S.insert policies
+
     broadcastTo (processesAddresses Acceptor)
                 (Fast.ProposalMsg @cstruct policies)
 
@@ -112,6 +113,7 @@ phase2b
        (MonadPhase cstruct m, HasContextOf Acceptor Fast m)
     => PolicyTargets cstruct -> Fast.ProposalMsg cstruct -> m ()
 phase2b policyTargets (Fast.ProposalMsg policiesToApply) = do
+    logInfo "Got proposal"
     (leaderMsg, learnersMsg) <- withProcessStateAtomically $ do
         appliedPolicies <-
             zoom (acceptorCStruct) $
@@ -120,13 +122,13 @@ phase2b policyTargets (Fast.ProposalMsg policiesToApply) = do
         logInfo $ logFastApplied appliedPolicies
 
         accId <- use acceptorId
-        let leaderMsg = Fast.AcceptedMsg @cstruct accId appliedPolicies
+        let leaderMsg = Fast.AcceptedMsg @Leader @cstruct accId appliedPolicies
         let learnersMsg =
-                [ (targets, Fast.AcceptedMsg @cstruct accId policies)
+                [ (targets, Fast.AcceptedMsg @Learner @cstruct accId policies)
                 | (targets, policies) <-
                     groupPolicyTargets policyTargets acceptanceCmd (toList appliedPolicies)
                 ]
-        pure (leaderMsg, learnersMsg)
+        pure $ (leaderMsg, learnersMsg)
 
     broadcastTo (processAddresses Leader) leaderMsg
     forM_ learnersMsg $ \(learners, msg) ->
@@ -142,7 +144,7 @@ phase2b policyTargets (Fast.ProposalMsg policiesToApply) = do
 learn
     :: forall cstruct m.
        (MonadPhase cstruct m, HasContextOf Learner Fast m)
-    => LearningCallback m -> Fast.AcceptedMsg cstruct -> m ()
+    => LearningCallback m -> Fast.AcceptedMsg Learner cstruct -> m ()
 learn callback (Fast.AcceptedMsg accId (toList -> cstructDiff)) = do
     voteUpdates <- withProcessStateAtomically $
         forM cstructDiff $ rememberUnstableCmdVote learnerVotes accId
@@ -182,7 +184,7 @@ delegateToRecovery conflictingPolicies = do
 detectConflicts
     :: forall cstruct m.
        (MonadPhase cstruct m, HasContextOf Leader Fast m)
-    => Fast.AcceptedMsg cstruct -> m ()
+    => Fast.AcceptedMsg Leader cstruct -> m ()
 detectConflicts (Fast.AcceptedMsg accId (toList -> cstructDiff)) = do
     voteUpdates <- forM cstructDiff $ \policyAcceptance ->
         withProcessStateAtomically $

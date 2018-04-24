@@ -39,11 +39,11 @@ class Conflict a b where
 
     -- | Whether entities conflict.
     conflicts :: a -> b -> Bool
-    conflicts a b = not (agrees a b)
+    conflicts a b = isLeft $ conflictReason a b
 
     -- | The opposite to 'conflict'.
     agrees :: a -> b -> Bool
-    agrees a b = not (conflicts a b)
+    agrees a b = isRight $ conflictReason a b
 
 -- | Whether cstruct conflicts with itself.
 contradictive :: Conflict a a => a -> Bool

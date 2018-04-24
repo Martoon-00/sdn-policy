@@ -89,7 +89,7 @@ takeSomeProcess
     => i -> p
 takeSomeProcess (fromIntegral -> i) =
     let processes@(firstProcess :| _) = takeAllProcesses @p
-    in  fromMaybe firstProcess (processes ^? ix i)
+    in  fromMaybe firstProcess (processes ^? ix (i - 1))
 
 -- | Get all addresses of processes of this kind.
 processesAddresses

@@ -11,9 +11,9 @@ import           Control.Monad.Reader         (withReaderT)
 import           Control.Monad.Trans.Control  (embed_)
 import           Control.TimeWarp.Logging     (WithNamedLogger, modifyLoggerName,
                                                usingLoggerName)
-import           Control.TimeWarp.Rpc         (Method, MsgPackUdpOptions (..), Port,
-                                               hoistMethod, localhost, runMsgPackUdpOpts,
-                                               serve)
+import           Control.TimeWarp.Rpc         (Dict (..), Method, Port, hoistMethod,
+                                               localhost, pickEvi, runMsgPackRpc, serve,
+                                               withExtendedRpcOptions)
 import           Control.TimeWarp.Timed       (fork_)
 import           Data.Default                 (Default (..))
 import           Data.Tagged                  (Tagged (..), untag)
@@ -125,15 +125,14 @@ runProtocolNode
     -> IO ()
 runProtocolNode ProtocolOptions{..} curProcessId ProtocolCallbacks{..} fillProtocolHandlers = do
     let runLogging = runNoErrorReporting . usingLoggerName mempty
-        networkOptions = def{ udpMessageSizeLimit = 15000 }
 
     let learnersSettings = def
             { listenersLearningCallback = LearningCallback $ liftIO . protocolOnLearned }
 
     -- environment initialization
-    runMsgPackUdpOpts networkOptions $
+    runMsgPackRpc $ withExtendedRpcOptions (pickEvi Dict) $
         runLogging $
-        declareMemStorage ioRefMemStorageUnsafe $
+        declareMemStorage ioRefMemStorage $
         declareMonadicMark @(CStructType cstruct) $
         withMembers members $
         withMembersAddresses membersAddresses $

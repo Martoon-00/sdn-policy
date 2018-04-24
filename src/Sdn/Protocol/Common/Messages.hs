@@ -39,4 +39,4 @@ instance HasMessageShortcut (CommittedMsg cstruct) where
 
 instance MessagePack (RawCmd cstruct) => MessagePack (CommittedMsg cstruct)
 
-declareMessage ''CommittedMsg
+declareMessage 1 ''CommittedMsg

@@ -53,8 +53,8 @@ import           Universum                   hiding (throwM, toList)
 import           Unsafe                      (unsafeFromJust)
 
 -- | Declare instance for one-way message.
-declareMessage :: TH.Name -> TH.Q [TH.Dec]
-declareMessage msgType = mkRequest msgType ''()
+declareMessage :: Rpc.MessageId -> TH.Name -> TH.Q [TH.Dec]
+declareMessage msgId msgType = mkRequest msgType ''() msgId
 
 type RpcOptions = '[Rpc.RpcOptionMessagePack, Rpc.RpcOptionNoReturn]
 
@@ -429,6 +429,9 @@ data OldNew a = OldNew
     { getOld :: a
     , getNew :: a
     } deriving (Eq, Ord, Show, Functor, Foldable, Traversable)
+
+instance Buildable a => Buildable (OldNew a) where
+    build OldNew{..} = bprint ("old: "%build%"; new: "%build) getOld getNew
 
 wasChanged :: Eq a => OldNew a -> Bool
 wasChanged OldNew{..} = getOld /= getNew

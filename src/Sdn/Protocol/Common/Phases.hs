@@ -40,8 +40,8 @@ import           Sdn.Base
 import           Sdn.Extra                    (MFunctored (..), MonadLog, MonadReporting,
                                                OldNew (..), PreparedAction (..),
                                                RpcOptions, decompose, foldlF', logError,
-                                               logInfo, presence, submit, throwOnFail,
-                                               zoom, (<<<%=))
+                                               logInfo, presence, throwOnFail, zoom,
+                                               (<<<%=))
 import           Sdn.Extra.Batching
 import           Sdn.Protocol.Common.Context
 import           Sdn.Protocol.Common.Messages
@@ -163,8 +163,9 @@ onFixatedPolicies
     => LearningCallback m -> NonEmpty (Cmd cstruct) -> m ()
 onFixatedPolicies (LearningCallback callback) policyAcceptances = do
     -- notify proposer that it can stop reproposing policy
-    let policies = map acceptanceCmd policyAcceptances
-    submit (processAddress Proposer) (CommittedMsg @cstruct policies)
+    -- TODO: enable
+    -- let policies = map acceptanceCmd policyAcceptances
+    -- submit (processAddress Proposer) (CommittedMsg @cstruct policies)
 
     -- invoke callback
     callback policyAcceptances

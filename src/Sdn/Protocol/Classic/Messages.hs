@@ -35,7 +35,7 @@ instance HasMessageShortcut (ProposalMsg cstruct) where
 instance MessagePack (RawCmd cstruct) =>
          MessagePack (ProposalMsg cstruct)
 
-declareMessage ''ProposalMsg
+declareMessage 11 ''ProposalMsg
 
 
 -- | Message sent by leader to acceptors in order to initiate a new ballot and
@@ -51,7 +51,7 @@ instance HasMessageShortcut PrepareMsg where
 
 instance MessagePack PrepareMsg
 
-declareMessage ''PrepareMsg
+declareMessage 12 ''PrepareMsg
 
 
 -- | "Promise" message sent from acceptor to leader.
@@ -68,7 +68,7 @@ instance HasMessageShortcut (PromiseMsg cstruct) where
 
 instance MessagePack cstruct => MessagePack (PromiseMsg cstruct)
 
-declareMessage ''PromiseMsg
+declareMessage 13 ''PromiseMsg
 
 
 -- | Message sent by leader to acceptors to order them to accept a new cstruct.
@@ -85,7 +85,7 @@ instance HasMessageShortcut (AcceptRequestMsg cstruct) where
 
 instance MessagePack cstruct => MessagePack (AcceptRequestMsg cstruct)
 
-declareMessage ''AcceptRequestMsg
+declareMessage 14 ''AcceptRequestMsg
 
 
 -- | Message sent by acceptor to learner in order to make learner fixate new
@@ -103,5 +103,5 @@ instance HasMessageShortcut (AcceptedMsg cstruct) where
 
 instance MessagePack cstruct => MessagePack (AcceptedMsg cstruct)
 
-declareMessage ''AcceptedMsg
+declareMessage 15 ''AcceptedMsg
 
