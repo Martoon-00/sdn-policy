@@ -33,8 +33,10 @@ import           Control.TimeWarp.Rpc        (MonadRpc (..), NetworkAddress,
 import qualified Control.TimeWarp.Rpc        as Rpc
 import           Control.TimeWarp.Timed      (Microsecond, MonadTimed (..), ThreadId,
                                               TimedTOptions (..))
+import qualified Data.Binary                 as Binary
+import qualified Data.ByteString.Lazy        as LBS
 import           Data.Coerce                 (coerce)
-import           Data.MessagePack            (MessagePack (..))
+import           Data.MessagePack            (MessagePack (..), Object (..))
 import qualified Data.Set                    as S
 import qualified Data.Text.Buildable
 import           Data.Text.Lazy.Builder      (Builder)
@@ -291,9 +293,22 @@ instance (MessagePack a, Ord a) => MessagePack (S.Set a) where
     toObject = toObject . toList
     fromObject = fmap fromList . fromObject
 
+binaryToObject :: Binary.Binary a => a -> Object
+binaryToObject = ObjectBin . LBS.toStrict . Binary.encode
+
+binaryFromObject :: Show a => Binary.Binary a => Object -> Maybe a
+binaryFromObject o = do
+    ObjectBin bin <- pure o
+    Right (_, _, x) <- pure $ Binary.decodeOrFail (LBS.fromStrict bin)
+    return x
+
 instance MessagePack Word32 where
-    toObject = toObject . fromIntegral @_ @Int
-    fromObject = fmap (fromIntegral @Int) . fromObject
+    toObject = binaryToObject
+    fromObject = binaryFromObject
+
+instance MessagePack Word64 where
+    toObject = binaryToObject
+    fromObject = binaryFromObject
 
 -- | Alias for 'mzero'.
 exit :: MonadPlus m => m a

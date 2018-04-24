@@ -53,6 +53,8 @@ library
   build-depends:       base >= 4.7 && < 5
                      , ansi-terminal
                      , autoexporter
+                     , binary
+                     , bytestring
                      , containers >= 0.5.9
                      , data-default
                      , dlist

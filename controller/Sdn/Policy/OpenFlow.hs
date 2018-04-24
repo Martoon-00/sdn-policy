@@ -6,6 +6,10 @@
 module Sdn.Policy.OpenFlow
     ( Policy (..)
     , Configuration
+    , PolicyCoord
+
+    , policyXid
+    , policySwitchId
     ) where
 
 import           Control.Lens          (at, has, ix, makeLenses, non, to)
@@ -22,20 +26,28 @@ import           Universum
 import           Sdn.Base
 import           Sdn.Extra.Util        (listF, pairF, presence)
 
+type PolicyCoord = (OF.TransactionID, OF.SwitchID)
+
 data Policy = Policy
-    { policyXid    :: OF.TransactionID
+    { policyCoord  :: PolicyCoord
     , policyAction :: [OF.Action]
     } deriving (Eq, Ord, Show, Generic)
+
+policyXid :: Policy -> OF.TransactionID
+policyXid = fst . policyCoord
+
+policySwitchId :: Policy -> OF.SwitchID
+policySwitchId = snd . policyCoord
 
 instance Buildable Policy where
     build = bprint shown
 
 instance Conflict Policy Policy where
-    conflictReason (Policy xid1 action1) (Policy xid2 action2) =
+    conflictReason (Policy coord1 action1) (Policy coord2 action2) =
         let pack action = M.fromList $ map (\a -> (OF.actionToType a, a)) action
             [at1, at2] = map pack [action1, action2]
             actionsOfSameTypeAreSame = M.intersectionWith (==) at1 at2
-        in  if xid1 == xid2 && and actionsOfSameTypeAreSame
+        in  if coord1 == coord2 && and actionsOfSameTypeAreSame
             then Right ()
             else Left $ sformat ("Policies "%shown%" & "%shown%" conflict!")
                         action1 action2
@@ -51,7 +63,7 @@ instance MessagePack Policy where
 
 
 data Configuration = Configuration
-    { _configEntry    :: M.Map OF.TransactionID $ S.Set Policy
+    { _configEntry    :: M.Map PolicyCoord $ S.Set Policy
     , _configRejected :: S.Set Policy
     } deriving (Eq, Show, Generic)
 
@@ -60,7 +72,7 @@ makeLenses ''Configuration
 instance Buildable Configuration where
     build Configuration{..} =
         bprint
-            (  "Accepted: "%listF "\n  " (pairF ("for #"%build%": "%listF ", " build))%
+            (  "Accepted: "%listF "\n  " (pairF ("for #"%pairF (build%"-"%build)%": "%listF ", " build))%
             "\n Rejected: "%listF ", " build)
           _configEntry _configRejected
 
@@ -72,7 +84,7 @@ instance MessagePack Configuration
 instance Conflict (Acceptance Policy) Configuration where
     conflictReason (Rejected _) _ = Right ()
     conflictReason (Accepted policy) Configuration{..} =
-        case M.lookup (policyXid policy) _configEntry of
+        case M.lookup (policyCoord policy) _configEntry of
             Nothing          -> Right ()
             Just oldPolicies -> mapM_ (conflictReason policy) oldPolicies
 
@@ -83,7 +95,7 @@ instance Conflict Configuration (Acceptance Policy) where
 addCommandUnsafe :: Acceptance Policy -> Configuration -> Configuration
 addCommandUnsafe (Rejected policy) = configRejected . at policy . presence .~ True
 addCommandUnsafe (Accepted policy) =
-    configEntry . at (policyXid policy) . non mempty . at policy . presence .~ True
+    configEntry . at (policyCoord policy) . non mempty . at policy . presence .~ True
 
 instance CStruct Configuration where
     type Cmd Configuration = Acceptance Policy
@@ -108,7 +120,7 @@ instance AtCmd Configuration where
     atCmd raw@Policy{..} = to getter
       where
         getter config =
-            if | (configEntry . ix policyXid . ix raw) `has` config -> Just AcceptedT
+            if | (configEntry . ix policyCoord . ix raw) `has` config -> Just AcceptedT
                | (configRejected . ix raw) `has` config -> Just RejectedT
                | otherwise -> Nothing
 

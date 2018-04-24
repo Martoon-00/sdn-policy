@@ -49,13 +49,13 @@ main = do
             callbacks <- atomicModifyIORefS rc $ do
                 forM ps $ \policyAcceptance -> do
                     let (_, policy) = decompose policyAcceptance
-                    mCallback <- at (policyXid policy) <<.= Nothing
+                    mCallback <- at (policyCoord policy) <<.= Nothing
                     return $ ($ policyAcceptance) `fmap` mCallback
 
             sequence_ $ catMaybes $ toList callbacks
         }
 
-type CallbacksRegister = IORef $ M.Map OF.TransactionID (Acceptance Policy -> IO ())
+type CallbacksRegister = IORef $ M.Map PolicyCoord (Acceptance Policy -> IO ())
 
 type ProtocolAccess = (ProtocolHandlers Configuration, CallbacksRegister)
 
@@ -64,7 +64,7 @@ runPlatform protocolAccess PlatformOptions{..} processId = do
     let port = platformPorts processId
     OF.runServer port onConnect
   where
-    onConnect sw = handshake sw >> return (messageHandler protocolAccess sw)
+    onConnect sw = handshake sw >> messageHandler protocolAccess sw
 
 handshake :: OF.Switch -> IO ()
 handshake sw = OF.sendToSwitch sw $ OF.CSHello 0
@@ -75,7 +75,7 @@ installPolicy
     -> (AcceptanceType -> IO ())
     -> IO ()
 installPolicy (ProtocolHandlers{..}, callbacksRegister) policy onLearned = do
-    isNew <- atomicModifyIORefS callbacksRegister . zoom (at (policyXid policy)) $ do
+    isNew <- atomicModifyIORefS callbacksRegister . zoom (at (policyCoord policy)) $ do
         let callback policyAcceptance = do
                 removeCallback
                 onLearned (acceptanceType policyAcceptance)
@@ -89,27 +89,32 @@ installPolicy (ProtocolHandlers{..}, callbacksRegister) policy onLearned = do
         else putStrLn $ sformat ("Do not request for policy "%build%" again") policy
   where
     removeCallback = atomicModifyIORefS callbacksRegister $
-        at (policyXid policy) .= Nothing
+        at (policyCoord policy) .= Nothing
 
 messageHandler
     :: ProtocolAccess
     -> OF.Switch
-    -> Maybe OF.SCMessage
-    -> IO ()
-messageHandler protocolAccess sw = \case
-    Nothing -> putStrLn @Text "Disconnecting\n"
-    Just msg -> handleMsg msg
+    -> IO (Maybe OF.SCMessage    -> IO ())
+messageHandler protocolAccess sw = do
+    switchState <- newIORef Nothing
+    return $ \case
+        Nothing -> putStrLn @Text "Disconnecting\n"
+        Just msg -> handleMsg switchState msg
   where
-    handleMsg = \case
+    handleMsg switchState = \case
+        OF.Features _ features -> do
+            writeIORef switchState (Just $ OF.switchID features)
         OF.PacketIn xid (OF.PacketInfo (Just bufferId) _ inPort reason _ _) -> do
             putStrLn $ formatToString ("Incoming packet #"%shown%" on port "%shown%" with buffer "%shown
                                       %" (reason: "%shown%")")
                        xid inPort bufferId reason
 
+            sid <- fromMaybe (error "switch id unknown") <$> readIORef switchState
+
             let actions = OF.flood
             let out = OF.bufferedPacketOut bufferId (Just inPort) actions
 
-            let policy = Policy xid (OF.actionSequenceToList actions)
+            let policy = Policy (xid, sid) (OF.actionSequenceToList actions)
             installPolicy protocolAccess policy $ \case
                 RejectedT -> putStrLn $ "Policy rejected: " <> pretty policy
                 AcceptedT -> do
