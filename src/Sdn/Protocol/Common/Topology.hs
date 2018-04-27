@@ -21,12 +21,12 @@ import           Test.QuickCheck              (arbitrary)
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra                    (Message, MonadLog, MonadReporting,
-                                               RpcOptions, coloredF, gray, logError,
-                                               logInfo, loggerNameT, mkMemStorage,
-                                               prepareToAct, readMemStorage,
-                                               resetColoring, withColor)
+import           Sdn.Extra                    (MonadLog, MonadReporting, RpcOptions,
+                                               coloredF, gray, logError, logInfo,
+                                               loggerNameT, mkMemStorage, prepareToAct,
+                                               readMemStorage, resetColoring, withColor)
 import           Sdn.Extra.MemStorage
+import           Sdn.Extra.Networking
 import qualified Sdn.Extra.Schedule           as S
 import qualified Sdn.Policy.Fake              as Fake
 import           Sdn.Protocol.Common.Context

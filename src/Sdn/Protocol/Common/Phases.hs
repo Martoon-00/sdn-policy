@@ -27,22 +27,23 @@ module Sdn.Protocol.Common.Phases
 
 import           Control.Exception            (assert)
 import           Control.Lens                 (at, non, (%%=), (%=), (.=))
+import           Control.Monad.Catch          (catchAll)
 import           Control.TimeWarp.Rpc         (MonadRpc)
 import           Control.TimeWarp.Timed       (MonadTimed (..))
 import           Data.Default                 (Default (..))
 import qualified Data.Map                     as M
 import qualified Data.Semigroup               as Semi
 import qualified Data.Set                     as S
-import           Formatting                   (build, sformat, (%))
+import           Formatting                   (build, sformat, shown, (%))
 import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra                    (MFunctored (..), MonadLog, MonadReporting,
                                                OldNew (..), PreparedAction (..),
-                                               RpcOptions, decompose, foldlF', logError,
-                                               logInfo, presence, throwOnFail, zoom,
-                                               (<<<%=))
+                                               decompose, foldlF', logError, logInfo,
+                                               presence, throwOnFail, zoom, (<<<%=))
 import           Sdn.Extra.Batching
+import           Sdn.Extra.Networking
 import           Sdn.Protocol.Common.Context
 import           Sdn.Protocol.Common.Messages
 import           Sdn.Protocol.Processes

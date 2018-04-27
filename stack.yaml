@@ -11,7 +11,7 @@ packages:
     - msgpack-rpc
 - location:
     git: https://github.com/serokell/time-warp.git
-    commit: 877426a31f5dc0990625bacbbb2ac13afeed86da
+    commit: 740cbdb75e91407172dd77c8c6051c45bfaf3c63
   extra-dep: true
 - location:
     git: https://github.com/Martoon-00/openflow

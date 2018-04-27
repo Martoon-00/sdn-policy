@@ -314,6 +314,7 @@ class ( CStruct cstruct
       , MessagePack (RawCmd cstruct)
       , Acceptance (RawCmd cstruct) ~ Cmd cstruct
       , AtCmd cstruct
+      , Typeable cstruct
       ) =>
       PracticalCStruct cstruct
 

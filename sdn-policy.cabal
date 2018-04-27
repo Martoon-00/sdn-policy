@@ -20,6 +20,7 @@ library
                        Sdn.Extra.Batching
                        Sdn.Extra.Logging
                        Sdn.Extra.MemStorage
+                       Sdn.Extra.Networking
                        Sdn.Extra.Schedule
                        Sdn.Extra.Util
                        Sdn.Policy

@@ -8,7 +8,8 @@ module Main where
 
 import           Control.Lens             ((+=))
 import           Control.TimeWarp.Logging (usingLoggerName)
-import           Control.TimeWarp.Rpc     (MsgPackUdpOptions (..), runMsgPackUdpOpts)
+import           Control.TimeWarp.Rpc     (Dict (..), MsgPackUdpOptions (..), pickEvi,
+                                           runMsgPackUdpOpts, withExtendedRpcOptions)
 import           Control.TimeWarp.Timed   (for, fork_, interval, ms, sec, wait)
 import           Data.Default             (def)
 import           System.Random            (mkStdGen)
@@ -31,7 +32,12 @@ main = do
         networkOptions = def{ udpMessageSizeLimit = 15000 }
 
     -- environment initialization
-    runMsgPackUdpOpts networkOptions . runLogging $ declareMemStorage ioRefMemStorageUnsafe $ declareMonadicMark @(CStructType Configuration) $ setDropLoggerName $ do
+    runMsgPackUdpOpts networkOptions $
+      withExtendedRpcOptions (pickEvi Dict) $
+      runLogging $
+      declareMemStorage ioRefMemStorageUnsafe $
+      declareMonadicMark @(CStructType Configuration) $
+      setDropLoggerName $ do
         logInfo "Starting"
 
         learnedCounter <- newIORef 0

@@ -14,7 +14,7 @@ import           Control.TimeWarp.Logging     (WithNamedLogger, modifyLoggerName
 import           Control.TimeWarp.Rpc         (Dict (..), Method, Port, hoistMethod,
                                                localhost, pickEvi, runMsgPackRpc, serve,
                                                withExtendedRpcOptions)
-import           Control.TimeWarp.Timed       (fork_)
+import           Control.TimeWarp.Timed       (fork_, interval, sec)
 import           Data.Default                 (Default (..))
 import           Data.Tagged                  (Tagged (..), untag)
 import           Universum
@@ -22,7 +22,10 @@ import           Universum
 import           Sdn.Base
 import           Sdn.Extra.Logging
 import           Sdn.Extra.MemStorage
+import           Sdn.Extra.Networking
+import qualified Sdn.Extra.Schedule           as S
 import           Sdn.Extra.Util               (declareMonadicMark, prepareToAct)
+import qualified Sdn.Protocol.Classic         as Classic
 import           Sdn.Protocol.Common.Context
 import           Sdn.Protocol.Common.Phases   (BatchingSettings (..),
                                                LearningCallback (..), batchingProposal)
@@ -33,9 +36,10 @@ import           Sdn.Protocol.Common.Topology (ProcessEnv, ProcessM,
 import qualified Sdn.Protocol.Fast            as Fast
 import           Sdn.Protocol.Processes
 import           Sdn.Protocol.Versions
+import           System.Random                (mkStdGen)
 
 
--- | Identifier of controller process.
+-- | Identifier of abstract process.
 newtype ProcessId = ProcessId Int
     deriving (Eq, Ord, Enum, Show, Num, Real, Integral)
 
@@ -131,6 +135,8 @@ runProtocolNode ProtocolOptions{..} curProcessId ProtocolCallbacks{..} fillProto
 
     -- environment initialization
     runMsgPackRpc $ withExtendedRpcOptions (pickEvi Dict) $
+    -- runMsgPackUdpOpts def{ udpMessageSizeLimit = 15000 } $
+        runListenersCacheFor (== curPort) $
         runLogging $
         declareMemStorage ioRefMemStorage $
         declareMonadicMark @(CStructType cstruct) $

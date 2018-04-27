@@ -28,8 +28,7 @@ import           Control.Monad.STM.Class     (MonadSTM (..))
 import           Control.Monad.Trans.Control (MonadBaseControl (..))
 import           Control.Spoon               (teaspoonWithHandles)
 import           Control.TimeWarp.Logging    (WithNamedLogger)
-import           Control.TimeWarp.Rpc        (MonadRpc (..), NetworkAddress,
-                                              RpcRequest (..), mkRequest)
+import           Control.TimeWarp.Rpc        (MonadRpc (..))
 import qualified Control.TimeWarp.Rpc        as Rpc
 import           Control.TimeWarp.Timed      (Microsecond, MonadTimed (..), ThreadId,
                                               TimedTOptions (..))
@@ -46,35 +45,12 @@ import           Formatting                  (Format, bprint, build, later, sfor
 import           Formatting.Internal         (Format (..))
 import           GHC.Exts                    (IsList (..))
 import qualified GHC.Exts                    as Exts
-import qualified Language.Haskell.TH         as TH
 import qualified System.Console.ANSI         as ANSI
 import           Test.QuickCheck             (Gen, choose, suchThat)
 import           Test.QuickCheck.Gen         (unGen)
 import           Test.QuickCheck.Random      (mkQCGen)
 import           Universum                   hiding (throwM, toList)
 import           Unsafe                      (unsafeFromJust)
-
--- | Declare instance for one-way message.
-declareMessage :: Rpc.MessageId -> TH.Name -> TH.Q [TH.Dec]
-declareMessage msgId msgType = mkRequest msgType ''() msgId
-
-type RpcOptions = '[Rpc.RpcOptionMessagePack, Rpc.RpcOptionNoReturn]
-
-type Message msg = (RpcRequest msg, Rpc.RpcConstraints RpcOptions msg)
-
--- | Alias for 'Rpc.send', restricted to messages satisfying 'Message' constraint.
-submit
-    :: (MonadCatch m, MonadTimed m, MonadRpc RpcOptions m, Message msg)
-    => NetworkAddress -> msg -> m ()
-submit = Rpc.send
-
--- | Send a message to multiple given participants.
-broadcastTo
-    :: (MonadCatch m, MonadTimed m, MonadRpc RpcOptions m, Message msg)
-    => [NetworkAddress] -> msg -> m ()
-broadcastTo getAddresses msg = do
-    let addresses = getAddresses
-    forM_ addresses $ \addr -> submit addr msg
 
 -- | Builder for list.
 listF
