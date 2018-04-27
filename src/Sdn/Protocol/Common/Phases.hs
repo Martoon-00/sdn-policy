@@ -168,7 +168,8 @@ onFixatedPolicies (LearningCallback callback) policyAcceptances = do
     -- submit (processAddress Proposer) (CommittedMsg @cstruct policies)
 
     -- invoke callback
-    callback policyAcceptances
+    callback policyAcceptances `catchAll`
+        \e -> logInfo $ sformat ("Callback threw an error: "%shown) e
 
 -- | Learning phase of algorithm.
 learnCStruct

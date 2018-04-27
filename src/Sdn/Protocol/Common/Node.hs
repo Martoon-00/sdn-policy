@@ -144,6 +144,11 @@ runProtocolNode ProtocolOptions{..} curProcessId ProtocolCallbacks{..} fillProto
 
             liftIO $ fillProtocolHandlers ProtocolHandlers{..}
 
+            when (protocolLeaderId == curProcessId) $
+                fork_ $ S.runSchedule_ (mkStdGen 0) $ do
+                    S.periodic (interval 10 sec)
+                    lift $ inProcess subLeaderState Classic.phase1a
+
             let ProtocolListeners{..} = versionProtocolListeners @Fast learnersSettings
 
             listeners <- sequence $ mconcat

@@ -13,7 +13,6 @@ module Sdn.Policy.OpenFlow
     ) where
 
 import           Control.Lens          (at, has, ix, makeLenses, non, to)
-import qualified Data.Binary           as Bin
 import           Data.Default          (Default (..))
 import qualified Data.Map              as M
 import           Data.MessagePack      (MessagePack (..))
@@ -24,7 +23,8 @@ import qualified Network.Data.OpenFlow as OF
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra.Util        (listF, pairF, presence)
+import           Sdn.Extra.Util        (binaryFromObject, binaryToObject, listF, pairF,
+                                        presence)
 
 type PolicyCoord = (OF.TransactionID, OF.SwitchID)
 
@@ -53,13 +53,10 @@ instance Conflict Policy Policy where
                         action1 action2
 
 instance MessagePack Policy where
-    toObject (Policy xid action) = toObject $ Bin.encode (xid, action)
+    toObject (Policy xid action) = binaryToObject (xid, action)
     fromObject o = do
-        bin <- fromObject o
-        (action, xid) <- case Bin.decodeOrFail bin of
-            Left _          -> Nothing
-            Right (_, _, x) -> Just x
-        return (Policy action xid)
+        (xid, action) <- binaryFromObject o
+        return (Policy xid action)
 
 
 data Configuration = Configuration
@@ -91,6 +88,9 @@ instance Conflict (Acceptance Policy) Configuration where
 instance Conflict Configuration (Acceptance Policy) where
     conflictReason = flip conflictReason
 
+instance Conflict Configuration Configuration where
+    conflictReason c1 c2 =
+        mapM_ (conflictReason c1 . Accepted) (S.unions . toList $ _configEntry c2)
 
 addCommandUnsafe :: Acceptance Policy -> Configuration -> Configuration
 addCommandUnsafe (Rejected policy) = configRejected . at policy . presence .~ True
@@ -100,7 +100,10 @@ addCommandUnsafe (Accepted policy) =
 instance CStruct Configuration where
     type Cmd Configuration = Acceptance Policy
     addCommand = checkingAgreement addCommandUnsafe
-    glb = error "glb undefined"
+    glb = checkingAgreement $ \c1 c2 -> Configuration
+        { _configEntry = M.unionWith (S.union) (_configEntry c1) (_configEntry c2)
+        , _configRejected = S.union (_configRejected c1) (_configRejected c2)
+        }
     lub c1 c2 =
         Configuration
         { _configEntry = M.intersectionWith (S.intersection) (_configEntry c1) (_configEntry c2)
