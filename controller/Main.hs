@@ -5,10 +5,10 @@
 
 module Main where
 
-import           Control.Lens               (at, zoom, (.=), (<<.=))
+import           Control.Lens               (at, non', (.=), (<<%=), (<<.=), _Empty)
 import           Control.TimeWarp.Timed     (for, fork_, ms, runTimedIO, wait)
 import qualified Data.Map                   as M
-import           Formatting                 (build, formatToString, sformat, shown, (%))
+import           Formatting                 (formatToString, shown, (%))
 import qualified Network.Data.OF13.Handlers as OF
 import qualified Network.Data.OF13.Server   as OF
 import qualified Network.Data.OpenFlow      as OF
@@ -43,19 +43,20 @@ main = do
     runPlatform (protocolHandlers, registeredCallbacks) platformOptions curProcessId
   where
     protocolCallbacks :: CallbacksRegister -> ProtocolCallbacks Configuration
-    protocolCallbacks rc =
+    protocolCallbacks callbacksReg =
         ProtocolCallbacks
-        { protocolOnLearned = \ps -> do
-            callbacks <- atomicModifyIORefS rc $ do
-                forM ps $ \policyAcceptance -> do
+        { protocolOnLearned = \policyAccs -> do
+            callbacks <- atomicModifyIORefS callbacksReg $ do
+                forM policyAccs $ \policyAcceptance -> do
                     let (_, policy) = decompose policyAcceptance
-                    mCallback <- at (policyCoord policy) <<.= Nothing
-                    return $ ($ policyAcceptance) `fmap` mCallback
+                    mCallbacks <- at (policyCoord policy) <<.= Nothing
+                    let callbacks = fromMaybe [] mCallbacks
+                    return $ ($ policyAcceptance) `fmap` callbacks
 
-            sequence_ $ catMaybes $ toList callbacks
+            sequence_ $ fold $ toList callbacks
         }
 
-type CallbacksRegister = IORef $ M.Map PolicyCoord (Acceptance Policy -> IO ())
+type CallbacksRegister = IORef $ M.Map PolicyCoord [Acceptance Policy -> IO ()]
 
 type ProtocolAccess = (ProtocolHandlers Configuration, CallbacksRegister)
 
@@ -75,19 +76,16 @@ installPolicy
     -> (AcceptanceType -> IO ())
     -> IO ()
 installPolicy (ProtocolHandlers{..}, callbacksRegister) policy onLearned = do
-    isNew <- atomicModifyIORefS callbacksRegister . zoom (at (policyCoord policy)) $ do
-        let callback policyAcceptance = do
-                removeCallback
-                onLearned (acceptanceType policyAcceptance)
-        oldCallback <- get
-        case oldCallback of
-            Nothing -> put (Just callback) $> True
-            Just _  -> pure False
+    oldCallbacks <- atomicModifyIORefS callbacksRegister $
+        at (policyCoord policy) . non' _Empty <<%= (callback :)
 
-    if isNew
-        then protocolMakeProposal policy
-        else putStrLn $ sformat ("Do not request for policy "%build%" again") policy
+    let isNewPolicy = null oldCallbacks
+    when isNewPolicy $
+        protocolMakeProposal policy
   where
+    callback policyAcceptance = do
+        removeCallback
+        onLearned (acceptanceType policyAcceptance)
     removeCallback = atomicModifyIORefS callbacksRegister $
         at (policyCoord policy) .= Nothing
 
@@ -118,7 +116,7 @@ messageHandler protocolAccess sw = do
             installPolicy protocolAccess policy $ \case
                 RejectedT -> putStrLn $ "Policy rejected: " <> pretty policy
                 AcceptedT -> do
-                    putStrLn $ "Policy installed: " <> pretty policy
+                    putStrLn $ "Policy installed, telling switch: " <> pretty policy
                     OF.sendToSwitch sw $ OF.PacketOut xid out
 
         OF.PacketIn _ (OF.PacketInfo Nothing _ _ _ _ _) -> do
