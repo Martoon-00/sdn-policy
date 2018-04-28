@@ -14,7 +14,6 @@ import           Control.Lens        (At (..), Index, Iso', IxValue, Ixed (..),
 import           Data.List           (groupBy, subsequences)
 import qualified Data.Map            as M
 import           Data.Reflection     (Reifies (..))
-import qualified Data.Set            as S
 import qualified Data.Text.Buildable
 import           Formatting          (bprint, build)
 import           GHC.Exts            (IsList (..))
@@ -129,42 +128,25 @@ class QuorumFamily f where
     -- | Check whether not mentioned members can not form a quorum.
     excludesOtherQuorum :: HasMembers => Votes f a -> Bool
 
-class QuorumFamily f => QuorumIntersectionFamily f where
-    -- | @isSubIntersectionWithQuorum q v@ returns whether exists quorum @r@
-    -- such that @v@ is subset of intersection of @q@ and @r@.
-    isSubIntersectionWithQuorum :: HasMembers => Votes f a -> Votes f b -> Bool
+-- | Take all possible minimum for inclusion quorums from given votes.
+allMinQuorumsOf
+    :: (HasMembers, QuorumFamily f)
+     => Votes f a -> [Votes f a]
+allMinQuorumsOf = filter isMinQuorum . traverseOf votesL subsequences
 
--- TODO: remove extra stuff
+-- | Take all possible quorums from given votes.
+allQuorumsOf
+    :: (HasMembers, QuorumFamily f)
+     => Votes f a -> [Votes f a]
+allQuorumsOf = filter isQuorum . allSubVotes
 
--- | Similar to 'isIntersectionWithQuorum' but does additional sanity checks
--- on arguments.
-isQuorumsSubIntersection
-    :: (QuorumIntersectionFamily qf, HasMembers)
-    => Votes qf a -> Votes qf cstruct -> Bool
-isQuorumsSubIntersection q v =
-    and
-    [ isQuorum q
-    , isSubIntersectionWithQuorum q v
-    , let Votes q' = q
-          Votes v' = v
-      in  M.keysSet v' `S.isSubsetOf` M.keysSet q'
-    ]
+-- | Get all possible quorums.
+allQuorums
+    :: (HasMembers, QuorumFamily f)
+    => [Votes f ()]
+allQuorums = allQuorumsOf maxBound
 
--- | @getIntersectionsWithQuorums q@ returns all possible @v = q \cup r@
--- for various quorums @r@.
-getIntersectionsWithQuorums
-    :: (HasMembers, QuorumIntersectionFamily f)
-    => Votes f a -> [Votes f a]
-getIntersectionsWithQuorums q =
-    filter (isSubIntersectionWithQuorum q) (allSubVotes q)
-
--- | @getIntersectionsWithQuorums q@ returns all possible @v = q \cup r@
--- for various quorums @r@.
-getQuorumsSubIntersections
-    :: (HasMembers, QuorumIntersectionFamily f)
-    => Votes f a -> [Votes f a]
-getQuorumsSubIntersections q =
-    filter (isQuorumsSubIntersection q) (allSubVotes q)
+-- * Quorum instances
 
 -- | Simple majority quorum.
 data MajorityQuorum frac
@@ -196,30 +178,3 @@ instance Reifies ThreeQuarters Rational where
 type ClassicMajorityQuorum = MajorityQuorum OneHalf
 type FastMajorityQuorum = MajorityQuorum ThreeQuarters
 
-instance Reifies frac Rational =>
-         QuorumIntersectionFamily (MajorityQuorum frac) where
-    isSubIntersectionWithQuorum q v =
-        let frac = reflect @frac Proxy
-            Members{..} = getMembers
-            -- |v| > |q \cap r| = |q| + |r| - |q \cup r| = |q| + |r| - |acceptors|
-        in  fromIntegral (length v)
-                > fromIntegral (length q)
-                + fromIntegral acceptorsNum * (frac - 1)
-
--- | Take all possible minimum for inclusion quorums from given votes.
-allMinQuorumsOf
-    :: (HasMembers, QuorumFamily f)
-     => Votes f a -> [Votes f a]
-allMinQuorumsOf = filter isMinQuorum . traverseOf votesL subsequences
-
--- | Take all possible quorums from given votes.
-allQuorumsOf
-    :: (HasMembers, QuorumFamily f)
-     => Votes f a -> [Votes f a]
-allQuorumsOf = filter isQuorum . allSubVotes
-
--- | Get all possible quorums.
-allQuorums
-    :: (HasMembers, QuorumFamily f)
-    => [Votes f ()]
-allQuorums = allQuorumsOf maxBound

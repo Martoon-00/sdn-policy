@@ -34,19 +34,8 @@ spec = do
 
         compareCombinations @ClassicMajorityQuorum combination combinationDefault
         compareCombinations @FastMajorityQuorum combination combinationDefault
-
-    describe "intersecting combination"$ do
-        describe "examples" $ do
-            prop "good policies" $
-                withMembers def{ acceptorsNum = 5 } $
-                    intersectingCombination @Configuration @FastMajorityQuorum
-                    (fromList $ [1..5] <&> \i -> (AcceptorId i, mkNeatPolicies [i..5]))
-                    === Right (mkNeatPolicies [4..5])
-
-        compareCombinations @FastMajorityQuorum intersectingCombination intersectingCombinationDefault
-
   where
-    mkNeatPolicies = fromList . map (Accepted . GoodPolicy . fromIntegral)
+    mkNeatPolicies = fromList . map (Accepted . GoodPolicy . fromIntegral @Int)
 
 
 type CombinationFun qf = Votes qf Configuration -> Either Text Configuration

@@ -163,14 +163,6 @@ class ( Conflict (Cmd cstruct) (Cmd cstruct)
         => Votes qf cstruct -> Either Text cstruct
     combination = combinationDefault
 
-    -- | Returns cstruct with all commands, which are present in votes
-    -- of all acceptors of intersection of given quorum with some other quorum.
-    -- Fails if resulting cstruct is contradictory.
-    intersectingCombination
-        :: (HasMembers, QuorumIntersectionFamily qf)
-        => Votes qf cstruct -> Either Text cstruct
-    intersectingCombination = intersectingCombinationDefault
-
 
 -- | 'CStruct', where commands are 'Acceptance's.
 type CStructA cstruct cmd = (CStruct cstruct, Cmd cstruct ~ Acceptance cmd)
@@ -194,6 +186,7 @@ contains cstruct cmd =
 checkingAgreement :: Conflict a b => (a -> b -> c) -> a -> b -> Either Text c
 checkingAgreement f a b = conflictReason a b $> f a b
 
+-- | Errors if item is contradictive, otherwise returns it.
 checkingConsistency
     :: (Conflict a a, Buildable a, MonadError Text m)
     => a -> m a
@@ -274,12 +267,6 @@ mergeCStructs cstructs =
                 %"\n  : "%build)
             gamma err
 
--- | Takes first argument only if it is extension of second one.
-maxOrSecond :: CStruct cstruct => cstruct -> cstruct -> cstruct
-maxOrSecond c1 c2
-    | c1 `extends` c2 = c1
-    | otherwise       = c2
-
 -- | This is straightforward and very inefficient implementation of
 -- 'combination'.
 combinationDefault
@@ -287,15 +274,6 @@ combinationDefault
     => Votes qf cstruct -> Either Text cstruct
 combinationDefault votes =
     mergeCStructs $ allMinQuorumsOf votes
-
--- | This is straightforward and very inefficient implementation of
--- 'intersectingCombination'.
-intersectingCombinationDefault
-    :: (HasMembers, CStruct cstruct, QuorumIntersectionFamily qf)
-    => Votes qf cstruct -> Either Text cstruct
-intersectingCombinationDefault =
-    mergeCStructs . filter (not . null) . getQuorumsSubIntersections
-
 
 -- | Allows to get decision taken about single policy.
 -- This is only 'Getter', not 'Lens', because changing decision on single policy

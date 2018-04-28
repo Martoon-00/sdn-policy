@@ -204,13 +204,6 @@ instance CStruct Configuration where
       where
         sanityCheck = first ("combination: " <> ) . checkingConsistency
 
-    intersectingCombination (votes :: Votes qf Configuration) =
-        sanityCheck . Configuration . M.keysSet $
-        M.filter (isQuorumsSubIntersection @qf votes) (votes ^. perPolicy)
-      where
-         sanityCheck =
-             first ("intersectingCombination: " <> ) . checkingConsistency
-
 instance AtCmd Configuration where
     atCmd raw = _Wrapped' . to getter
       where

@@ -6,10 +6,9 @@ module Test.Sdn.Basic.QuorumSpec
     ( spec
     ) where
 
-import           Test.Hspec            (Spec, describe, shouldBe, shouldSatisfy)
+import           Test.Hspec            (Spec, describe, shouldBe)
 import           Test.Hspec.Core.Spec  (SpecWith)
 import           Test.Hspec.QuickCheck (prop)
-import           Test.QuickCheck       (arbitrary, forAll, suchThat)
 import           Universum
 
 import           Sdn.Base
@@ -29,14 +28,6 @@ spec = do
                 checkQuorum @FastMajorityQuorum 24 19
                 checkQuorum @FastMajorityQuorum 25 19
 
-        describe "QuorumIntersectionFamily" $ do
-            describe "fast majority" $ do
-                checkQuorumIntersection 4 4 4
-                checkQuorumIntersection 8 6 5
-                checkQuorumIntersection 8 8 7
-                checkQuorumIntersection 9 6 4
-                checkQuorumIntersection 9 7 5
-
 checkQuorum :: forall qf. QuorumFamily qf => Int -> Int -> SpecWith ()
 checkQuorum acceptorsNum threashold =
     withMembers Members{..} $
@@ -50,22 +41,3 @@ checkQuorum acceptorsNum threashold =
     learnersNum = 1
 {-# NOINLINE checkQuorum #-}
 
-checkQuorumIntersection
-    :: Int -> Int -> Int -> SpecWith ()
-checkQuorumIntersection acceptorsNum heardNum threashold =
-    withMembers Members{..} $
-    describe (show threashold <> "/" <> show heardNum <> "/" <> show acceptorsNum) $ do
-        prop "isIntersectionWithQuorum" $
-            forAll (arbitrary `suchThat` \x -> length x == heardNum) $
-                \q ->
-            forAll arbitrary $
-                \v ->
-            do
-                isSubIntersectionWithQuorum @FastMajorityQuorum @() @() q v
-                    `shouldBe` (length v >= threashold)
-
-                when (length v >= threashold && isQuorum q) $
-                    coerceVotes @ClassicMajorityQuorum v `shouldSatisfy` isQuorum
-  where
-    learnersNum = 1
-{-# NOINLINE checkQuorumIntersection #-}
