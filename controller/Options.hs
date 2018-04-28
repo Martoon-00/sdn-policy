@@ -56,7 +56,7 @@ controllerOptionsParser = do
         return PlatformOptions{..}
 
     protocolOptions <- do
-        protocolPorts <- fmap processPort . Opt.option Opt.auto $ mconcat
+        startPort <- Opt.option Opt.auto $ mconcat
             [ Opt.long "protocol-start-port"
             , Opt.metavar "START-PORT"
             , Opt.help "Port, with which first process would participate in \
@@ -98,7 +98,10 @@ controllerOptionsParser = do
 
             return BatchingSettings{..}
 
-        return ProtocolOptions{..}
+        return ProtocolOptions
+            { protocolPorts = \pid -> processPort startPort pid
+            , ..
+            }
 
     curProcessId <- Opt.option (ProcessId <$> Opt.auto) $ mconcat
         [ Opt.short 'i'

@@ -14,7 +14,9 @@ module Sdn.Base.CStruct where
 import           Control.Lens         (Getter, makePrisms)
 import           Control.Monad.Except (MonadError, throwError)
 import           Data.Default         (Default (..))
+import qualified Data.Map             as M
 import           Data.MessagePack     (MessagePack)
+import qualified Data.Semigroup       as Semi
 import qualified Data.Text.Buildable
 import           Formatting           (bprint, build, sformat, (%))
 import           Test.QuickCheck      (Arbitrary (..), elements)
@@ -284,6 +286,16 @@ class AtCmd cstruct where
 
 class MayHaveProposerId rawcmd where
     cmdProposerId :: rawcmd -> Maybe (ProcessId ProposerTag)
+
+groupCmdByProposerId
+    :: MayHaveProposerId rawcmd
+    => (a -> rawcmd) -> [a] -> [(ProcessId ProposerTag, NonEmpty a)]
+groupCmdByProposerId toCmd items =
+    let pidNItems =
+            [ (pid, one item)
+            | item <- items, Just pid <- pure $ cmdProposerId (toCmd item)
+            ]
+    in  M.toList $ M.fromListWith (Semi.<>) pidNItems
 
 -- | Declares that implementation of cstruct has many other practically useful
 -- instances.

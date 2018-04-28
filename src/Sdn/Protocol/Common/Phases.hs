@@ -163,14 +163,19 @@ onFixatedPolicies
        (MonadPhase cstruct m, HasContextOf Learner pv m)
     => LearningCallback m -> NonEmpty (Cmd cstruct) -> m ()
 onFixatedPolicies (LearningCallback callback) policyAcceptances = do
-    -- notify proposer that it can stop reproposing policy
-    let policies = map acceptanceCmd policyAcceptances
-    whenJust (processAddress' Proposer) $ \addr ->
-        submit addr (CommittedMsg @cstruct policies)
-
-    -- invoke callback
+    notifyProposer
     callback policyAcceptances `catchAll`
         \e -> logInfo $ sformat ("Callback threw an error: "%shown) e
+  where
+    notifyProposer = do
+        let policies = map acceptanceCmd policyAcceptances
+        case proposerAddrInfo getMembersAddresses of
+            ProposerAddrInfoFixed addr ->
+                submit addr (CommittedMsg @cstruct policies)
+            ProposerAddrInfoEvaled evalAddr ->
+                let groups = groupCmdByProposerId identity (toList policies)
+                in  forM_ groups $ \(pid, ps) ->
+                        submit (evalAddr pid) (CommittedMsg @cstruct ps)
 
 -- | Learning phase of algorithm.
 learnCStruct

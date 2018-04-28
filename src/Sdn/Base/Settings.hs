@@ -1,11 +1,13 @@
-{-# LANGUAGE DeriveFunctor  #-}
-{-# LANGUAGE ImplicitParams #-}
-{-# LANGUAGE Rank2Types     #-}
+{-# LANGUAGE DeriveFunctor   #-}
+{-# LANGUAGE ImplicitParams  #-}
+{-# LANGUAGE Rank2Types      #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 -- | Various protocol-wide settings.
 
 module Sdn.Base.Settings where
 
+import           Control.Lens         (makePrisms)
 import           Control.TimeWarp.Rpc (NetworkAddress, Port, localhost)
 import           Data.Default         (Default (..))
 import           Data.Reflection
@@ -13,6 +15,8 @@ import qualified Data.Text.Buildable
 import           Formatting           (bprint, build, (%))
 import           Test.QuickCheck      (Arbitrary (..), getPositive)
 import           Universum
+
+import           Sdn.Base.Types
 
 -- | Information about number of consensus participants.
 data Members = Members
@@ -48,9 +52,16 @@ getMembers :: HasMembers => Members
 getMembers = given
 
 
+data ProposerAddrInfo a
+    = ProposerAddrInfoFixed a
+    | ProposerAddrInfoEvaled (ProcessId ProposerTag -> a)
+    deriving (Functor)
+
+makePrisms ''ProposerAddrInfo
+
 -- | Addresses of members of protocol.
 data MembersAddrInfo a = MembersAddrInfo
-    { proposerAddrInfo   :: Maybe a  -- proposer may wish to left anonymous
+    { proposerAddrInfo   :: ProposerAddrInfo a  -- proposer may wish to left anonymous
     , leaderAddrInfo     :: a
     , acceptorsAddrInfos :: Int -> a
     , learnersAddrInfos  :: Int -> a
@@ -62,7 +73,7 @@ type MembersPorts = MembersAddrInfo Port
 instance Default MembersPorts where
     def =
         MembersAddrInfo
-        { proposerAddrInfo = Just 4000
+        { proposerAddrInfo = ProposerAddrInfoFixed 4000
         , leaderAddrInfo = 5000
         , acceptorsAddrInfos = (+ 6000)
         , learnersAddrInfos = (+ 7000)

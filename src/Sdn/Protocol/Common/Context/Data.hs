@@ -23,7 +23,7 @@ module Sdn.Protocol.Common.Context.Data
 
     , PerCmdVotes
 
-    , CStructStore
+    , CStructStore (..)
     , coreCStruct
     , totalCStruct
     , addUnstableCmd
@@ -139,6 +139,7 @@ data CStructStore cstruct = CStructStore
 makeLenses ''CStructStore
 
 deriving instance (Eq cstruct, Eq (Cmd cstruct)) => Eq (CStructStore cstruct)
+deriving instance (Show cstruct, Show (Cmd cstruct)) => Show (CStructStore cstruct)
 
 instance (Buildable cstruct, Buildable (Cmd cstruct), Ord (Cmd cstruct)) =>
          Buildable (CStructStore cstruct) where

@@ -152,7 +152,7 @@ instance Process Proposer where
     processName _ = "proposer"
     processColor = (ANSI.Dull, ANSI.Magenta)
     processAddress' Proposer =
-        proposerAddrInfo getMembersAddresses
+        proposerAddrInfo getMembersAddresses ^? _ProposerAddrInfoFixed
     processesNumber = 1
     takeAllProcesses = one Proposer
 

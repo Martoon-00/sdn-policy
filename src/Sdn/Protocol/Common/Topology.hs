@@ -194,6 +194,13 @@ data ProtocolListeners pv m = ProtocolListeners
     , learnerListeners  :: HasMembersInfo => [Listener Learner pv m]
     }
 
+proposerListeners
+    :: (MonadTopology m, ProtocolVersion pv, HasMembersInfo)
+    => [Listener Proposer pv m]
+proposerListeners =
+    [ listener @Proposer confirmCommitted
+    ]
+
 -- | How processes of various roles are supposed to work.
 data TopologyActions pv m = TopologyActions
     { proposeAction     :: HasMembersInfo => MakeProposal (ProcessM Proposer pv m)
@@ -231,9 +238,7 @@ launchPaxosWith TopologyActions{..} seed TopologySettings{..} =
         let proposerPort =
                 fromMaybe (error "No port for proposer specified") $
                 processPort' Proposer
-        serve proposerPort =<< sequence
-            [ listener @Proposer confirmCommitted
-            ]
+        serve proposerPort =<< sequence proposerListeners
 
     getLeaderState <- newProcess Leader . work (for topologyLifetime) $ do
         -- wait for first proposal before start

@@ -1,6 +1,7 @@
 {-# LANGUAGE AllowAmbiguousTypes        #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE KindSignatures             #-}
+{-# LANGUAGE Rank2Types                 #-}
 {-# LANGUAGE StandaloneDeriving         #-}
 
 -- | Running processes required for single node.
@@ -33,6 +34,7 @@ import           Sdn.Protocol.Common.Phases   (BatchingSettings (..),
 import           Sdn.Protocol.Common.Topology (ProcessEnv, ProcessM,
                                                ProtocolListeners (..),
                                                ProtocolListenersSettings (..),
+                                               proposerListeners,
                                                versionProtocolListeners)
 import qualified Sdn.Protocol.Fast            as Fast
 import           Sdn.Protocol.Processes
@@ -42,7 +44,7 @@ import           System.Random                (mkStdGen)
 
 -- | Options assosiated with policies compoition protocol.
 data ProtocolOptions = ProtocolOptions
-    { protocolPorts             :: GeneralProcessId -> Port
+    { protocolPorts             :: forall pt. ProcessId pt -> Port
       -- ^ Port, with which given process which should participate in consensus protocol.
     , protocolTotalProcesses    :: Int
       -- ^ Overall number of controllers in network.
@@ -157,7 +159,8 @@ runProtocolNode ProtocolOptions{..} curProcessId ProtocolCallbacks{..} fillProto
             let ProtocolListeners{..} = versionProtocolListeners @Fast learnersSettings
 
             listeners <- sequence $ mconcat
-                [ inListenerM subLeaderState <$> leaderListeners
+                [ inListenerM subProposerState <$> proposerListeners
+                , inListenerM subLeaderState <$> leaderListeners
                 , inListenerM subAcceptorState <$> acceptorListeners
                 , inListenerM subLearnerState <$> learnerListeners
                 ]
@@ -173,7 +176,7 @@ runProtocolNode ProtocolOptions{..} curProcessId ProtocolCallbacks{..} fillProto
          }
      membersAddresses = fmap (localhost, )
          MembersAddrInfo
-         { proposerAddrInfo = Nothing
+         { proposerAddrInfo = ProposerAddrInfoEvaled protocolPorts
          , leaderAddrInfo = protocolPorts $ coerce protocolLeaderId
          , acceptorsAddrInfos = protocolPorts . fromIntegral
          , learnersAddrInfos = protocolPorts . fromIntegral
