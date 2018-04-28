@@ -30,7 +30,7 @@ instance Buildable (RawCmd cstruct) =>
     build (ProposalMsg p) = bprint ("Proposal message "%listF "," build) p
 
 instance HasMessageShortcut (ProposalMsg cstruct) where
-    messageShortcut = "1a"
+    messageShortcut = "propose"
 
 instance MessagePack (RawCmd cstruct) =>
          MessagePack (ProposalMsg cstruct)
@@ -47,7 +47,7 @@ instance Buildable PrepareMsg where
     build (PrepareMsg b) = bprint ("Phase 1a message "%build) b
 
 instance HasMessageShortcut PrepareMsg where
-    messageShortcut = "1b"
+    messageShortcut = "prepare"
 
 instance MessagePack PrepareMsg
 
@@ -64,7 +64,7 @@ instance Buildable cstruct =>
         bprint ("Phase 1b message from "%build%" "%build%" "%build) a b c
 
 instance HasMessageShortcut (PromiseMsg cstruct) where
-    messageShortcut = "2a"
+    messageShortcut = "promise"
 
 instance MessagePack cstruct => MessagePack (PromiseMsg cstruct)
 
@@ -81,7 +81,7 @@ instance Buildable cstruct =>
         bprint ("Phase 2a message "%build%" "%build) b c
 
 instance HasMessageShortcut (AcceptRequestMsg cstruct) where
-    messageShortcut = "2b"
+    messageShortcut = "accept"
 
 instance MessagePack cstruct => MessagePack (AcceptRequestMsg cstruct)
 

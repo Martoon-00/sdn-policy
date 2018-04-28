@@ -7,8 +7,9 @@
 
 module Sdn.Protocol.Common.Topology where
 
+import           Control.Lens                 (from)
 import           Control.Monad.Catch          (Handler (..), catches)
-import           Control.TimeWarp.Logging     (WithNamedLogger, getLoggerName,
+import           Control.TimeWarp.Logging     (LoggerName, WithNamedLogger, getLoggerName,
                                                modifyLoggerName, setLoggerName)
 import           Control.TimeWarp.Rpc         (Method (..), MonadRpc, serve)
 import           Control.TimeWarp.Timed       (Microsecond, MonadTimed, for, fork_, hour,
@@ -159,13 +160,28 @@ listener endpoint = do
             logInfo $ sformat (coloredF gray (stext%" "%build)) "<--" msg
             endpoint msg `catches` handlers
   where
-    loggerNameMod = (loggerNameT %~ withColor (processColor @p))
-                  . (<> messageShortcut @msg)
-                  . (loggerNameT %~ resetColoring)
+    loggerNameMod = changeListenerLoggerName @p @msg
     handlers =
         [ Handler $ logError . sformat (build @ProtocolError)
         , Handler $ logError . sformat ("Strange error: "%shown @SomeException)
         ]
+
+-- | Set logger name fitting to listener's one.
+changeListenerLoggerName
+    :: forall p msg.
+       (Process p, HasMessageShortcut msg)
+    => LoggerName -> LoggerName
+changeListenerLoggerName =
+    (loggerNameT %~ withColor (processColor @p)) .
+    (<> msgSign) .
+    (loggerNameT %~ resetColoring)
+  where
+    msgSign = (^. from loggerNameT) $
+        let sign = messageShortcut @msg ^. loggerNameT
+            box = if sign /= mempty
+                  then sformat ("["%build%"]")
+                  else identity
+        in  box sign
 
 type TopologyLauncher pv m =
     MonadTopology m =>

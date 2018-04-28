@@ -1,5 +1,5 @@
 # type of used algorithm - 'classic' or 'fast'
-type: fast
+type: classic
 
 # participants of concensus
 members:
