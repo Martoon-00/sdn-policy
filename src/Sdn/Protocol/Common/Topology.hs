@@ -228,7 +228,10 @@ launchPaxosWith TopologyActions{..} seed TopologySettings{..} =
             S.execute <> repetitions
             lift $ makeProposal policy
 
-        serve (processPort Proposer) =<< sequence
+        let proposerPort =
+                fromMaybe (error "No port for proposer specified") $
+                processPort' Proposer
+        serve proposerPort =<< sequence
             [ listener @Proposer confirmCommitted
             ]
 
@@ -262,7 +265,7 @@ launchPaxosWith TopologyActions{..} seed TopologySettings{..} =
     -- launch required number of servers, for processes of given type,
     -- serving given listeners
     startListeningProcessesOf
-        :: (HasMembersInfo, MonadTopology m, Process p, Integral i, ProtocolVersion pv, DeclaresMemStore m, Default (DeclaredCStruct m))
+        :: (HasMembersInfo, MonadTopology m, Process p, HasSimpleAddress p, Integral i, ProtocolVersion pv, DeclaresMemStore m, Default (DeclaredCStruct m))
         => (i -> p)
         -> [Listener p pv m]
         -> m [DeclaredMemStoreTxMonad m $ ProcessState p pv (DeclaredCStruct m)]
