@@ -34,9 +34,9 @@ class Conflict a b where
     -- | Whether entities conflict, with reason
     conflictReason :: a -> b -> Either Text ()
     conflictReason a b =
-        if a `conflicts` b
-        then Left "some conflict"
-        else Right ()
+        if a `agrees` b
+        then Right ()
+        else Left "some conflict"
 
     -- | Whether entities conflict.
     conflicts :: a -> b -> Bool
@@ -44,7 +44,7 @@ class Conflict a b where
 
     -- | The opposite to 'conflict'.
     agrees :: a -> b -> Bool
-    agrees a b = isRight $ conflictReason a b
+    agrees = not ... conflicts
 
 -- | Whether cstruct conflicts with itself.
 contradictive :: Conflict a a => a -> Bool
