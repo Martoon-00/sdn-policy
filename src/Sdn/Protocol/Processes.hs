@@ -177,7 +177,7 @@ data Acceptor = Acceptor AcceptorId
 instance Process Acceptor where
     type ProcessState Acceptor = AcceptorState
 
-    processName (Acceptor (AcceptorId id)) =
+    processName (Acceptor (ProcessId id)) =
         "acceptor" <> (pretty id ^. from loggerNameT)
     processColor = (ANSI.Vivid, ANSI.Yellow)
     processAddress' (Acceptor id) =

@@ -164,9 +164,9 @@ onFixatedPolicies
     => LearningCallback m -> NonEmpty (Cmd cstruct) -> m ()
 onFixatedPolicies (LearningCallback callback) policyAcceptances = do
     -- notify proposer that it can stop reproposing policy
-    -- TODO: enable
-    -- let policies = map acceptanceCmd policyAcceptances
-    -- submit (processAddress Proposer) (CommittedMsg @cstruct policies)
+    let policies = map acceptanceCmd policyAcceptances
+    whenJust (processAddress' Proposer) $ \addr ->
+        submit addr (CommittedMsg @cstruct policies)
 
     -- invoke callback
     callback policyAcceptances `catchAll`

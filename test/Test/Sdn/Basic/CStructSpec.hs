@@ -27,8 +27,8 @@ spec = do
             prop "good policies" $
                 withMembers def{ acceptorsNum = 3 } $
                     combination @Configuration @ClassicMajorityQuorum
-                    [ (AcceptorId 1, mkNeatPolicies [1])
-                    , (AcceptorId 2, mkNeatPolicies [1, 2])
+                    [ (ProcessId 1, mkNeatPolicies [1])
+                    , (ProcessId 2, mkNeatPolicies [1, 2])
                     ]
                     === Right [Accepted $ GoodPolicy 1]
 

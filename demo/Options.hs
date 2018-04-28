@@ -302,7 +302,7 @@ instance FromJSON (WithDesc D.Delays) where
             _ -> fail "Can't parse blackout delay"
         memberParser = withObject "for member" $ \o -> defAddrsLayout $ do
             -- TODO: more complex participants specification
-            acceptorIds <- AcceptorId <<$>> o .: "acceptors"
+            acceptorIds <- ProcessId <<$>> o .: "acceptors"
             WithDesc desc delay <- o .: "delay"
             return $ sformat ("for acceptors "%listF ", " build%" "%stext) acceptorIds desc
                   ?: D.forAddressesList (processAddress . Acceptor <$> acceptorIds) delay

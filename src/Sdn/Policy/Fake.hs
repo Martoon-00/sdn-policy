@@ -212,4 +212,7 @@ instance AtCmd Configuration where
                | S.member (Rejected raw) config -> Just RejectedT
                | otherwise -> Nothing
 
+instance MayHaveProposerId Policy where
+    cmdProposerId _ = Nothing
+
 instance PracticalCStruct Configuration

@@ -22,6 +22,7 @@ import           Universum
 
 import           Sdn.Base.Quorum
 import           Sdn.Base.Settings
+import           Sdn.Base.Types
 import           Sdn.Extra.Util       (DeclaredMark, Decomposable (..), MonadicMark (..),
                                        listF)
 
@@ -281,6 +282,9 @@ combinationDefault votes =
 class AtCmd cstruct where
     atCmd :: RawCmd cstruct -> Getter cstruct (Maybe AcceptanceType)
 
+class MayHaveProposerId rawcmd where
+    cmdProposerId :: rawcmd -> Maybe (ProcessId ProposerTag)
+
 -- | Declares that implementation of cstruct has many other practically useful
 -- instances.
 -- Generally, all this constraints are needed for distributed protocol.
@@ -293,6 +297,7 @@ class ( CStruct cstruct
       , Acceptance (RawCmd cstruct) ~ Cmd cstruct
       , AtCmd cstruct
       , Typeable cstruct
+      , MayHaveProposerId (RawCmd cstruct)
       ) =>
       PracticalCStruct cstruct
 

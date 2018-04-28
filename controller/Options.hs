@@ -18,12 +18,13 @@ import           Data.Time.Units
 import qualified Options.Applicative  as Opt
 import           Universum
 
+import           Sdn.Base
 import           Sdn.Extra.Batching
 import           Sdn.Protocol.Common
 
 -- | Options assosiated to SDN controller itself.
 data PlatformOptions = PlatformOptions
-    { platformPorts :: ProcessId -> Port
+    { platformPorts :: GeneralProcessId -> Port
       -- ^ Port, at which given process should listen to messages from switches.
     }
 
@@ -33,11 +34,11 @@ data ControllerOptions = ControllerOptions
       -- ^ Platform options.
     , protocolOptions :: ProtocolOptions
       -- ^ Protocol options
-    , curProcessId    :: ProcessId
+    , curProcessId    :: GeneralProcessId
       -- ^ Identifier of given controller.
     }
 
-processPort :: Int -> ProcessId -> Port
+processPort :: Int -> ProcessId pt -> Port
 processPort startPort processId =
     fromIntegral $ startPort + fromIntegral processId
 

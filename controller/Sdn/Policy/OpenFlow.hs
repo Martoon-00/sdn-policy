@@ -29,8 +29,9 @@ import           Sdn.Extra.Util        (binaryFromObject, binaryToObject, listF,
 type PolicyCoord = (OF.TransactionID, OF.SwitchID)
 
 data Policy = Policy
-    { policyCoord  :: PolicyCoord
-    , policyAction :: [OF.Action]
+    { policyCoord      :: PolicyCoord
+    , policyAction     :: [OF.Action]
+    , policyCreatorPid :: ProcessId ProposerTag
     } deriving (Eq, Ord, Show, Generic)
 
 policyXid :: Policy -> OF.TransactionID
@@ -43,7 +44,7 @@ instance Buildable Policy where
     build = bprint shown
 
 instance Conflict Policy Policy where
-    conflictReason (Policy coord1 action1) (Policy coord2 action2) =
+    conflictReason (Policy coord1 action1 _) (Policy coord2 action2 _) =
         let pack action = M.fromList $ map (\a -> (OF.actionToType a, a)) action
             [at1, at2] = map pack [action1, action2]
             actionsOfSameTypeAreSame = M.intersectionWith (==) at1 at2
@@ -53,10 +54,10 @@ instance Conflict Policy Policy where
                         action1 action2
 
 instance MessagePack Policy where
-    toObject (Policy xid action) = binaryToObject (xid, action)
+    toObject (Policy xid action pid) = binaryToObject (xid, action, pid)
     fromObject o = do
-        (xid, action) <- binaryFromObject o
-        return (Policy xid action)
+        (xid, action, pid) <- binaryFromObject o
+        return (Policy xid action pid)
 
 
 data Configuration = Configuration
@@ -126,5 +127,8 @@ instance AtCmd Configuration where
             if | (configEntry . ix policyCoord . ix raw) `has` config -> Just AcceptedT
                | (configRejected . ix raw) `has` config -> Just RejectedT
                | otherwise -> Nothing
+
+instance MayHaveProposerId Policy where
+    cmdProposerId = Just . policyCreatorPid
 
 instance PracticalCStruct Configuration

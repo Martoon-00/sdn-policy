@@ -15,6 +15,7 @@ import           Control.TimeWarp.Rpc         (Dict (..), Method, Port, hoistMet
                                                localhost, pickEvi, runMsgPackRpc, serve,
                                                withExtendedRpcOptions)
 import           Control.TimeWarp.Timed       (fork_, interval, sec)
+import           Data.Coerce                  (coerce)
 import           Data.Default                 (Default (..))
 import           Data.Tagged                  (Tagged (..), untag)
 import           Universum
@@ -39,17 +40,13 @@ import           Sdn.Protocol.Versions
 import           System.Random                (mkStdGen)
 
 
--- | Identifier of abstract process.
-newtype ProcessId = ProcessId Int
-    deriving (Eq, Ord, Enum, Show, Num, Real, Integral)
-
 -- | Options assosiated with policies compoition protocol.
 data ProtocolOptions = ProtocolOptions
-    { protocolPorts             :: ProcessId -> Port
+    { protocolPorts             :: GeneralProcessId -> Port
       -- ^ Port, with which given process which should participate in consensus protocol.
     , protocolTotalProcesses    :: Int
       -- ^ Overall number of controllers in network.
-    , protocolLeaderId          :: ProcessId
+    , protocolLeaderId          :: ProcessId LeaderTag
       -- ^ Whether given controller is Paxos leader.
       -- For now this thing will be hardcoded.
     , protocolProposalsBatching :: BatchingSettings
@@ -61,6 +58,7 @@ data ProtocolHandlers cstruct = ProtocolHandlers
       -- ^ Induce new policy proposal.
     , protocolShutdown     :: IO ()
       -- ^ Stop protocol execution.
+    , protocolProcessId    :: GeneralProcessId
     }
 
 -- | How to react on various events in consensus protocol.
@@ -76,7 +74,7 @@ data SuperProcessState pv m = SuperProcessState
     , subLeaderState   :: TaggedProcessEnv Leader pv m
     , subAcceptorState :: TaggedProcessEnv Acceptor pv m
     , subLearnerState  :: TaggedProcessEnv Learner pv m
-    , superProcessId   :: ProcessId
+    , superProcessId   :: GeneralProcessId
     }
 
 type SuperProcessM pv m = ReaderT (SuperProcessState pv m) m
@@ -87,7 +85,7 @@ withSuperProcessCtx
        , DeclaresMemStore m
        , Default (DeclaredCStruct m)
        )
-    => ProcessId -> SuperProcessM pv m a -> m a
+    => GeneralProcessId -> SuperProcessM pv m a -> m a
 withSuperProcessCtx processId action = do
     memStorage <- getMemStorage
     let mkProcessStore p = Tagged . ProcessContext
@@ -123,7 +121,7 @@ runProtocolNode
     :: forall cstruct.
        (PracticalCStruct cstruct)
     => ProtocolOptions
-    -> ProcessId
+    -> GeneralProcessId
     -> ProtocolCallbacks cstruct
     -> (ProtocolHandlers cstruct -> IO ())
     -> IO ()
@@ -147,10 +145,11 @@ runProtocolNode ProtocolOptions{..} curProcessId ProtocolCallbacks{..} fillProto
                 makeProposal <- prepareToAct $ batchingProposal protocolProposalsBatching Fast.propose
                 embed_ makeProposal
             protocolShutdown <- pure $ return ()
+            let protocolProcessId = curProcessId
 
             liftIO $ fillProtocolHandlers ProtocolHandlers{..}
 
-            when (protocolLeaderId == curProcessId) $
+            when (protocolLeaderId == coerce curProcessId) $
                 fork_ $ S.runSchedule_ (mkStdGen 0) $ do
                     S.periodic (interval 10 sec)
                     lift $ inProcess subLeaderState Classic.phase1a
@@ -175,7 +174,7 @@ runProtocolNode ProtocolOptions{..} curProcessId ProtocolCallbacks{..} fillProto
      membersAddresses = fmap (localhost, )
          MembersAddrInfo
          { proposerAddrInfo = Nothing
-         , leaderAddrInfo = protocolPorts protocolLeaderId
+         , leaderAddrInfo = protocolPorts $ coerce protocolLeaderId
          , acceptorsAddrInfos = protocolPorts . fromIntegral
          , learnersAddrInfos = protocolPorts . fromIntegral
          }

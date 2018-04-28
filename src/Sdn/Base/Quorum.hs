@@ -62,7 +62,7 @@ instance Buildable a => Buildable (Votes t a) where
 instance (HasMembers, a ~ ()) => Bounded (Votes f a) where
     minBound = fromList []
     maxBound = fromList
-        [ (AcceptorId accId, ())
+        [ (fromIntegral accId, ())
         | accId <- [1 .. acceptorsNum getMembers]]
 
 -- | All functions which work with 'Votes' can also be applied to

@@ -7,6 +7,7 @@ module Main where
 
 import           Control.Lens               (at, non', (.=), (<<%=), (<<.=), _Empty)
 import           Control.TimeWarp.Timed     (for, fork_, ms, runTimedIO, wait)
+import           Data.Coerce                (coerce)
 import qualified Data.Map                   as M
 import           Formatting                 (formatToString, shown, (%))
 import qualified Network.Data.OF13.Handlers as OF
@@ -60,7 +61,7 @@ type CallbacksRegister = IORef $ M.Map PolicyCoord [Acceptance Policy -> IO ()]
 
 type ProtocolAccess = (ProtocolHandlers Configuration, CallbacksRegister)
 
-runPlatform :: ProtocolAccess -> PlatformOptions -> ProcessId -> IO ()
+runPlatform :: ProtocolAccess -> PlatformOptions -> GeneralProcessId -> IO ()
 runPlatform protocolAccess PlatformOptions{..} processId = do
     let port = platformPorts processId
     OF.runServer port onConnect
@@ -92,8 +93,8 @@ installPolicy (ProtocolHandlers{..}, callbacksRegister) policy onLearned = do
 messageHandler
     :: ProtocolAccess
     -> OF.Switch
-    -> IO (Maybe OF.SCMessage    -> IO ())
-messageHandler protocolAccess sw = do
+    -> IO (Maybe OF.SCMessage -> IO ())
+messageHandler protocolAccess@(ProtocolHandlers{..}, _) sw = do
     switchState <- newIORef Nothing
     return $ \case
         Nothing -> putStrLn @Text "Disconnecting\n"
@@ -112,7 +113,9 @@ messageHandler protocolAccess sw = do
             let actions = OF.flood
             let out = OF.bufferedPacketOut bufferId (Just inPort) actions
 
-            let policy = Policy (xid, sid) (OF.actionSequenceToList actions)
+            let policy = Policy (xid, sid)
+                                (OF.actionSequenceToList actions)
+                                (coerce protocolProcessId)
             installPolicy protocolAccess policy $ \case
                 RejectedT -> putStrLn $ "Policy rejected: " <> pretty policy
                 AcceptedT -> do
@@ -125,5 +128,4 @@ messageHandler protocolAccess sw = do
         other -> OF.handleHandshake onUnhandled sw other
 
     onUnhandled _ msg = putStrLn $ "Unhandled message from switch: " ++ show msg
-
 
