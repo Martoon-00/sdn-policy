@@ -11,7 +11,7 @@ set -o pipefail
 ## with main network via its $netns interface and also with other subnetworks.
 ##
 ## Based on this instruction:
-## https://askubuntu.com/questions/11709/how-can-i-capture-network-traffic-of-a-single-process
+## http://fosshelp.blogspot.ru/2014/08/connect-two-network-namespaces-using.html
 ##
 ## NOTE: Subnetwork may shortly lost connection with main network due to
 ## dhclient dropping statically assigned IP. To overcome that, add to
@@ -55,34 +55,47 @@ if [[ $SHELL == '' ]]; then
     SHELL="zsh"
 fi
 
-netns="mem$no"
-eth="mem$no"
-gw_eth="mem-gw$no"
-subnet="30.160.$((60+$no))"
-ip=$subnet.50
-gw_ip=$subnet.254
+netns="mem$no"  # name of namespace
+eth="mem$no"  # name of interface into namespace
+subnet="192.168.$((60))"  # IP of subnet belonging to the namespace
+ip=$subnet.$no  # IP of interface under namespace
+br="membr"  # name of bridge
+tap_eth="memtap$no"  # name of interface, paired with $eth and connected to $br
 
 if [[ $configure == 1 ]]; then
+    # Establish bridge
+    if [[ ! $(brctl show | grep $br || true) ]]; then
+        echo "Bridge \"$br\" not found, configuring..."
+        sudo brctl addbr $br
+        sudo ip link set dev $br up
+    fi
+
     # Add namespace
     ip netns add $netns
 
+    # Bring up loopback interface - may be useful
+    ip netns exec $netns ifconfig lo up
+
     # Add interface to namespace
-    ip link add $eth type veth peer name $gw_eth
-    # Set active namespace for the interface
+    ip link add $eth type veth peer name $tap_eth
+    # Move newly created interface into dedicated namespace
     ip link set $eth netns $netns
+
+    # Connect interface with bridge
+    brctl addif $br $tap_eth
+
+    # Bring interfaces up
+    ip netns exec $netns ip link set dev $eth up
+    ip link set dev $tap_eth up
 
     # Assign IPs
     ip netns exec $netns ifconfig $eth up $ip netmask 255.255.255.0
-    ifconfig $gw_eth up $gw_ip netmask 255.255.255.0
-
-    # Add route between new namespace and main network
-    ip netns exec $netns route add default gw $gw_ip dev $eth
 fi
 
 # Running shell under network namespace
 
 clear
-echo "== Entered virtual network =="
+echo "== Entered virtual network $no =="
 ip netns exec $netns $SHELL \
     || :  # even if shell exists with nonzero, do not fail this script
 
@@ -92,5 +105,5 @@ echo "Exited virtual network"
 if [[ $configure == 1 ]]; then
     # cleanup
     ip netns delete $netns
-    ip link delete $gw_eth
+    ip link delete $tap_eth
 fi

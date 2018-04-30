@@ -11,14 +11,15 @@ if [[ $EUID > 0 ]]; then
     exit 1
 fi
 
-gw_eth="mem-gw"
+br="membr"  # name of bridge
 
 for no in {0..16}; do
     netns="mem$no"
     ip netns delete $netns 2> /dev/null || :
 
-    gw_eth="mem-gw$no"
-    ip link delete $gw_eth 2> /dev/null || :
+    tap_eth="memtap$no"
+    ip link delete $tap_eth 2> /dev/null || :
 done;
 
-ip link delete $gw_eth 2> /dev/null || :
+ifconfig $br down 2> /dev/null || :
+brctl delbr $br 2> /dev/null || :
