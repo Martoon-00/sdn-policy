@@ -7,7 +7,6 @@ module Sdn.Protocol.Fast.Topology where
 
 import           Universum
 
-import           Control.TimeWarp.Timed       (Microsecond, interval, sec)
 import           Data.Default                 (Default (..))
 import           Sdn.Extra.Util               (hoistItem)
 import qualified Sdn.Protocol.Classic.Phases  as Classic
@@ -18,17 +17,10 @@ import           Sdn.Protocol.Processes
 import           Sdn.Protocol.Versions        (Fast)
 
 -- | In Fast Paxos, except base settings, we have tunable recovery delay.
-data instance CustomTopologySettings Fast =
-    FastTopologySettingsPart
-    { topologyRecoveryDelay :: Microsecond
-    }
+data instance CustomTopologySettings Fast = FastTopologySettingsPart
 
--- TODO: probably remove this stuff
 instance Default (CustomTopologySettings Fast) where
-    def =
-        FastTopologySettingsPart
-        { topologyRecoveryDelay = interval 1 sec
-        }
+    def = FastTopologySettingsPart
 
 
 instance HasVersionProtocolListeners Fast where
@@ -45,12 +37,12 @@ instance HasVersionProtocolListeners Fast where
             , listener @Acceptor $ Fast.phase2b listenersPolicyTargets
             ]
         , learnerListeners =
-            [ listener @Learner $ Classic.learn (hoistItem lift callback)
-            , listener @Learner $ Fast.learn (hoistItem lift callback)
+            [ listener @Learner $ Classic.learn callback
+            , listener @Learner $ Fast.learn callback
             ]
         }
       where
-        callback = listenersLearningCallback
+        callback = hoistItem lift listenersLearningCallback
 
 instance HasVersionTopologyActions Fast where
     versionTopologyActions TopologySettings{..} =
@@ -67,5 +59,3 @@ instance HasVersionTopologyActions Fast where
         , topologyListeners =
             versionProtocolListeners def
         }
-      where
-        FastTopologySettingsPart{..} = topologyCustomSettings

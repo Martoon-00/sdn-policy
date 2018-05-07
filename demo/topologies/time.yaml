@@ -9,9 +9,6 @@ reproposals:
 ballots:
   once: execute
 delays: null
-recovery:
-  delay:
-    sec: 3
 
 lifetime:
   ## by default time is specified in seconds:

@@ -75,10 +75,7 @@ main = do
         , topologyBallotsSchedule = S.periodic (interval 1 sec)
         , topologyProposalBatchSettings = Just proposalBatchSettings
         , topologyLifetime = interval 5 sec
-        , topologyCustomSettings =
-            FastTopologySettingsPart
-            { topologyRecoveryDelay = interval 1 sec
-            }
+        , topologyCustomSettings = FastTopologySettingsPart{}
         }
 
     proposalBatchSettings =

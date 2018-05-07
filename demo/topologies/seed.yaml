@@ -9,9 +9,6 @@ reproposals:
 ballots:
   once: execute
 delays: null
-recovery:
-  delay:
-    sec: 3
 lifetime: 5
 
 ## One can specify string as seed for repeatable executions.

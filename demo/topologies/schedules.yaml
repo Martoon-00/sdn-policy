@@ -72,8 +72,5 @@ reproposals:
   once: execute
 
 delays: null
-recovery:
-  delay:
-    sec: 3
 lifetime: 5
 

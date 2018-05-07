@@ -35,11 +35,11 @@ instance HasVersionProtocolListeners Classic where
             , listener @Acceptor phase2b
             ]
         , learnerListeners =
-            [ listener @Learner $ learn (hoistItem lift callback)
+            [ listener @Learner $ learn callback
             ]
         }
       where
-        callback = listenersLearningCallback
+        callback = hoistItem lift listenersLearningCallback
 
 instance HasVersionTopologyActions Classic where
     versionTopologyActions _ =

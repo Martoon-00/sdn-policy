@@ -114,8 +114,6 @@ data TopologySettingsBuilder = TopologySettingsBuilder
 data CustomTopologySettingsBuilder
     = ClassicSettingsBuilderPart
     | FastSettingsBuilderPart
-    { tsbRecoveryDelay :: Microsecond
-    }
 
 instance Buildable TopologySettingsBuilder where
     build TopologySettingsBuilder{..} =
@@ -136,10 +134,7 @@ instance Buildable TopologySettingsBuilder where
       where
         custom = case tsbCustomSettings of
             ClassicSettingsBuilderPart -> "classic"
-            FastSettingsBuilderPart{..} ->
-                bprint ("fast\n\
-                       \  recovery delay: "%build)
-                    tsbRecoveryDelay
+            FastSettingsBuilderPart    -> "fast"
 
 data TopologySettingsBox =
     forall pv. HasVersionTopologyActions pv =>
@@ -159,14 +154,12 @@ buildTopologySettings TopologySettingsBuilder{..} = do
     return $ case tsbCustomSettings of
         ClassicSettingsBuilderPart ->
             TopologySettingsBox TopologySettings
-            { topologyCustomSettings = ClassicTopologySettingsPart
+            { topologyCustomSettings = ClassicTopologySettingsPart{}
             , ..
             }
-        FastSettingsBuilderPart{..} ->
+        FastSettingsBuilderPart ->
             TopologySettingsBox TopologySettings
-            { topologyCustomSettings = FastTopologySettingsPart
-                { topologyRecoveryDelay = tsbRecoveryDelay
-                }
+            { topologyCustomSettings = FastTopologySettingsPart{}
             , ..
             }
 
@@ -340,11 +333,9 @@ instance FromJSON TopologySettingsBuilder where
             t <- o .: "type"
             case t of
                 "classic" ->
-                    pure ClassicSettingsBuilderPart
+                    pure ClassicSettingsBuilderPart{}
                 "fast" -> do
-                    recovery <- o .: "recovery"
-                    tsbRecoveryDelay <- recovery .: "delay"
-                    pure FastSettingsBuilderPart{..}
+                    pure FastSettingsBuilderPart{}
                 _ -> fail ("Unknown protocol type: " <> t)
 
 instance FromJSON ProtocolOptions where
