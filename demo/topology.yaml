@@ -1,5 +1,5 @@
 # type of used algorithm - 'classic' or 'fast'
-type: fast
+type: classic
 
 # participants of concensus
 members:
@@ -8,7 +8,7 @@ members:
 
 # schedules. See `topologies/schedules.yaml` for fine-tuning examples.
 proposals:
-  once: good
+    once: good
 reproposals:
   period:
     sec: 3
@@ -19,13 +19,11 @@ ballots:
 # emulated network delays. See `topologies/delays.yaml` for examples.
 delays: null
 
-# how much time to wait before checking for need in recovery ballot
-# used in fast version only.
-recovery:
-  delay: 3
-
 # how soon to shutdown. See also `topologies/time.yaml`.
 lifetime: 5
 
 # play in rewind mode
 quick: false
+
+# tune logging
+enable_logging: true

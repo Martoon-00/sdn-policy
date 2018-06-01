@@ -14,8 +14,10 @@ module Sdn.Extra.Logging
     , withColor
     , resetColoring
     , setDropLoggerName
+    , isDropLoggerName
     , logInfo
     , logError
+    , flushLogs
 
     , MonadReporting
     , ErrorReporting (..)
@@ -24,26 +26,29 @@ module Sdn.Extra.Logging
     , reportError
     , PureLog
     , launchPureLog
+    , DroppingLog
+    , runDroppingLog
     ) where
 
-import           Control.Concurrent             (forkIO)
-import qualified Control.Concurrent.STM.TBMChan as TBM
-import           Control.Lens                   (Iso', iso)
-import           Control.Monad.Reader           (mapReaderT)
-import           Control.Monad.Writer           (WriterT, runWriterT, tell)
-import           Control.TimeWarp.Logging       (LoggerName (..), LoggerNameBox (..),
-                                                 WithNamedLogger (..))
-import           Control.TimeWarp.Rpc           (MonadRpc)
-import           Control.TimeWarp.Timed         (Microsecond, MonadTimed (..), ThreadId)
-import           Data.List                      (isInfixOf)
-import qualified Data.Text                      as T
-import           Data.Time.Units                (toMicroseconds)
-import           Formatting                     (build, left, sformat, stext, (%))
-import           GHC.IO.Unsafe                  (unsafePerformIO)
-import qualified System.Console.ANSI            as ANSI
-import           Universum                      hiding (pass)
+import           Control.Concurrent          (forkIO, threadDelay)
+import           Control.Lens                (Iso', iso, makeLenses, (%=))
+import           Control.Monad.Base          (MonadBase)
+import           Control.Monad.Reader        (mapReaderT)
+import           Control.Monad.Trans.Control (MonadBaseControl (..))
+import           Control.TimeWarp.Logging    (LoggerName (..), LoggerNameBox (..),
+                                              WithNamedLogger (..))
+import           Control.TimeWarp.Rpc        (DelaysLayer, ExtendedRpcOptions, MonadRpc)
+import           Control.TimeWarp.Timed      (Microsecond, MonadTimed (..), ThreadId, ms)
+import           Data.List                   (isInfixOf)
+import qualified Data.Text                   as T
+import           Data.Time.Units             (toMicroseconds)
+import           Formatting                  (build, left, sformat, stext, (%))
+import           GHC.IO.Unsafe               (unsafePerformIO)
+import qualified System.Console.ANSI         as ANSI
+import           Universum                   hiding (pass)
 
-import           Sdn.Extra.Util                 (coloredF, gray)
+import           Sdn.Extra.Util              (DefaultStM, MonadicMark (..), WrappedM (..),
+                                              coloredF, gray)
 
 -- * Util
 
@@ -82,10 +87,10 @@ loggingFormatter (LogEntry name (toMicroseconds -> time) msg) =
         in sformat (left 3 '0'%":"%left 2 '0') seconds centiseconds
 
 dropName :: LoggerName
-dropName = "*no-logging*"
+dropName = "-"
 
-isDropName :: LoggerName -> Bool
-isDropName (LoggerName name) =
+isDropLoggerName :: LoggerName -> Bool
+isDropLoggerName (LoggerName name) =
     let LoggerName dropName' = dropName
     in  (dropName' <> ".") `isInfixOf` name
 
@@ -95,33 +100,45 @@ setDropLoggerName = modifyLoggerName (dropName <> )
 -- * Logging
 
 class Monad m => MonadLog m where
-    logInfo :: Text -> m ()
-    default logInfo
+    logInfoPack :: [Text] -> m ()
+    default logInfoPack
         :: (MonadTrans t, Monad n, MonadLog n, t n ~ m)
-        => Text -> m ()
-    logInfo = lift . logInfo
+        => [Text] -> m ()
+    logInfoPack = lift . logInfoPack
+
+logInfo :: MonadLog m => Text -> m ()
+logInfo = logInfoPack . one
 
 instance MonadLog m => MonadLog (ReaderT r m)
 instance MonadLog m => MonadLog (StateT r m)
 instance MonadLog m => MonadLog (MaybeT m)
+instance MonadLog m => MonadLog (MonadicMark mark m)
 
-logBuffer :: TBM.TBMChan LogEntry
-logBuffer = unsafePerformIO $ do
-    chan <- TBM.newTBMChanIO 100
-    _ <- forkIO . void . runMaybeT . forever $ do
-        entry <- MaybeT . atomically $ TBM.readTBMChan chan
-        lift . putText $ loggingFormatter entry
+logBuffer :: IORef [LogEntry]
+flushLogsIO :: IO ()
+(logBuffer, flushLogsIO) = unsafePerformIO $ do
+    var <- newIORef []
+    let flush = do
+            entries <- atomicModifyIORef var (\es -> ([], es))
+            forM_ (reverse entries) $ \entry ->
+                putText $ loggingFormatter entry
+    _ <- forkIO . forever $ do
+        flush
+        threadDelay (fromIntegral . toMicroseconds $ ms 10)
 
-    return chan
+    return (var, flush)
 {-# NOINLINE logBuffer #-}
 
+flushLogs :: MonadIO m => m ()
+flushLogs = liftIO flushLogsIO
+
 instance With [MonadIO, MonadTimed] m => MonadLog (LoggerNameBox m) where
-    logInfo msg = do
-        time <- virtualTime
+    logInfoPack msgs = do
         name <- getLoggerName
-        let entry = LogEntry name time msg
-        unless (isDropName name) $
-            atomically $ TBM.writeTBMChan logBuffer entry
+        unless (isDropLoggerName name) $ do
+            time <- virtualTime
+            let entries = LogEntry name time <$> msgs
+            liftIO $ atomicModifyIORef logBuffer (\es -> (entries ++ es, ()))
 
 -- * Error reporting
 
@@ -136,14 +153,20 @@ instance MonadReporting m => MonadReporting (ReaderT __ m) where
 instance MonadReporting m => MonadReporting (StateT __ m) where
 instance MonadReporting m => MonadReporting (MaybeT m) where
 instance MonadReporting m => MonadReporting (LoggerNameBox m) where
+instance MonadReporting m => MonadReporting (DelaysLayer m) where
+instance MonadReporting m => MonadReporting (ExtendedRpcOptions (o :: [*]) (os :: [*]) m)
+instance MonadReporting m => MonadReporting (MonadicMark __ m)
 
 -- ** Error reporting enabled
 
 newtype ErrorReporting m a = ErrorReporting
     { getErrorReporting :: ReaderT (TVar [Text]) m a
     } deriving ( Functor, Applicative, Monad, MonadIO, MonadTrans
-               , MonadThrow, MonadCatch
-               , MonadState __, MonadTimed, MonadRpc, WithNamedLogger, MonadLog)
+               , MonadThrow, MonadCatch, MonadBase __
+               , MonadState __, MonadTimed, MonadRpc (os :: [*]), WithNamedLogger, MonadLog)
+
+instance WrappedM (ErrorReporting m) where
+    type UnwrappedM (ErrorReporting m) = ReaderT (TVar [Text]) m
 
 type instance ThreadId (ErrorReporting m) = ThreadId m
 
@@ -152,12 +175,18 @@ instance MonadReader r m => MonadReader r (ErrorReporting m) where
     ask = lift ask
     local modifier = ErrorReporting . mapReaderT (local modifier) . getErrorReporting
 
+instance MonadBaseControl b m => MonadBaseControl b (ErrorReporting m) where
+    type StM (ErrorReporting m) a = DefaultStM (ErrorReporting m) a
+    liftBaseWith f = packM $ liftBaseWith $ \runInBase -> f (runInBase . unpackM)
+    restoreM = packM . restoreM
+
 runErrorReporting :: MonadIO m => ErrorReporting m a -> m ([Text], a)
 runErrorReporting (ErrorReporting action) = do
     var <- newTVarIO mempty
     res <- runReaderT action var
     errs <- readTVarIO var
     return (reverse errs, res)
+
 
 instance (MonadIO m, WithNamedLogger m) =>
          MonadReporting (ErrorReporting m) where
@@ -174,18 +203,24 @@ newtype NoErrorReporting m a = NoErrorReporting
     { runNoErrorReporting :: m a
     } deriving ( Functor, Applicative, Monad, MonadIO
                , MonadThrow, MonadCatch
-               , MonadState __, MonadTimed, MonadRpc, WithNamedLogger, MonadLog)
+               , MonadState __, MonadBase __
+               , MonadTimed, MonadRpc (os :: [*]), WithNamedLogger, MonadLog)
+
+instance WrappedM (NoErrorReporting m) where
+    type UnwrappedM (NoErrorReporting m) = m
 
 instance MonadTrans NoErrorReporting where
-    lift = NoErrorReporting
+    lift = packM
 
 type instance ThreadId (NoErrorReporting m) = ThreadId m
 
+instance MonadBaseControl b m => MonadBaseControl b (NoErrorReporting m) where
+    type StM (NoErrorReporting m) a = StM m a
+    liftBaseWith f = packM $ liftBaseWith @_ @m $ \runInBase -> f (runInBase . unpackM)
+    restoreM = packM . restoreM
+
 instance Monad m => MonadReporting (NoErrorReporting m) where
     reportError _ = return ()
-
-instance Monad m => MonadReporting (PureLog m) where
-    reportError err = PureLog $ tell mempty{ _errsPart = one err }
 
 logError :: (MonadLog m, MonadReporting m) => Text -> m ()
 logError msg = do
@@ -199,24 +234,51 @@ data LogAndError = LogAndError
     , _errsPart :: [Text]
     }
 
+makeLenses ''LogAndError
+
 instance Monoid LogAndError where
-    mempty = LogAndError [] []
+    mempty = LogAndError mempty mempty
     LogAndError l1 e1 `mappend` LogAndError l2 e2 =
         LogAndError (l1 <> l2) (e1 <> e2)
 
-newtype PureLog m a = PureLog (WriterT LogAndError m a)
+-- | Monad which carries made logs.
+newtype PureLog m a = PureLog (StateT LogAndError m a)
     deriving ( Functor, Applicative, Monad, MonadIO, MonadTrans
-             , MonadThrow, MonadCatch, MonadState __, MonadReader __)
+             , MonadThrow, MonadCatch, MonadReader __)
 
 launchPureLog
     :: (MonadCatch m, MonadLog n, MonadReporting n)
     => (forall x. m (x, a) -> n (x, b)) -> PureLog m a -> n b
 launchPureLog hoist' (PureLog action) = do
-    (logs, res) <- hoist' $ swap <$> runWriterT action
-    mapM_ logInfo (_logsPart logs)
+    (logs, res) <- hoist' $ swap <$> runStateT action mempty
+    logInfoPack (_logsPart logs)
     mapM_ reportError (_errsPart logs)
     return res
 
+instance MonadState s m => MonadState s (PureLog m) where
+    get = lift get
+    put = lift . put
+    state = lift . state
+
 instance Monad m => MonadLog (PureLog m) where
-    logInfo msg = PureLog $ tell mempty{ _logsPart = one msg }
+    logInfoPack msgs = PureLog $
+        logsPart %= (msgs ++)
+
+instance Monad m => MonadReporting (PureLog m) where
+    reportError err = PureLog $ errsPart %= (err :)
+
+-- | Monad which drops logs.
+newtype DroppingLog m a = DroppingLog
+    { runDroppingLog :: m a
+    } deriving ( Functor, Applicative, Monad, MonadIO
+               , MonadThrow, MonadCatch, MonadReader __, MonadState __)
+
+instance MonadTrans DroppingLog where
+    lift = DroppingLog
+
+instance Monad m => MonadLog (DroppingLog m) where
+    logInfoPack _ = return ()
+
+instance Monad m => MonadReporting (DroppingLog m) where
+    reportError _ = return ()
 

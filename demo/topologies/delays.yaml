@@ -42,6 +42,4 @@ delays:
   ## Support for more complex rules in config to be provided:
   # - per-any-node rules
 
-recovery:
-  delay: 3
 lifetime: 5

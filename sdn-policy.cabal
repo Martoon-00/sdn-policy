@@ -12,31 +12,40 @@ build-type:          Simple
 extra-source-files:  README.md
 cabal-version:       >=1.10
 
+
 library
   hs-source-dirs:      src
   exposed-modules:     Sdn.Base
                        Sdn.Extra
+                       Sdn.Extra.Batching
+                       Sdn.Extra.Logging
+                       Sdn.Extra.MemStorage
+                       Sdn.Extra.Networking
+                       Sdn.Extra.Schedule
+                       Sdn.Extra.Util
+                       Sdn.Policy
+                       Sdn.Policy.Fake
                        Sdn.Protocol
-                       Sdn.Schedule
+                       Sdn.Protocol.Common
+                       Sdn.Protocol.Classic
+                       Sdn.Protocol.Fast
   other-modules:       Sdn.Base.CStruct
                        Sdn.Base.Error
                        Sdn.Base.Settings
-                       Sdn.Base.Policy
                        Sdn.Base.Quorum
                        Sdn.Base.Types
 
-                       Sdn.Extra.Logging
-                       Sdn.Extra.Util
-
-                       Sdn.Protocol.Context
-                       Sdn.Protocol.Classic
                        Sdn.Protocol.Classic.Messages
                        Sdn.Protocol.Classic.Phases
                        Sdn.Protocol.Classic.Topology
+                       Sdn.Protocol.Common.Node
                        Sdn.Protocol.Common.Messages
                        Sdn.Protocol.Common.Phases
                        Sdn.Protocol.Common.Topology
-                       Sdn.Protocol.Fast
+                       Sdn.Protocol.Common.Context
+                       Sdn.Protocol.Common.Context.States
+                       Sdn.Protocol.Common.Context.Storage
+                       Sdn.Protocol.Common.Context.Data
                        Sdn.Protocol.Fast.Messages
                        Sdn.Protocol.Fast.Phases
                        Sdn.Protocol.Fast.Topology
@@ -45,25 +54,31 @@ library
   build-depends:       base >= 4.7 && < 5
                      , ansi-terminal
                      , autoexporter
-                     , containers
+                     , binary
+                     , bytestring
+                     , containers >= 0.5.9
                      , data-default
+                     , dlist
                      , exceptions
                      , formatting
                      , fmt
                      , lens
                      , MonadRandom
+                     , monad-control
                      , monad-stm
                      , msgpack
                      , mtl
                      , reflection
+                     , spoon
                      , stm
-                     , stm-chans
                      , tagged
                      , template-haskell
                      , text
                      , text-format
                      , time-units
                      , time-warp
+                     , transformers-base
+                     , transformers
                      , random
                      , QuickCheck
                      , universum
@@ -87,14 +102,15 @@ library
                        ExplicitForAll
                        DeriveGeneric
                        DataKinds
+                       BangPatterns
   ghc-options:         -Wall
 
 
 executable demo
-  hs-source-dirs:      trial
+  hs-source-dirs:      demo
   main-is:             Main.hs
   other-modules:       Options
-  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  ghc-options:         -threaded -O2 -rtsopts -with-rtsopts=-N
   build-depends:       base
                      , data-default
                      , formatting
@@ -131,6 +147,88 @@ executable demo
                        ExplicitForAll
   ghc-options:         -Wall
 
+executable bench
+  hs-source-dirs:      bench
+  main-is:             Main.hs
+  ghc-options:         -threaded -O2 -rtsopts -with-rtsopts=-N
+  build-depends:       base
+                     , data-default
+                     , formatting
+                     , lens
+                     , mtl
+                     , random
+                     , sdn-policy
+                     , text-format
+                     , time-units
+                     , time-warp
+                     , QuickCheck
+                     , universum
+  default-language:    Haskell2010
+  default-extensions:  FlexibleContexts
+                       FlexibleInstances
+                       DeriveGeneric
+                       OverloadedStrings
+                       TypeOperators
+                       ConstraintKinds
+                       LambdaCase
+                       MultiParamTypeClasses
+                       MultiWayIf
+                       NoImplicitPrelude
+                       OverloadedStrings
+                       ScopedTypeVariables
+                       TupleSections
+                       TypeApplications
+                       TypeOperators
+                       RecordWildCards
+                       ViewPatterns
+                       ExplicitForAll
+  ghc-options:         -Wall
+
+executable controller
+  hs-source-dirs:      controller
+  main-is:             Main.hs
+  other-modules:       Options
+                       Sdn.Policy.OpenFlow
+  ghc-options:         -threaded -O2 -rtsopts -with-rtsopts=-N
+  build-depends:       base
+                     , binary
+                     , containers
+                     , data-default
+                     , formatting
+                     , lens
+                     , monad-control
+                     , msgpack
+                     , mtl
+                     , openflow
+                     , optparse-applicative
+                     , random
+                     , sdn-policy
+                     , stm-chans
+                     , text-format
+                     , time-units
+                     , time-warp
+                     , QuickCheck
+                     , universum
+  default-language:    Haskell2010
+  default-extensions:  FlexibleContexts
+                       FlexibleInstances
+                       DeriveGeneric
+                       OverloadedStrings
+                       TypeOperators
+                       ConstraintKinds
+                       LambdaCase
+                       MultiParamTypeClasses
+                       MultiWayIf
+                       NoImplicitPrelude
+                       OverloadedStrings
+                       ScopedTypeVariables
+                       TupleSections
+                       TypeApplications
+                       TypeOperators
+                       RecordWildCards
+                       ViewPatterns
+                       ExplicitForAll
+  ghc-options:         -Wall
 
 test-suite sdn-policy-test
   type:                exitcode-stdio-1.0

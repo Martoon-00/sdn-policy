@@ -11,17 +11,22 @@ packages:
     - msgpack-rpc
 - location:
     git: https://github.com/serokell/time-warp.git
-    commit: 6361701e9c6eb3126a8906fa0c25b190b7e55864
+    commit: 740cbdb75e91407172dd77c8c6051c45bfaf3c63
+  extra-dep: true
+- location:
+    git: https://github.com/Martoon-00/openflow
+    commit: f40d057e356ee5270213baa36f0b089596ce2da6
   extra-dep: true
 
 extra-deps:
 - acid-state-0.14.3
 - fmt-0.5.0.0
-- serokell-util-0.5.0
 - time-units-1.0.0
 - universum-0.7.1
 - streaming-commons-0.1.16  # 0.1.17 is picked by default and it's broken :(
 - monad-stm-0.1.0.2
+- spoon-0.3.1
+- containers-0.5.9.1
 
 flags: {}
 

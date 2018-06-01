@@ -3,7 +3,7 @@
 
 -- | Allows to specify schedules in convenient way.
 
-module Sdn.Schedule
+module Sdn.Extra.Schedule
     ( Schedule
     , MonadSchedule
     , runSchedule
@@ -14,6 +14,7 @@ module Sdn.Schedule
     , splitGenSeed
 
     -- * schedules
+    , wrapped
     , generate
     , execute
 
@@ -38,7 +39,7 @@ import           Test.QuickCheck.Gen    (Gen, unGen)
 import           Test.QuickCheck.Random (mkQCGen)
 import           Universum
 
-import           Sdn.Extra.Util         (modifyTVarS)
+import           Sdn.Extra.Util         (atomicModifyIORefS)
 
 -- | Whether executing job should be continued.
 newtype WhetherContinue = WhetherContinue Bool
@@ -121,9 +122,9 @@ instance MonadIO m => Monad (Schedule m) where
     return = generate . pure
     Schedule s1 >>= f = Schedule $ \ctx -> do
         let (gen1, gen2) = split (scGen ctx)
-        genBox <- newTVarIO gen1
+        genBox <- newIORef gen1
         let push p = do
-               gen' <- atomically . modifyTVarS genBox $ state split
+               gen' <- atomicModifyIORef genBox split
                case f p of Schedule s2 -> s2 ctx{ scGen = gen' }
         s1 ctx{ scNext = push, scGen = gen2 }
 
@@ -134,14 +135,19 @@ instance MonadTrans Schedule where
     lift job = Schedule $ \ctx -> job >>= scYield ctx
 
 
+-- | Manually dump items.
+wrapped :: Monad m => ((a -> m ()) -> m ()) -> Schedule m a
+wrapped pusher = Schedule $ \ctx ->
+    pusher $ \val -> scNext ctx val
+
 -- | Just fires once, generating arbitrary job data.
 --
 -- Use combinators to define timing.
-generate :: Monad m => Gen p -> Schedule m p
+generate :: MonadIO m => Gen p -> Schedule m p
 generate generator = do
-    Schedule $ \ctx@ScheduleContext{..} ->
+    Schedule $ \ctx@ScheduleContext{..} -> do
         let (seed, _) = next scGen
-        in  scYield ctx $ unGen generator (mkQCGen seed) 30
+        scYield ctx $ unGen generator (mkQCGen seed) 100
 
 -- | Just fires once, for jobs without any data.
 -- Synonym to @return ()@.
@@ -224,9 +230,9 @@ delayed duration =
 -- * End of list - to skipping all further executions.
 maskExecutions :: (MonadSchedule m, MonadIO n) => [Bool] -> n (Schedule m ())
 maskExecutions initMask = do
-    st <- newTVarIO initMask
+    st <- newIORef initMask
     return $ Schedule $ \ctx -> do
-        whetherExecute <- atomically . modifyTVarS st $ do
+        whetherExecute <- atomicModifyIORefS st $ do
             m <- preuse $ ix 0
             modify $ drop 1
             return $ fromMaybe False m

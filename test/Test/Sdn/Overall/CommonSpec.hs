@@ -1,3 +1,5 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
+
 -- | Common properties for classic and fast versions of algorithm.
 
 module Test.Sdn.Overall.CommonSpec
@@ -10,21 +12,25 @@ import qualified Control.TimeWarp.Rpc        as D
 import           Control.TimeWarp.Timed      (Millisecond, Second, hour, interval, sec)
 import           Data.Default
 import           Data.Typeable               (typeRep)
-import           Test.Hspec                  (Spec, describe, pendingWith)
+import           Test.Hspec                  (Spec, describe)
 import           Test.Hspec.QuickCheck       (prop)
 import           Test.QuickCheck             (Positive (..), Small (..), arbitrary, oneof,
                                               (==>))
 
 import           Sdn.Base
+import qualified Sdn.Extra.Schedule          as S
+import           Sdn.Policy.Fake
 import           Sdn.Protocol
-import qualified Sdn.Schedule                as S
 import           Test.Sdn.Overall.Launcher
 import           Test.Sdn.Overall.Properties
 
 spec :: Spec
 spec = describe "common" $ do
 
-    let checkVersion (pv :: Proxy pv) = do
+    let checkVersion
+            :: (HasVersionTopologyActions pv, Default (CustomTopologySettings pv), Typeable pv)
+            => Proxy pv -> Spec
+        checkVersion (pv :: Proxy pv) = do
 
           -- artifical scenarious which check whether protocol at least slightly works
           describe "primitive cases" $ do
@@ -61,7 +67,7 @@ spec = describe "common" $ do
                 \(Small (n :: Word)) ->
 
                 testLaunch @pv def
-                { testSettings = def
+                { testSettings = defTopologySettings
                     { topologyProposalSchedule = do
                         S.times n
                         S.generate . oneof $
@@ -72,10 +78,10 @@ spec = describe "common" $ do
                 }
 
             prop "all conflicting policies" $
-                \(Positive (Small n)) ->
+                \(Positive (Small n :: Small Word)) ->
 
                 testLaunch @pv def
-                { testSettings = def
+                { testSettings = defTopologySettings
                     { topologyProposalSchedule = do
                         S.times n
                         S.generate (BadPolicy <$> arbitrary)
@@ -98,7 +104,6 @@ spec = describe "common" $ do
                 }
 
             prop "temporaly no quorum of acceptors is accessible" $
-                -- pendingWith "requires policies re-proposals"
                 testLaunch @pv def
                 { testDelays =
                     D.forAddressesList (processAddress . Acceptor <$> [1, 2]) $
@@ -107,24 +112,20 @@ spec = describe "common" $ do
                 , testSettings = def
                     { topologyLifetime = interval 30 sec
                     , topologyBallotsSchedule = S.periodic (interval 10 sec)
+                    , topologyProposerInsistance = \balSchedule -> balSchedule
                     }
                 }
-
-            prop "highly interleaving ballots" $
-                -- this may be problematic with current implementation
-                -- because values from old ballots won't be leart
-                pendingWith "requires dicussion"
 
           -- bunch of complex scenarious involving introduction of many policies
           describe "real life cases" $
 
             prop "no conflicts" $
-            \(Positive (Small proposalsNum)) ->
+            \(Positive (Small proposalsNum :: Small Word)) ->
             \(Positive (Small balDelay)) ->
             proposalsNum > balDelay ==>
 
                 testLaunch @pv def
-                { testSettings = def
+                { testSettings = defTopologySettings
                     { topologyProposalSchedule = do
                         S.repeating proposalsNum (interval 1 sec)
                         S.generate (GoodPolicy <$> arbitrary)

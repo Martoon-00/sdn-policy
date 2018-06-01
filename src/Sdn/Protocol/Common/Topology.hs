@@ -3,12 +3,14 @@
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
 
--- | Running bunch of processes of various roles.
+-- | Running all of processes required for consensus.
 
 module Sdn.Protocol.Common.Topology where
 
+import           Control.Lens                 (from)
 import           Control.Monad.Catch          (Handler (..), catches)
-import           Control.TimeWarp.Logging     (WithNamedLogger, modifyLoggerName)
+import           Control.TimeWarp.Logging     (LoggerName, WithNamedLogger, getLoggerName,
+                                               modifyLoggerName, setLoggerName)
 import           Control.TimeWarp.Rpc         (Method (..), MonadRpc, serve)
 import           Control.TimeWarp.Timed       (Microsecond, MonadTimed, for, fork_, hour,
                                                interval, ms, till, virtualTime, wait,
@@ -20,15 +22,21 @@ import           Test.QuickCheck              (arbitrary)
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra                    (Message, MonadLog, MonadReporting,
+import           Sdn.Extra                    (MonadLog, MonadReporting, RpcOptions,
                                                coloredF, gray, logError, logInfo,
-                                               loggerNameT, resetColoring, withColor)
+                                               loggerNameT, mkMemStorage, prepareToAct,
+                                               readMemStorage, resetColoring, withColor)
+import           Sdn.Extra.MemStorage
+import           Sdn.Extra.Networking
+import qualified Sdn.Extra.Schedule           as S
+import qualified Sdn.Policy.Fake              as Fake
+import           Sdn.Protocol.Common.Context
 import           Sdn.Protocol.Common.Messages
-import           Sdn.Protocol.Common.Phases   (confirmCommitted, isPolicyUnconfirmed)
-import           Sdn.Protocol.Context
+import           Sdn.Protocol.Common.Phases   (BatchingSettings, LearningCallback,
+                                               MakeProposal, PolicyTargets (..),
+                                               confirmCommitted, isPolicyUnconfirmed)
 import           Sdn.Protocol.Processes
 import           Sdn.Protocol.Versions
-import qualified Sdn.Schedule                 as S
 
 -- | Constraints for running a topology.
 type MonadTopology m =
@@ -38,28 +46,32 @@ type MonadTopology m =
     , MonadLog m
     , MonadReporting m
     , MonadTimed m
-    , MonadRpc m
+    , MonadRpc RpcOptions m
+    , DeclaresMemStore m
+    , PracticalCStruct (DeclaredCStruct m)
     )
 
 type TopologySchedule p = forall m. MonadTopology m => S.Schedule m p
 
 -- | Contains all info to build network which serves consensus algorithm.
-data TopologySettings pv = TopologySettings
-    { topologyMembers            :: Members
+data TopologySettings pv cstruct = TopologySettings
+    { topologyMembers               :: Members
       -- ^ Participants of given topology.
-    , topologyProposalSchedule   :: TopologySchedule Policy
+    , topologyProposalSchedule      :: TopologySchedule (RawCmd cstruct)
       -- ^ Given schedule of ballots,
       -- schedule according to which policies are generated and proposed.
-    , topologyProposerInsistance :: TopologySchedule () -> TopologySchedule ()
+    , topologyProposerInsistance    :: TopologySchedule () -> TopologySchedule ()
       -- ^ Schedule for repeating proposals of single policy.
       -- It will automatically stop executing when proposer finds out that
       -- policy is learned.
-    , topologyBallotsSchedule    :: TopologySchedule ()
+    , topologyBallotsSchedule       :: TopologySchedule ()
       -- ^ Schedule of ballots.
-    , topologyLifetime           :: Microsecond
+    , topologyProposalBatchSettings :: Maybe BatchingSettings
+      -- ^ Proposal batching, if specified
+    , topologyLifetime              :: Microsecond
       -- ^ How long network should exist.
       -- Once the hour comes, all actions are halted.
-    , topologyCustomSettings     :: CustomTopologySettings pv
+    , topologyCustomSettings        :: CustomTopologySettings pv
       -- ^ Settings related to particular version of consensus algorithm.
     }
 
@@ -67,15 +79,16 @@ data family CustomTopologySettings :: * -> *
 
 -- | Example of topology.
 instance Default (CustomTopologySettings pv) =>
-         Default (TopologySettings pv) where
+         Default (TopologySettings pv Fake.Configuration) where
     def =
         TopologySettings
         { topologyMembers = def
-        , topologyProposalSchedule = S.generate (GoodPolicy <$> arbitrary)
+        , topologyProposalSchedule = S.generate (Fake.GoodPolicy <$> arbitrary)
         , topologyProposerInsistance = \ballotSchedule -> do
             every3rd <- S.maskExecutions (cycle [True, False, False])
             ballotSchedule <* every3rd
         , topologyBallotsSchedule = S.execute
+        , topologyProposalBatchSettings = Nothing
         , topologyLifetime = interval 999 hour
         , topologyCustomSettings = def
         }
@@ -85,13 +98,19 @@ data TopologyMonitor pv m = TopologyMonitor
     { -- | Returns when all active processes in the topology finish
       awaitTermination :: m ()
       -- | Fetch states of all processes in topology
-    , readAllStates    :: STM (AllStates pv)
+    , readAllStates    :: DeclaredMemStoreTxMonad m (AllStates pv (DeclaredCStruct m))
     }
 
+type ProcessEnv p pv m =
+    ProcessContext $
+    DeclaredMemStore m $
+    ProcessState p pv (DeclaredCStruct m)
+
 -- | Monad in which process (and phases) are supposed to work.
-type ProcessM p pv m = ReaderT (ProcessContext $ ProcessState p pv) m
+type ProcessM p pv m = ReaderT (ProcessEnv p pv m) m
 
 -- | Create single process.
+-- Return handler to read process state.
 newProcess
     :: forall p pv m.
        ( MonadIO m
@@ -99,17 +118,22 @@ newProcess
        , WithNamedLogger m
        , Process p
        , ProtocolVersion pv
+       , DeclaresMemStore m
+       , Default (DeclaredCStruct m)
        )
     => p
     -> ProcessM p pv m ()
-    -> m (STM (ProcessState p pv))
+    -> m (DeclaredMemStoreTxMonad m (ProcessState p pv (DeclaredCStruct m)))
 newProcess process action = do
-    stateBox <- liftIO $ newTVarIO (initProcessState process)
+    memStorage <- getMemStorage
+    stateBox <- mkMemStorage memStorage (initProcessState process)
     fork_ $
         flip runReaderT (ProcessContext stateBox) $
         modifyLoggerName (<> coloredProcessName process) $
         action
-    return $ readTVar stateBox
+    return $ readMemStorage memStorage stateBox
+
+type Listener p pv m = ProcessM p pv m $ Method RpcOptions $ ProcessM p pv m
 
 -- | Construct single messages listener for process.
 -- This makes all incoming messages logged, and processes
@@ -125,41 +149,80 @@ listener
        , HasMessageShortcut msg
        , Process p
        , HasContextOf p pv m
+       , MonadRpc RpcOptions m
        )
-    => (msg -> m ()) -> Method m
-listener endpoint = Method . clarifyLoggerName $ \msg -> do
-    logInfo $ sformat (coloredF gray (stext%" "%build)) "<--" msg
-    endpoint msg `catches` handlers
+    => (msg -> m ()) -> m (Method RpcOptions m)
+listener endpoint = do
+    logName <- getLoggerName
+    let logName' = loggerNameMod logName
+    return . Method $ \msg -> do
+        setLoggerName logName' $ do
+            logInfo $ sformat (coloredF gray (stext%" "%build)) "<--" msg
+            endpoint msg `catches` handlers
   where
-    loggerNameMod = (loggerNameT %~ withColor (processColor @p))
-                  . (<> messageShortcut @msg)
-                  . (loggerNameT %~ resetColoring)
-    clarifyLoggerName f (msg :: msg) = modifyLoggerName loggerNameMod $ f msg
+    loggerNameMod = changeListenerLoggerName @p @msg
     handlers =
         [ Handler $ logError . sformat (build @ProtocolError)
         , Handler $ logError . sformat ("Strange error: "%shown @SomeException)
         ]
 
+-- | Set logger name fitting to listener's one.
+changeListenerLoggerName
+    :: forall p msg.
+       (Process p, HasMessageShortcut msg)
+    => LoggerName -> LoggerName
+changeListenerLoggerName =
+    (loggerNameT %~ withColor (processColor @p)) .
+    (<> msgSign) .
+    (loggerNameT %~ resetColoring)
+  where
+    msgSign = (^. from loggerNameT) $
+        let sign = messageShortcut @msg ^. loggerNameT
+            box = if sign /= mempty
+                  then sformat ("["%build%"]")
+                  else identity
+        in  box sign
+
 type TopologyLauncher pv m =
-    MonadTopology m => StdGen -> TopologySettings pv -> m (TopologyMonitor pv m)
+    MonadTopology m =>
+    StdGen -> TopologySettings pv (DeclaredCStruct m) -> m (TopologyMonitor pv m)
+
+-- | How should various processes react on events.
+data ProtocolListeners pv m = ProtocolListeners
+    { leaderListeners   :: HasMembersInfo => [Listener Leader pv m]
+    , acceptorListeners :: HasMembersInfo => [Listener Acceptor pv m]
+    , learnerListeners  :: HasMembersInfo => [Listener Learner pv m]
+    }
+
+proposerListeners
+    :: (MonadTopology m, ProtocolVersion pv, HasMembersInfo)
+    => [Listener Proposer pv m]
+proposerListeners =
+    [ listener @Proposer confirmCommitted
+    ]
 
 -- | How processes of various roles are supposed to work.
 data TopologyActions pv m = TopologyActions
-    { proposeAction     :: HasMembers => Policy -> ProcessM Proposer pv m ()
-    , startBallotAction :: HasMembers => ProcessM Leader pv m ()
-    , leaderListeners   :: HasMembers => [Method $ ProcessM Leader pv m]
-    , acceptorListeners :: HasMembers => [Method $ ProcessM Acceptor pv m]
-    , learnerListeners  :: HasMembers => [Method $ ProcessM Learner pv m]
+    { proposeAction     :: HasMembersInfo => MakeProposal (ProcessM Proposer pv m)
+    , startBallotAction :: HasMembersInfo => ProcessM Leader pv m ()
+    , topologyListeners :: ProtocolListeners pv m
     }
 
 -- | Launch Paxos algorithm.
 -- This function gathers all actions and listeners together in a small network.
-launchPaxosWith :: ProtocolVersion pv => TopologyActions pv m -> TopologyLauncher pv m
-launchPaxosWith TopologyActions{..} seed TopologySettings{..} = withMembers topologyMembers $ do
+launchPaxosWith
+    :: forall pv m.
+       ProtocolVersion pv
+    => TopologyActions pv m -> TopologyLauncher pv m
+launchPaxosWith TopologyActions{..} seed TopologySettings{..} =
+  withMembers topologyMembers $
+  withMembersAddresses def $ do
     let (proposalSeed, ballotSeed) = split seed
+    let ProtocolListeners{..} = topologyListeners
 
-    proposerState <- newProcess Proposer . work (for topologyLifetime) $ do
+    getProposerState <- newProcess Proposer . work (for topologyLifetime) $ do
         skipFirst <- S.maskExecutions (False : repeat True)
+        makeProposal <- prepareToAct proposeAction
 
         S.runSchedule_ proposalSeed . S.limited topologyLifetime $ do
             -- wait for servers to bootstrap
@@ -170,33 +233,34 @@ launchPaxosWith TopologyActions{..} seed TopologySettings{..} = withMembers topo
                     skipFirst
                     S.executeWhile (isPolicyUnconfirmed policy) pass
             S.execute <> repetitions
-            lift $ proposeAction policy
+            lift $ makeProposal policy
 
-        serve (processPort Proposer)
-            [ listener @Proposer confirmCommitted
-            ]
+        let proposerPort =
+                fromMaybe (error "No port for proposer specified") $
+                processPort' Proposer
+        serve proposerPort =<< sequence proposerListeners
 
-    leaderState <- newProcess Leader . work (for topologyLifetime) $ do
+    getLeaderState <- newProcess Leader . work (for topologyLifetime) $ do
         -- wait for first proposal before start
         S.runSchedule_ ballotSeed $ do
             S.delayed (interval 20 ms)
             S.limited topologyLifetime topologyBallotsSchedule
             lift startBallotAction
 
-        serve (processPort Leader) leaderListeners
+        serve (processPort Leader) =<< sequence leaderListeners
 
-    acceptorsStates <-
+    getAcceptorsStates <-
         startListeningProcessesOf Acceptor acceptorListeners
 
-    learnersStates <-
+    getLearnersStates <-
         startListeningProcessesOf Learner learnerListeners
 
     let readAllStates =
             AllStates
-            <$> proposerState
-            <*> leaderState
-            <*> sequence acceptorsStates
-            <*> sequence learnersStates
+            <$> getProposerState
+            <*> getLeaderState
+            <*> sequence getAcceptorsStates
+            <*> sequence getLearnersStates
 
     curTime <- virtualTime
     let awaitTermination = wait (till 100 ms (curTime + topologyLifetime))
@@ -206,16 +270,33 @@ launchPaxosWith TopologyActions{..} seed TopologySettings{..} = withMembers topo
     -- launch required number of servers, for processes of given type,
     -- serving given listeners
     startListeningProcessesOf
-        :: (HasMembers, MonadTopology m, Process p, Integral i, ProtocolVersion pv)
+        :: (HasMembersInfo, MonadTopology m, Process p, HasSimpleAddress p, Integral i, ProtocolVersion pv, DeclaresMemStore m, Default (DeclaredCStruct m))
         => (i -> p)
-        -> [Method $ ProcessM p pv m]
-        -> m [STM $ ProcessState p pv]
+        -> [Listener p pv m]
+        -> m [DeclaredMemStoreTxMonad m $ ProcessState p pv (DeclaredCStruct m)]
     startListeningProcessesOf processType listeners =
         forM (processesOf processType) $
             \process -> newProcess process . work (for topologyLifetime) $ do
-                serve (processPort process) listeners
+                serve (processPort process) =<< sequence listeners
 
 {-# NOINLINE launchPaxosWith #-}
+
+data ProtocolListenersSettings m = ProtocolListenersSettings
+    { listenersLearningCallback :: LearningCallback m
+    , listenersPolicyTargets    :: PolicyTargets (DeclaredCStruct m)
+    }
+
+instance Applicative m => Default (ProtocolListenersSettings m) where
+    def = ProtocolListenersSettings mempty def
+
+-- | Version-custom topology settings.
+class ProtocolVersion pv =>
+      HasVersionProtocolListeners pv where
+    -- | On which messages and how should each process respond.
+    versionProtocolListeners
+        :: forall m.
+           MonadTopology m
+        => ProtocolListenersSettings m -> ProtocolListeners pv m
 
 -- | Version-custom topology settings.
 class ProtocolVersion pv =>
@@ -224,12 +305,9 @@ class ProtocolVersion pv =>
     versionTopologyActions
         :: forall m.
            MonadTopology m
-        => CustomTopologySettings pv -> TopologyActions pv m
+        => TopologySettings pv (DeclaredCStruct m) -> TopologyActions pv m
 
 -- | Launch version of paxos.
 launchPaxos :: HasVersionTopologyActions pv => TopologyLauncher pv m
-launchPaxos gen settings = launchPaxosWith (versionTopologyActions customSettings) gen settings
-  where
-    customSettings = topologyCustomSettings settings
-
+launchPaxos gen settings = launchPaxosWith (versionTopologyActions settings) gen settings
 

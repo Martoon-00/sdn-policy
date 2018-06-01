@@ -15,10 +15,11 @@ import           Control.Lens         (Setter')
 import           Control.Monad.Random (MonadRandom)
 import           Control.Monad.Writer (WriterT (..))
 import qualified Control.TimeWarp.Rpc as D
+import           Data.Default         (def)
 import qualified Data.Text.Buildable
 import           Data.Time.Units      (Microsecond, convertUnit)
 import           Data.Yaml            (FromJSON (..), Value (..), decodeFileEither,
-                                       withArray, withObject, (.:), (.:?))
+                                       withArray, withObject, (.!=), (.:), (.:?))
 import qualified Data.Yaml            as Yaml
 import           Formatting           (bprint, build, builder, sformat, stext, (%))
 import qualified Options.Applicative  as Opt
@@ -28,9 +29,11 @@ import           Universum
 import           Sdn.Base
 import           Sdn.Extra            (WithDesc (..), descText, getWithDesc, listF,
                                        rightSpaced, (?:))
+import           Sdn.Extra.Schedule   (Schedule)
+import qualified Sdn.Extra.Schedule   as S
+import           Sdn.Policy.Fake
 import           Sdn.Protocol
-import           Sdn.Schedule         (Schedule)
-import qualified Sdn.Schedule         as S
+import           Sdn.Protocol.Common  (BatchingSettings (..))
 
 -- * Helpers
 
@@ -57,6 +60,10 @@ choose = foldr (<|>) empty
 
 choose1 :: Alternative f => [a -> f b] -> a -> f b
 choose1 l a = choose $ map ($ a) l
+
+-- | Everywhere in demo we use predefined addresses mapping for processes.
+defAddrsLayout :: (HasMembersAddresses => a) -> a
+defAddrsLayout = withMembersAddresses def
 
 -- * Datatypes with options
 
@@ -95,19 +102,18 @@ instance Buildable (ScheduleBuilder a) where
             mconcat $ intersperse " + " $ map (bprint $ "("%build%")") sbs
 
 data TopologySettingsBuilder = TopologySettingsBuilder
-    { tsbMembers            :: Members
-    , tsbProposalSchedule   :: ScheduleBuilder Policy
-    , tsbProposerInsistance :: ScheduleBuilder ()
-    , tsbBallotsSchedule    :: ScheduleBuilder ()
-    , tsbLifetime           :: Microsecond
-    , tsbCustomSettings     :: CustomTopologySettingsBuilder
+    { tsbMembers               :: Members
+    , tsbProposalSchedule      :: ScheduleBuilder Policy
+    , tsbProposerInsistance    :: ScheduleBuilder ()
+    , tsbBallotsSchedule       :: ScheduleBuilder ()
+    , tsbProposalBatchSettings :: Maybe BatchingSettings
+    , tsbLifetime              :: Microsecond
+    , tsbCustomSettings        :: CustomTopologySettingsBuilder
     } deriving (Generic)
 
 data CustomTopologySettingsBuilder
     = ClassicSettingsBuilderPart
     | FastSettingsBuilderPart
-    { tsbRecoveryDelay :: Microsecond
-    }
 
 instance Buildable TopologySettingsBuilder where
     build TopologySettingsBuilder{..} =
@@ -115,25 +121,24 @@ instance Buildable TopologySettingsBuilder where
                "\n  proposal schedule: "%build%
                "\n  re-proposals: "%build%
                "\n  ballots schedule: "%build%
+               "\n  proposal batching settings: "%build%
                "\n  lifetime: "%build%
                "\n  type: "%builder)
             tsbMembers
             tsbProposalSchedule
             tsbProposerInsistance
             tsbBallotsSchedule
+            tsbProposalBatchSettings
             tsbLifetime
             custom
       where
         custom = case tsbCustomSettings of
             ClassicSettingsBuilderPart -> "classic"
-            FastSettingsBuilderPart{..} ->
-                bprint ("fast\n\
-                       \  recovery delay: "%build)
-                    tsbRecoveryDelay
+            FastSettingsBuilderPart    -> "fast"
 
 data TopologySettingsBox =
     forall pv. HasVersionTopologyActions pv =>
-               TopologySettingsBox (TopologySettings pv)
+               TopologySettingsBox (TopologySettings pv Configuration)
 
 buildTopologySettings
     :: MonadRandom m
@@ -144,18 +149,17 @@ buildTopologySettings TopologySettingsBuilder{..} = do
     let topologyProposerInsistance :: TopologySchedule () -> TopologySchedule ()
         topologyProposerInsistance _ = buildSchedule tsbProposerInsistance
     let topologyBallotsSchedule = buildSchedule tsbBallotsSchedule
+    let topologyProposalBatchSettings = tsbProposalBatchSettings
     let topologyLifetime = convertUnit tsbLifetime
     return $ case tsbCustomSettings of
         ClassicSettingsBuilderPart ->
             TopologySettingsBox TopologySettings
-            { topologyCustomSettings = ClassicTopologySettingsPart
+            { topologyCustomSettings = ClassicTopologySettingsPart{}
             , ..
             }
-        FastSettingsBuilderPart{..} ->
+        FastSettingsBuilderPart ->
             TopologySettingsBox TopologySettings
-            { topologyCustomSettings = FastTopologySettingsPart
-                { topologyRecoveryDelay = tsbRecoveryDelay
-                }
+            { topologyCustomSettings = FastTopologySettingsPart{}
             , ..
             }
 
@@ -164,6 +168,7 @@ data ProtocolOptions = ProtocolOptions
     , poDelays           :: WithDesc D.Delays
     , poSeed             :: Maybe Text
     , poQuick            :: Bool
+    , poEnableLogging    :: Bool
     }
 
 instance Buildable ProtocolOptions where
@@ -224,7 +229,7 @@ instance FromJSON (WithDesc $ Gen Policy) where
             <$> mapM weightenedArbitraryPolicy a
         weightenedArbitraryPolicy :: Value -> Yaml.Parser $ WithDesc (Int, Gen Policy)
         weightenedArbitraryPolicy = withObject "weightened policy" $ \o -> do
-            weight <- fromMaybe 1 <$> o .:? "weight"
+            weight <- o .:? "weight" .!= 1
             WithDesc policyDesc policy <- o .: "policy"
             pure (  sformat (build%"w "%stext) weight policyDesc
                  ?: (weight, policy)
@@ -288,9 +293,9 @@ instance FromJSON (WithDesc D.Delays) where
         blackoutParser = fmap (WithDesc "blackout") . \case
             String "blackout" -> pure D.blackout
             _ -> fail "Can't parse blackout delay"
-        memberParser = withObject "for member" $ \o -> do
+        memberParser = withObject "for member" $ \o -> defAddrsLayout $ do
             -- TODO: more complex participants specification
-            acceptorIds <- AcceptorId <<$>> o .: "acceptors"
+            acceptorIds <- ProcessId <<$>> o .: "acceptors"
             WithDesc desc delay <- o .: "delay"
             return $ sformat ("for acceptors "%listF ", " build%" "%stext) acceptorIds desc
                   ?: D.forAddressesList (processAddress . Acceptor <$> acceptorIds) delay
@@ -307,6 +312,11 @@ instance FromJSON (WithDesc D.Delays) where
         alternativeParser = withArray "alternative delays" $ \a -> do
             fmap mconcat $ mapM parseJSON (toList a)
 
+instance FromJSON BatchingSettings where
+    parseJSON = withObject "batching settings" $ \o -> do
+        batchMaxSize <- o .: "max_size"
+        batchMaxJitter <- o .: "max_jitter"
+        return BatchingSettings{..}
 
 instance FromJSON TopologySettingsBuilder where
     parseJSON = withObject "topology settings" $ \o -> do
@@ -314,6 +324,7 @@ instance FromJSON TopologySettingsBuilder where
         tsbProposalSchedule <- o .: "proposals"
         tsbProposerInsistance <- o .: "reproposals"
         tsbBallotsSchedule <- o .: "ballots"
+        tsbProposalBatchSettings <- o .:? "proposals_batching"
         tsbLifetime <- o .: "lifetime"
         tsbCustomSettings <- customParser o
         return TopologySettingsBuilder{..}
@@ -322,11 +333,9 @@ instance FromJSON TopologySettingsBuilder where
             t <- o .: "type"
             case t of
                 "classic" ->
-                    pure ClassicSettingsBuilderPart
+                    pure ClassicSettingsBuilderPart{}
                 "fast" -> do
-                    recovery <- o .: "recovery"
-                    tsbRecoveryDelay <- recovery .: "delay"
-                    pure FastSettingsBuilderPart{..}
+                    pure FastSettingsBuilderPart{}
                 _ -> fail ("Unknown protocol type: " <> t)
 
 instance FromJSON ProtocolOptions where
@@ -339,7 +348,9 @@ instance FromJSON ProtocolOptions where
                 (\o ->               o .:? "seed"
                  <|> show @Int <<$>> o .:? "seed") v
         poQuick <-
-            withObject "quick" (\o -> fromMaybe False <$> o .:? "quick") v
+            withObject "quick" (\o -> o .:? "quick" .!= False) v
+        poEnableLogging <-
+            withObject "logging" (\o -> o .:? "enable_logging" .!= True) v
         return ProtocolOptions{..}
 
 configPathParser :: Opt.Parser FilePath

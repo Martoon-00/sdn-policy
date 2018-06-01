@@ -1,19 +1,26 @@
 {-# LANGUAGE Rank2Types           #-}
+{-# LANGUAGE TemplateHaskell      #-}
+{-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 -- | Test launcher of protocol.
 
 module Test.Sdn.Overall.Launcher
     ( TestLaunchParams (..)
+    , testPropertiesL
+
     , testLaunch
+
+    , defTopologySettings
     ) where
 
 import           Universum
 
-import           Control.TimeWarp.Logging    (setLoggerName, usingLoggerName)
-import           Control.TimeWarp.Rpc        (runDelaysLayer, runPureRpc)
+import           Control.Lens                (makeLensesFor)
+import           Control.TimeWarp.Logging    (usingLoggerName)
+import           Control.TimeWarp.Rpc        (Dict (..), pickEvi, runDelaysLayer,
+                                              runPureRpcExt, withExtendedRpcOptions)
 import qualified Control.TimeWarp.Rpc        as D
-import           Control.TimeWarp.Timed      (runTimedT)
 import           Data.Default
 import           Formatting                  (build, sformat, stext, (%))
 import           System.Random               (mkStdGen, split)
@@ -22,19 +29,29 @@ import           Test.QuickCheck.Gen         (chooseAny)
 import           Test.QuickCheck.Monadic     (monadicIO, stop)
 import           Test.QuickCheck.Property    (failed, reason, succeeded)
 
-import           Sdn.Extra
+import           Sdn.Base
+import           Sdn.Extra.Logging
+import           Sdn.Extra.MemStorage
+import           Sdn.Extra.Util              (declareMonadicMark, emulationOptions)
+import           Sdn.Policy.Fake
 import           Sdn.Protocol
 import           Test.Sdn.Overall.Properties
 
 
 data TestLaunchParams pv = TestLaunchParams
-    { testSettings   :: TopologySettings pv
-    , testDelays     :: D.Delays
-    , testProperties :: forall m. MonadIO m => [ProtocolProperty pv m]
+    { testSettings   :: TopologySettings pv Configuration
+    , testDelays     :: HasMembersAddresses => D.Delays
+    , testProperties :: forall m. (MonadIO m, DeclaredCStruct m ~ Configuration)
+                     => [ProtocolProperty pv m]
     , testStub       :: Proxy pv
     }
 
-instance Default (CustomTopologySettings pv) =>
+makeLensesFor
+    [ ("testProperties", "testPropertiesL")
+    ] ''TestLaunchParams
+
+instance ( Default (CustomTopologySettings pv)
+         ) =>
          Default (TestLaunchParams pv) where
     def =
         TestLaunchParams
@@ -57,25 +74,41 @@ testLaunch TestLaunchParams{..} =
     forAll (Blind <$> chooseAny) $ \(Blind seed) -> do
         let (gen1, gen2) =
                 split (mkStdGen seed)
-            launch :: MonadTopology m => m (TopologyMonitor pv m)
+            launch
+                :: (MonadTopology m, DeclaredCStruct m ~ Configuration)
+                => m (TopologyMonitor pv m)
             launch =
                 launchPaxos gen2 testSettings
-            runEmulation =
-                runTimedT .
-                runPureRpc .
-                runDelaysLayer testDelays gen1 .
-                usingLoggerName mempty
+            runMemStorage = declareMemStorage stmMemStorage
+            delays = withMembersAddresses def testDelays
+
+        let mainLaunch =
+            -- launch silently
+                runPureRpcExt emulationOptions $
+                withExtendedRpcOptions (pickEvi Dict) $
+                runDelaysLayer delays gen1 $
+                runErrorReporting $
+                usingLoggerName mempty $
+                runMemStorage $
+                declareMonadicMark @(CStructType Configuration) $ do
+                    monitor <- setDropLoggerName launch
+                    protocolProperties monitor testProperties
+            reproducingLaunch =
+                runPureRpcExt emulationOptions .
+                withExtendedRpcOptions (pickEvi Dict) .
+                runDelaysLayer delays gen1 .
+                runNoErrorReporting .
+                usingLoggerName mempty $
+                runMemStorage $
+                declareMonadicMark @(CStructType Configuration) $
+                    launch >>= awaitTermination >> flushLogs
+
             failProp err = do
-                lift . runEmulation . runNoErrorReporting . setLoggerName mempty $
-                    awaitTermination =<< launch
+                lift reproducingLaunch
                 stop failed{ reason = toString err }
 
         monadicIO $ do
-            -- launch silently
-            (errors, propErrors) <- lift . runEmulation . runErrorReporting $ do
-                monitor <- setDropLoggerName launch
-                protocolProperties monitor testProperties
-
+            (errors, propErrors) <- lift mainLaunch
             -- check errors log
             unless (null errors) $
                 failProp $
@@ -88,3 +121,8 @@ testLaunch TestLaunchParams{..} =
 
             stop succeeded
 
+-- | Default for 'TopologySettings' restricted to use 'Configuration' as cstruct.
+defTopologySettings
+    :: Default (CustomTopologySettings pv)
+    => TopologySettings pv Configuration
+defTopologySettings = def

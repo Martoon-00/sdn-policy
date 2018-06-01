@@ -1,14 +1,18 @@
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TypeFamilies    #-}
+{-# LANGUAGE TemplateHaskell      #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE UndecidableInstances #-}
 
--- | Special messages used in Fast Paxos
+-- | Special messages used in Fast Paxos.
+--
+-- Some messages from Classic Paxos are also used, but not mentioned here.
 
 module Sdn.Protocol.Fast.Messages
     ( ProposalMsg (..)
-    , InitBallotMsg (..)
-    , Phase2bMsg (..)
+    , AcceptedMsg (..)
     ) where
 
+import           Control.TimeWarp.Rpc         (RpcRequest (..))
+import           Data.MessagePack
 import qualified Data.Text.Buildable
 import           Formatting                   (bprint, build, (%))
 import           Universum
@@ -16,41 +20,50 @@ import           Universum
 import           Sdn.Base
 import           Sdn.Extra
 import           Sdn.Protocol.Common.Messages (HasMessageShortcut (..))
+import           Sdn.Protocol.Processes
 
--- Some messages from Classic Paxos are also used, but not mentioned here.
-
-newtype ProposalMsg = ProposalMsg Policy
+-- | Message sent by proposer to acceptors to propose a new values.
+-- It carries multiple values for optimization purposes.
+newtype ProposalMsg cstruct = ProposalMsg (NonEmpty (RawCmd cstruct))
     deriving (Generic)
 
-instance Buildable ProposalMsg where
-    build (ProposalMsg p) = bprint (" proposal message "%build) p
-instance HasMessageShortcut ProposalMsg where
+instance Buildable (RawCmd cstruct) =>
+         Buildable (ProposalMsg cstruct) where
+    build (ProposalMsg p) = bprint ("Proposal message "%listF "," build) p
+
+instance HasMessageShortcut (ProposalMsg cstruct) where
     messageShortcut = "rem" <> "f"
 
-declareMessage ''ProposalMsg
+instance MessagePack (RawCmd cstruct) =>
+         MessagePack (ProposalMsg cstruct)
+
+declareMessage 21 ''ProposalMsg
 
 
-newtype InitBallotMsg = InitBallotMsg BallotId
+-- | Message sent by acceptor to learners, notifying them about
+-- new value.
+-- This can be sent to leader as well. Thus, recipient is specified
+-- in type, because networing enging doesn't allow listening
+-- for same message from different places.
+data AcceptedMsg recip cstruct = AcceptedMsg AcceptorId (NonEmpty $ Cmd cstruct)
     deriving (Generic)
 
-instance Buildable InitBallotMsg where
-    build (InitBallotMsg b) = bprint (build%" initiation") b
-instance HasMessageShortcut InitBallotMsg where
-    messageShortcut = "2b" <> "f"
+instance Buildable (Cmd cstruct) =>
+         Buildable (AcceptedMsg recip cstruct) where
+    build (AcceptedMsg a c) =
+        bprint ("Phase 2b message from "%build%": "%listF "," build) a c
 
-declareMessage ''InitBallotMsg
-
-
-data Phase2bMsg = Phase2bMsg BallotId AcceptorId Configuration
-    deriving (Generic)
-
-instance Buildable Phase2bMsg where
-    build (Phase2bMsg b a c) =
-        bprint ("Phase 2b message at "%build%" from "%build%" "%build) b a c
-instance HasMessageShortcut Phase2bMsg where
+instance HasMessageShortcut (AcceptedMsg recip cstruct) where
     messageShortcut = "f"
 
-declareMessage ''Phase2bMsg
+instance MessagePack (Cmd cstruct) => MessagePack (AcceptedMsg recip cstruct)
 
+instance RpcRequest (AcceptedMsg Leader cstruct) where
+    type Response (AcceptedMsg Leader cstruct) = ()
+    messageId _ = 22
+
+instance RpcRequest (AcceptedMsg Learner cstruct) where
+    type Response (AcceptedMsg Learner cstruct) = ()
+    messageId _ = 23
 
 

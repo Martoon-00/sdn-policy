@@ -1,23 +1,32 @@
 {-# LANGUAGE AllowAmbiguousTypes        #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE PatternSynonyms            #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
--- | Policies arangement.
+-- | Fake policies with various conflicting behaviour.
 
-module Sdn.Base.Policy where
+module Sdn.Policy.Fake
+    ( Policy (..)
+    , PolicyName
+    , policyName
 
-import           Control.Lens        (At (..), Index, Iso', IxValue, Ixed (..),
-                                      Wrapped (..), iso, mapping, _Wrapped')
+    , Configuration (..)
+    , mkConfig
+    ) where
+
+import           Control.Lens        (AsEmpty (..), At (..), Index, Iso', IxValue,
+                                      Ixed (..), Wrapped (..), iso, mapping, to,
+                                      _Wrapped')
 import           Data.Default        (Default (..))
-import qualified Data.Map            as M
+import qualified Data.Map.Strict     as M
 import           Data.MessagePack    (MessagePack (..))
 import qualified Data.Set            as S
-import           Data.String         (IsString)
 import qualified Data.Text.Buildable
-import           Formatting          (bprint, build, sformat, (%))
+import           Formatting          (bprint, build, (%))
 import qualified GHC.Exts            as Exts
-import           Test.QuickCheck     (Arbitrary (..), getNonNegative, oneof, resize)
+import           Test.QuickCheck     (Arbitrary (..), getNonNegative, oneof, resize,
+                                      suchThat)
 import           Universum
 
 import           Sdn.Base.CStruct
@@ -25,13 +34,11 @@ import           Sdn.Base.Quorum
 import           Sdn.Base.Types
 import           Sdn.Extra.Util
 
-newtype PolicyName = PolicyName Text
-    deriving (Eq, Ord, Show, Buildable, IsString, MessagePack)
+newtype PolicyName = PolicyName Int
+    deriving (Eq, Ord, Show, Num, Buildable, MessagePack)
 
 instance Arbitrary PolicyName where
-    arbitrary =
-        PolicyName . sformat ("policy #"%build @Int) . getNonNegative
-            <$> arbitrary
+    arbitrary = PolicyName <$> arbitrary `suchThat` (>= 0)
 
 -- | Abstract SDN policy.
 data Policy
@@ -77,7 +84,7 @@ type PolicyEntry = Acceptance Policy
 
 -- | For our simplified model with abstract policies, cstruct is just set of
 -- policies.
-data Configuration = Configuration
+newtype Configuration = Configuration
     { unConfiguration :: S.Set PolicyEntry
     } deriving (Eq, Show)
 
@@ -107,6 +114,9 @@ instance NontrivialContainer Configuration where
 
 instance Default Configuration where
     def = Configuration def
+
+instance AsEmpty Configuration where
+    _Empty = _Wrapped' . _Empty
 
 mkConfig :: [PolicyEntry] -> Maybe Configuration
 mkConfig policies =
@@ -168,12 +178,23 @@ perPolicy = _Wrapped' . mapping _Wrapped' . iso toPolicyMap fromPolicyMap
         , (accId, ()) <- M.toList votes
         ]
 
-instance Command Configuration PolicyEntry where
-    addCommand = checkingAgreement $ underneath . S.insert
+
+pattern HappyPolicy :: PolicyName -> Acceptance Policy
+pattern HappyPolicy name = Accepted (GoodPolicy name)
+
+instance CStruct Configuration where
+    type Cmd Configuration = PolicyEntry
     glb = checkingAgreement $ underneath2 S.union
     lub = underneath2 S.intersection
     Configuration c1 `extends` Configuration c2 = c2 `S.isSubsetOf` c1
     difference = Exts.toList ... underneath2 S.difference
+
+    addCommand p c = case (p, S.lookupMin $ unConfiguration c) of
+        (HappyPolicy _, Just (HappyPolicy _)) ->
+            -- optimization for profiling
+            pure $ Exts.coerce (S.insert p) c
+        _ ->
+            checkingAgreement (underneath . S.insert) p c
 
     -- for each policy check, whether there is a quorum containing
     -- its acceptance or rejection
@@ -183,10 +204,15 @@ instance Command Configuration PolicyEntry where
       where
         sanityCheck = first ("combination: " <> ) . checkingConsistency
 
-    intersectingCombination (votes :: Votes qf Configuration) =
-        sanityCheck . Configuration . M.keysSet $
-        M.filter (isQuorumsSubIntersection @qf votes) (votes ^. perPolicy)
+instance AtCmd Configuration where
+    atCmd raw = _Wrapped' . to getter
       where
-         sanityCheck =
-             first ("intersectingCombination: " <> ) . checkingConsistency
+        getter config =
+            if | S.member (Accepted raw) config -> Just AcceptedT
+               | S.member (Rejected raw) config -> Just RejectedT
+               | otherwise -> Nothing
 
+instance MayHaveProposerId Policy where
+    cmdProposerId _ = Nothing
+
+instance PracticalCStruct Configuration

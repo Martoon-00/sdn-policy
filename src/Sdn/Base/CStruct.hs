@@ -1,15 +1,22 @@
-{-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE TemplateHaskell        #-}
-{-# LANGUAGE TypeFamilies           #-}
+{-# LANGUAGE AllowAmbiguousTypes     #-}
+{-# LANGUAGE DefaultSignatures       #-}
+{-# LANGUAGE DeriveFunctor           #-}
+{-# LANGUAGE Rank2Types              #-}
+{-# LANGUAGE TemplateHaskell         #-}
+{-# LANGUAGE TypeFamilies            #-}
+{-# LANGUAGE UndecidableInstances    #-}
+{-# LANGUAGE UndecidableSuperClasses #-}
 
 -- | Interface for commands and cstructs.
 
 module Sdn.Base.CStruct where
 
-import           Control.Lens         (makePrisms)
+import           Control.Lens         (Getter, makePrisms)
 import           Control.Monad.Except (MonadError, throwError)
 import           Data.Default         (Default (..))
+import qualified Data.Map             as M
 import           Data.MessagePack     (MessagePack)
+import qualified Data.Semigroup       as Semi
 import qualified Data.Text.Buildable
 import           Formatting           (bprint, build, sformat, (%))
 import           Test.QuickCheck      (Arbitrary (..), elements)
@@ -17,20 +24,29 @@ import           Universum
 
 import           Sdn.Base.Quorum
 import           Sdn.Base.Settings
-import           Sdn.Extra.Util
+import           Sdn.Base.Types
+import           Sdn.Extra.Util       (DeclaredMark, Decomposable (..), MonadicMark (..),
+                                       listF)
 
 -- * Conflict
 
 -- | "Conflict" relationship between two entities.
 -- It's enough to define one of 'conflict' and 'agree' functions.
 class Conflict a b where
+    -- | Whether entities conflict, with reason
+    conflictReason :: a -> b -> Either Text ()
+    conflictReason a b =
+        if a `agrees` b
+        then Right ()
+        else Left "some conflict"
+
     -- | Whether entities conflict.
     conflicts :: a -> b -> Bool
-    conflicts a b = not (agrees a b)
+    conflicts a b = isLeft $ conflictReason a b
 
     -- | The opposite to 'conflict'.
     agrees :: a -> b -> Bool
-    agrees a b = not (conflicts a b)
+    agrees = not ... conflicts
 
 -- | Whether cstruct conflicts with itself.
 contradictive :: Conflict a a => a -> Bool
@@ -44,7 +60,6 @@ type SuperConflict a b =
     ( Conflict a a
     , Conflict a b
     , Conflict b a
-    , Conflict b b
     )
 
 -- | Command can be either accepted or denied.
@@ -54,7 +69,12 @@ type SuperConflict a b =
 data AcceptanceType
     = AcceptedT
     | RejectedT
-    deriving (Eq, Ord, Enum)
+    deriving (Eq, Show, Ord, Enum)
+
+instance Buildable AcceptanceType where
+    build = \case
+        AcceptedT -> "accepted"
+        RejectedT -> "rejected"
 
 -- | Acception or denial of command.
 data Acceptance cmd
@@ -64,15 +84,29 @@ data Acceptance cmd
 
 makePrisms ''Acceptance
 
+instance Decomposable (Acceptance cmd) (AcceptanceType, cmd) where
+    decompose = \case
+        Accepted cmd -> (AcceptedT, cmd)
+        Rejected cmd -> (RejectedT, cmd)
+
+    compose (acc, cmd) = case acc of
+        AcceptedT -> Accepted cmd
+        RejectedT -> Rejected cmd
+
 acceptanceCmd :: Acceptance cmd -> cmd
-acceptanceCmd = \case
-    Accepted cmd -> cmd
-    Rejected cmd -> cmd
+acceptanceCmd = snd . decompose
 
 acceptanceType :: Acceptance cmd -> AcceptanceType
-acceptanceType = \case
-    Accepted _ -> AcceptedT
-    Rejected _ -> RejectedT
+acceptanceType = fst . decompose
+
+type family UnAcceptance cmd where
+    UnAcceptance (Acceptance a) = a
+
+-- | Takes raw command.
+-- E.g. when cstruct is network configuration, then true command is
+-- @Acceptance Policy@ (because @Configuration@ consists from them),
+-- while form in which policies are proposed (@Policy@) is "raw" command.
+type RawCmd cstruct = UnAcceptance (Cmd cstruct)
 
 -- | Command rejection doesn't conflict with any other command.
 instance (Conflict a a, Eq a) => Conflict (Acceptance a) (Acceptance a) where
@@ -96,15 +130,22 @@ instance MessagePack p => MessagePack (Acceptance p)
 -- | Defines basic operations with commands and cstructs.
 -- Requires "conflict" relationship to be defined for them,
 -- and "bottom" cstruct to exist.
-class (SuperConflict cmd cstruct, Default cstruct, Buildable cstruct) =>
-      Command cstruct cmd | cstruct -> cmd, cmd -> cstruct where
+class ( Conflict (Cmd cstruct) (Cmd cstruct)
+      , Conflict (Cmd cstruct) cstruct
+      , Conflict cstruct (Cmd cstruct)
+      , Default cstruct
+      , Buildable cstruct
+      ) => CStruct cstruct where
+
+    -- | Type of commands, cstruct is assembled from.
+    type Cmd cstruct :: *
 
     -- | Add command to CStruct, if no conflict arise.
-    addCommand :: cmd -> cstruct -> Maybe cstruct
+    addCommand :: Cmd cstruct -> cstruct -> Either Text cstruct
 
     -- | Calculate Greatest Lower Bound of two cstructs.
     -- Fails, if two cstructs have conflicting commands.
-    glb :: cstruct -> cstruct -> Maybe cstruct
+    glb :: cstruct -> cstruct -> Either Text cstruct
 
     -- | Calculate Least Upper Bound of two cstructs.
     -- This function is always defined.
@@ -115,7 +156,7 @@ class (SuperConflict cmd cstruct, Default cstruct, Buildable cstruct) =>
 
     -- | @difference c1 c2@ returns all commands in @c1@ which are
     -- not present in @c2@.
-    difference :: cstruct -> cstruct -> [cmd]
+    difference :: cstruct -> cstruct -> [Cmd cstruct]
 
     -- | Returns cstruct with all commands, which are present in votes
     -- from all acceptors of some quorum.
@@ -125,34 +166,30 @@ class (SuperConflict cmd cstruct, Default cstruct, Buildable cstruct) =>
         => Votes qf cstruct -> Either Text cstruct
     combination = combinationDefault
 
-    -- | Returns cstruct with all commands, which are present in votes
-    -- of all acceptors of intersection of given quorum with some other quorum.
-    -- Fails if resulting cstruct is contradictory.
-    intersectingCombination
-        :: (HasMembers, QuorumIntersectionFamily qf)
-        => Votes qf cstruct -> Either Text cstruct
-    intersectingCombination = intersectingCombinationDefault
 
+-- | 'CStruct', where commands are 'Acceptance's.
+type CStructA cstruct cmd = (CStruct cstruct, Cmd cstruct ~ Acceptance cmd)
 
 -- | Construct cstruct from single command.
 liftCommand
-    :: Command cstruct (Acceptance cmd)
+    :: (CStruct cstruct, Cmd cstruct ~ Acceptance cmd)
     => Acceptance cmd -> cstruct
 liftCommand cmd =
-    fromMaybe (error "Can't make up cstruct from single command") $
+    fromRight (error "Can't make up cstruct from single command") $
     addCommand cmd def
 
 -- | Whether sctruct contains command, accepted or rejected.
-contains :: Command cstruct (Acceptance cmd) => cstruct -> cmd -> Bool
+contains :: CStructA cstruct cmd => cstruct -> cmd -> Bool
 contains cstruct cmd =
     any (\acc -> cstruct `extends` liftCommand (acc cmd))
     [Accepted, Rejected]
 
 -- | Utility function, which unsures that arguments being combined does not
 -- conflict.
-checkingAgreement :: Conflict a b => (a -> b -> c) -> a -> b -> Maybe c
-checkingAgreement f a b = guard (agrees a b) $> f a b
+checkingAgreement :: Conflict a b => (a -> b -> c) -> a -> b -> Either Text c
+checkingAgreement f a b = conflictReason a b $> f a b
 
+-- | Errors if item is contradictive, otherwise returns it.
 checkingConsistency
     :: (Conflict a a, Buildable a, MonadError Text m)
     => a -> m a
@@ -163,11 +200,14 @@ checkingConsistency x
 -- | Try to add command to cstruct; on fail add denial of that command.
 -- Returns acceptance/denial of command which fit and new cstruct.
 acceptOrRejectCommand
-    :: Command cstruct (Acceptance cmd)
+    :: CStructA cstruct cmd
     => cmd -> cstruct -> (Acceptance cmd, cstruct)
 acceptOrRejectCommand cmd cstruct =
-    fromMaybe (error "failed to add command rejection") $
-        try Accepted <|> try Rejected
+    case try Accepted of
+        Right x -> x
+        Left _ -> case try Rejected of
+            Right x -> x
+            Left _  -> error "failed to add command rejection"
   where
     try acceptance =
         let acmd = acceptance cmd
@@ -175,43 +215,116 @@ acceptOrRejectCommand cmd cstruct =
 
 -- | 'State' version of 'acceptOrRejectCommand'.
 acceptOrRejectCommandS
-    :: (Monad m, Command cstruct (Acceptance cmd))
+    :: (Monad m, CStructA cstruct cmd)
     => cmd -> StateT cstruct m (Acceptance cmd)
 acceptOrRejectCommandS = state . acceptOrRejectCommand
+
+-- | 'acceptOrRejectCommand' for multiple commands.
+acceptOrRejectCommands
+    :: CStructA cstruct cmd
+    => [cmd] -> cstruct -> ([Acceptance cmd], cstruct)
+acceptOrRejectCommands cmds cstruct = usingState cstruct $ mapM acceptOrRejectCommandS cmds
+
+-- | Indicates something unnecessary, extra.
+data UndueType
+    = UndueConflict
+    | UnduePresent
+
+instance Buildable UndueType where
+    build = \case
+        UndueConflict -> "conflict"
+        UnduePresent -> "present"
+
+-- | Try to add given accepted/rejected commands to cstruct.
+-- Along with resulting cstruct, returns list of conflicting or already
+-- present commands.
+applyHintCommands
+    :: CStructA cstruct cmd
+    => [Acceptance cmd] -> cstruct -> ([(UndueType, Acceptance cmd)], cstruct)
+applyHintCommands hints cstruct =
+    foldl' addHint ([], cstruct) hints
+  where
+    addHint (!hs, !cs) hint =
+        case addCommand hint cs of
+            _ | cs `extends` liftCommand hint ->
+                ((UnduePresent, hint) : hs, cs)
+            Left _ ->
+                ((UndueConflict, hint) : hs, cs)
+            Right cs' ->
+                (hs, cs')
+
 
 -- | Take list of lists of cstructs, 'lub's inner lists and then 'gdb's results.
 -- None of given 'cstruct's should be empty.
 mergeCStructs
-    :: (Container cstructs, cstruct ~ Element cstructs, Command cstruct cmd)
+    :: (Container cstructs, cstruct ~ Element cstructs, CStruct cstruct)
     => [cstructs] -> Either Text cstruct
 mergeCStructs cstructs =
     let gamma = map (foldr1 lub . toList) cstructs
         combined = foldrM glb def gamma
-    in  maybe (errorContradictory gamma) pure combined
+    in  either (errorContradictory gamma) pure combined
   where
-    errorContradictory gamma =
+    errorContradictory gamma err =
         throwError $
-        sformat ("mergeCStructs: got contradictory Gamma: "%listF "\n  ," build)
-            gamma
-
--- | Takes first argument only if it is extension of second one.
-maxOrSecond :: Command cstruct cmd => cstruct -> cstruct -> cstruct
-maxOrSecond c1 c2
-    | c1 `extends` c2 = c1
-    | otherwise       = c2
+        sformat ("mergeCStructs: got contradictory Gamma: "%listF "\n  ," build
+                %"\n  : "%build)
+            gamma err
 
 -- | This is straightforward and very inefficient implementation of
 -- 'combination'.
 combinationDefault
-    :: (HasMembers, Command cstruct cmd, QuorumFamily qf)
+    :: (HasMembers, CStruct cstruct, QuorumFamily qf)
     => Votes qf cstruct -> Either Text cstruct
 combinationDefault votes =
     mergeCStructs $ allMinQuorumsOf votes
 
--- | This is straightforward and very inefficient implementation of
--- 'intersectingCombination'.
-intersectingCombinationDefault
-    :: (HasMembers, Command cstruct cmd, QuorumIntersectionFamily qf)
-    => Votes qf cstruct -> Either Text cstruct
-intersectingCombinationDefault =
-    mergeCStructs . filter (not . null) . getQuorumsSubIntersections
+-- | Allows to get decision taken about single policy.
+-- This is only 'Getter', not 'Lens', because changing decision on single policy
+-- is not always possible without inducing a conflict.
+class AtCmd cstruct where
+    atCmd :: RawCmd cstruct -> Getter cstruct (Maybe AcceptanceType)
+
+class MayHaveProposerId rawcmd where
+    cmdProposerId :: rawcmd -> Maybe (ProcessId ProposerTag)
+
+groupCmdByProposerId
+    :: MayHaveProposerId rawcmd
+    => (a -> rawcmd) -> [a] -> [(ProcessId ProposerTag, NonEmpty a)]
+groupCmdByProposerId toCmd items =
+    let pidNItems =
+            [ (pid, one item)
+            | item <- items, Just pid <- pure $ cmdProposerId (toCmd item)
+            ]
+    in  M.toList $ M.fromListWith (Semi.<>) pidNItems
+
+-- | Declares that implementation of cstruct has many other practically useful
+-- instances.
+-- Generally, all this constraints are needed for distributed protocol.
+class ( CStruct cstruct
+      , Each [Show, Buildable] [cstruct, RawCmd cstruct]
+      , Ord (RawCmd cstruct)
+      , Eq cstruct  -- TODO: remove?
+      , MessagePack cstruct
+      , MessagePack (RawCmd cstruct)
+      , Acceptance (RawCmd cstruct) ~ Cmd cstruct
+      , AtCmd cstruct
+      , Typeable cstruct
+      , MayHaveProposerId (RawCmd cstruct)
+      ) =>
+      PracticalCStruct cstruct
+
+
+-- | Contains type of cstruct, used to be passed to 'MonadicMark'.
+data CStructType cstruct
+
+-- | Monad transformer to bind cstruct type to monadic stack.
+type CStructDecl store = MonadicMark (CStructType store)
+
+-- | Get type of cstruct in given monad.
+type DeclaredCStruct m = DeclaredMark CStructType m
+
+-- | Get type of command in given monad.
+type DeclaredCmd m = Cmd (DeclaredCStruct m)
+
+-- | Get type of raw command in given monad.
+type DeclaredRawCmd m = RawCmd (DeclaredCStruct m)

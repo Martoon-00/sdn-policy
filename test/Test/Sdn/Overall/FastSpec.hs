@@ -13,8 +13,9 @@ import           Test.Hspec.QuickCheck       (prop)
 import           Test.QuickCheck             (Small (..), arbitrary, forAll, suchThat)
 
 import           Sdn.Base
+import qualified Sdn.Extra.Schedule          as S
+import           Sdn.Policy.Fake
 import           Sdn.Protocol
-import qualified Sdn.Schedule                as S
 import           Test.Sdn.Overall.Launcher
 import           Test.Sdn.Overall.Properties
 
@@ -24,11 +25,12 @@ spec = do
 
     describe "no recovery" $ do
         prop "normal condition" $
-            testLaunchF def
+            testLaunchF $ def
             { testProperties =
-                eventually (recoveryWasUsed False)
-              : basicProperties
+                  eventually (recoveryWasUsed False)
+                : basicProperties
             }
+
         prop "acceptor unavailable" $
             testLaunchF def
             { testSettings = def
@@ -44,9 +46,9 @@ spec = do
     describe "recovery" $ do
         prop "1 ballot, many conflicting policies" $
             forAll (arbitrary `suchThat` (>= 5)) $
-                \(Small n) ->
+                \(Small n :: Small Word) ->
             testLaunchF def
-            { testSettings = def
+            { testSettings = defTopologySettings
                 { topologyProposalSchedule = do
                       S.times n
                       S.generate (BadPolicy <$> arbitrary)

@@ -7,6 +7,7 @@
 module Sdn.Base.Types where
 
 import           Control.Lens        (Wrapped (..))
+import           Data.Binary         (Binary)
 import           Data.Default        (Default (..))
 import           Data.MessagePack    (MessagePack)
 import qualified Data.Text.Buildable
@@ -30,10 +31,22 @@ instance Arbitrary BallotId where
     arbitrary = BallotId . getNonNegative <$> arbitrary
 
 
--- | Identifier of acceptor.
-newtype AcceptorId = AcceptorId Int
-    deriving (Eq, Ord, Show, Enum, Num, MessagePack, Real, Integral)
+-- | Identifier of abstract process.
+newtype ProcessId pt = ProcessId Int
+    deriving (Eq, Ord, Enum, Show, Num, MessagePack, Binary, Real, Integral)
 
-instance Buildable AcceptorId where
-    build (AcceptorId i) = bprint ("acceptor #"%build) i
+instance Buildable (Proxy pt) => Buildable (ProcessId pt) where
+    build (ProcessId i) = bprint (build%" #"%build) (Proxy @pt) i
 
+data GeneralProcessTag
+data ProposerTag
+data LeaderTag
+data AcceptorTag
+data LearnerTag
+
+type AcceptorId = ProcessId AcceptorTag
+
+instance Buildable (Proxy AcceptorTag) where
+    build _ = "acceptor"
+
+type GeneralProcessId = ProcessId GeneralProcessTag

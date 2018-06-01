@@ -6,8 +6,11 @@
 module Sdn.Protocol.Classic.Topology where
 
 import           Data.Default                 (Default (..))
+import           Universum
 
+import           Sdn.Extra.Util               (hoistItem)
 import           Sdn.Protocol.Classic.Phases
+import           Sdn.Protocol.Common.Phases   (simpleProposal)
 import           Sdn.Protocol.Common.Topology
 import           Sdn.Protocol.Processes
 import           Sdn.Protocol.Versions        (Classic)
@@ -20,12 +23,10 @@ instance Default (CustomTopologySettings Classic) where
     def = ClassicTopologySettingsPart
 
 
-instance HasVersionTopologyActions Classic where
-    versionTopologyActions _ =
-        TopologyActions
-        { proposeAction = propose
-        , startBallotAction = phase1a
-        , leaderListeners =
+instance HasVersionProtocolListeners Classic where
+    versionProtocolListeners ProtocolListenersSettings{..} =
+        ProtocolListeners
+        { leaderListeners =
             [ listener @Leader rememberProposal
             , listener @Leader phase2a
             ]
@@ -34,7 +35,16 @@ instance HasVersionTopologyActions Classic where
             , listener @Acceptor phase2b
             ]
         , learnerListeners =
-            [ listener @Learner learn
+            [ listener @Learner $ learn callback
             ]
         }
+      where
+        callback = hoistItem lift listenersLearningCallback
 
+instance HasVersionTopologyActions Classic where
+    versionTopologyActions _ =
+        TopologyActions
+        { proposeAction = simpleProposal (propose . one)
+        , startBallotAction = phase1a
+        , topologyListeners = versionProtocolListeners def
+        }

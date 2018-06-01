@@ -1,10 +1,11 @@
-{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE Rank2Types   #-}
+{-# LANGUAGE TypeFamilies #-}
 
 -- | Various useful properties for the protocol.
 
 module Test.Sdn.Overall.Properties.Protocol where
 
-import           Control.Lens                     (Prism', has)
+import           Control.Lens                     (Prism', has, traversed)
 import           Control.Monad.Error.Class        (throwError)
 import qualified Data.Map                         as M
 import qualified Data.Set                         as S
@@ -12,17 +13,18 @@ import           Formatting                       (build, sformat, text, (%))
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra                        (listF)
+import           Sdn.Extra                        (listF, viewListOf)
+import           Sdn.Policy.Fake
 import           Sdn.Protocol
 import           Test.Sdn.Overall.Properties.Util
 
 
 -- * Property primitives
 
-proposedPoliciesWereLearned :: PropertyChecker pv
-proposedPoliciesWereLearned AllStates{..} = do
-    let proposed's = _proposerProposedPolicies proposerState
-    let learned's = _learnerLearned <$> learnersStates
+proposedPoliciesWereLearned :: PropertyChecker pv Configuration
+proposedPoliciesWereLearned = do
+    proposed's <- view $ proposerState . proposerProposedPolicies
+    learned's <- viewListOf $ learnersStates . traversed . learnerLearned
 
     forM_ proposed's $ \p ->
         forM_ (zip [1..] learned's) $ \(learnerId, learned) ->
@@ -33,11 +35,11 @@ proposedPoliciesWereLearned AllStates{..} = do
         throwError $
         sformat ("Proposed "%build%" wasn't leart by learner "%build) p li
 
-learnedPoliciesWereProposed :: PropertyChecker pv
-learnedPoliciesWereProposed AllStates{..} = do
-    let proposed's = _proposerProposedPolicies proposerState
+learnedPoliciesWereProposed :: PropertyChecker pv Configuration
+learnedPoliciesWereProposed = do
+    proposed's <- view $ proposerState . proposerProposedPolicies
     let validOutcomes = S.fromList $ [Accepted, Rejected] <*> proposed's
-    let learned's = _learnerLearned <$> learnersStates
+    learned's <- viewListOf $ learnersStates . traversed . learnerLearned
     forM_ (zip [1..] learned's) $ \(learnerId, learned) ->
         forM_ learned $ \l ->
             unless (l `S.member` validOutcomes) $ failProp l learnerId
@@ -46,19 +48,19 @@ learnedPoliciesWereProposed AllStates{..} = do
         throwError $
         sformat ("Learned "%build%" by "%build%" was never proposed") p li
 
-learnersAgree :: PropertyChecker pv
-learnersAgree AllStates{..} = do
-    let learned = _learnerLearned <$> learnersStates
-    l :| ls <- maybe (Left "No learners") Right $ nonEmpty learned
+learnersAgree :: PropertyChecker pv Configuration
+learnersAgree = do
+    learned <- viewListOf $ learnersStates . traversed . learnerLearned
+    l :| ls <- maybe (throwError "No learners") pure $ nonEmpty learned
     forM_ ls $ \l' ->
-        when (l /= l') $ Left "learners disagree"
+        when (l /= l') $ throwError "learners disagree"
 
 -- | Checks that number of learned policies matches predicate.
 numberOfLearnedPolicies :: (Prism' (Acceptance Policy) a)
                         -> (Word -> Bool)
-                        -> PropertyChecker pv
-numberOfLearnedPolicies predicate cmp AllStates{..} = do
-    let learned's = _learnerLearned <$> learnersStates
+                        -> PropertyChecker pv Configuration
+numberOfLearnedPolicies predicate cmp = do
+    learned's <- viewListOf $ learnersStates . traversed . learnerLearned
     forM_ (zip [1..] learned's) $ \(learnerId, learned) -> do
         let fit = filter (has predicate) $ toList learned
             ok = cmp $ fromIntegral (length fit)
@@ -69,22 +71,26 @@ numberOfLearnedPolicies predicate cmp AllStates{..} = do
         sformat ("Unexpected number of learned policies for learner "%build
                 %", but "%build%" are present:"%build) li (length l) l
 
-recoveryWasUsed :: Bool -> PropertyChecker pv
-recoveryWasUsed used AllStates{..} =
-    let recoveries = _leaderRecoveryUsed leaderState
-    in  unless (null recoveries /= used) $
-            failProp recoveries
+recoveryWasUsed :: PracticalCStruct cstruct => Bool -> PropertyChecker pv cstruct
+recoveryWasUsed shouldBeUsed = do
+    -- in Fast version all proposals which leader receives occur due to recovery
+    recoveries <- view $ leaderState . leaderProposedPolicies . ballotProposedCommands
+    let recoveryOccured = not $ all null recoveries
+    unless (recoveryOccured == shouldBeUsed) $
+        failProp recoveries
   where
     failProp recoveries =
         throwError $
         sformat ("Got recoveries at ballots "%listF ", " build
                 %", despite they were "%text%"expected")
-            (M.keys recoveries) (if used then "" else "un")
+            (M.keys recoveries) (if shouldBeUsed then "" else "un")
 
 
 -- * Properties groups
 
-basicProperties :: MonadIO m => [ProtocolProperty pv m]
+basicProperties
+    :: (MonadIO m, DeclaredCStruct m ~ Configuration)
+    => [ProtocolProperty pv m]
 basicProperties =
     [ eventually proposedPoliciesWereLearned
     , invariant learnedPoliciesWereProposed

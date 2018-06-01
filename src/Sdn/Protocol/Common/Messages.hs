@@ -1,6 +1,7 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE TemplateHaskell     #-}
-{-# LANGUAGE TypeFamilies        #-}
+{-# LANGUAGE AllowAmbiguousTypes  #-}
+{-# LANGUAGE TemplateHaskell      #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 -- | Common for messages of various protocols.
 
@@ -11,6 +12,7 @@ module Sdn.Protocol.Common.Messages
     ) where
 
 import           Control.TimeWarp.Logging (LoggerName)
+import           Data.MessagePack
 import qualified Data.Text.Buildable
 import           Formatting               (bprint, build, (%))
 import           Universum
@@ -23,13 +25,18 @@ class HasMessageShortcut msg where
     messageShortcut :: LoggerName
 
 
-newtype CommittedMsg = CommittedMsg (NonEmpty Policy)
+-- | Message sent by learner to proposer in order to acknowledge that value has
+-- been learned.
+data CommittedMsg cstruct = CommittedMsg (NonEmpty (RawCmd cstruct))
     deriving (Generic)
 
-instance Buildable CommittedMsg where
+instance Buildable (RawCmd cstruct) =>
+         Buildable (CommittedMsg cstruct) where
     build (CommittedMsg p) = bprint ("Policies commission message "%listF ", " build) p
-instance HasMessageShortcut CommittedMsg where
+
+instance HasMessageShortcut (CommittedMsg cstruct) where
     messageShortcut = "commited"
 
-declareMessage ''CommittedMsg
+instance MessagePack (RawCmd cstruct) => MessagePack (CommittedMsg cstruct)
 
+declareMessage 1 ''CommittedMsg
