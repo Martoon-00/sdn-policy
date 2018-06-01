@@ -29,7 +29,6 @@ Most intersting modules are:
 
 - [x] Classic Generalized Paxos
 - [x] Fast Generalized Paxos (where profit from commuting policies comes into play)
-- [ ] Leader selection (?)
 
 ## Launch
 
