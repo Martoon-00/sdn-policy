@@ -12,7 +12,7 @@ import qualified Control.TimeWarp.Rpc        as D
 import           Control.TimeWarp.Timed      (Millisecond, Second, hour, interval, sec)
 import           Data.Default
 import           Data.Typeable               (typeRep)
-import           Test.Hspec                  (Spec, describe, pendingWith)
+import           Test.Hspec                  (Spec, describe)
 import           Test.Hspec.QuickCheck       (prop)
 import           Test.QuickCheck             (Positive (..), Small (..), arbitrary, oneof,
                                               (==>))
@@ -104,7 +104,6 @@ spec = describe "common" $ do
                 }
 
             prop "temporaly no quorum of acceptors is accessible" $
-                -- pendingWith "requires policies re-proposals"
                 testLaunch @pv def
                 { testDelays =
                     D.forAddressesList (processAddress . Acceptor <$> [1, 2]) $
@@ -116,11 +115,6 @@ spec = describe "common" $ do
                     , topologyProposerInsistance = \balSchedule -> balSchedule
                     }
                 }
-
-            prop "highly interleaving ballots" $
-                -- this may be problematic with current implementation
-                -- because values from old ballots won't be leart
-                pendingWith "requires dicussion"
 
           -- bunch of complex scenarious involving introduction of many policies
           describe "real life cases" $
