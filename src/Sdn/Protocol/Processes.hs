@@ -202,5 +202,5 @@ instance Process Learner where
         Identity $ learnersAddrInfos getMembersAddresses id
     processesNumber = learnersNum getMembers
     takeAllProcesses =
-        let n = fromIntegral $ acceptorsNum getMembers
+        let n = fromIntegral $ learnersNum getMembers
         in  map Learner $ fromList [1..n]

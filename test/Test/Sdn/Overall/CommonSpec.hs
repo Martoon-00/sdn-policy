@@ -113,6 +113,7 @@ spec = describe "common" $ do
                 , testSettings = def
                     { topologyLifetime = interval 30 sec
                     , topologyBallotsSchedule = S.periodic (interval 10 sec)
+                    , topologyProposerInsistance = \balSchedule -> balSchedule
                     }
                 }
 
