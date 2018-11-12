@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/env zsh
 set -e
 set -o pipefail
 
@@ -51,9 +51,10 @@ done
 shift $((OPTIND-1))
 
 # Set shell used inside subnet
-if [[ $SHELL == '' ]]; then
-    SHELL="zsh"
+if [[ $NS_SHELL == '' ]]; then
+    NS_SHELL="zsh"
 fi
+SHELL=$NS_SHELL
 
 netns="mem$no"  # name of namespace
 eth="mem$no"  # name of interface into namespace
@@ -96,7 +97,8 @@ fi
 
 clear
 echo "== Entered virtual network $no =="
-ip netns exec $netns $SHELL \
+export ZSH_DISABLE_COMPFIX=true
+ip netns exec $netns $NS_SHELL \
     || :  # even if shell exists with nonzero, do not fail this script
 
 clear
