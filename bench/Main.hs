@@ -17,9 +17,8 @@ import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra                (atomicModifyIORefS, declareMemStorage,
-                                           declareMonadicMark, ioRefMemStorageUnsafe,
-                                           logInfo, runNoErrorReporting,
-                                           setDropLoggerName)
+                                           declareMonadicMark, ioRefMemStorageUnsafe, logInfo,
+                                           runNoErrorReporting, setDropLoggerName)
 import qualified Sdn.Extra.Schedule       as S
 import           Sdn.Policy.Fake
 import           Sdn.Protocol

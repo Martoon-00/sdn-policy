@@ -16,10 +16,9 @@
 module Sdn.Extra.Util where
 
 import           Control.Exception           (Handler (..), throw)
-import           Control.Lens                (Getting, Iso, Iso', LensRules, Wrapped (..),
-                                              from, has, involuted, iso, lens, lensField,
-                                              lensRules, makeLenses, mappingNamer, review,
-                                              toListOf)
+import           Control.Lens                (Getting, Iso, Iso', LensRules, Wrapped (..), from,
+                                              has, involuted, iso, lens, lensField, lensRules,
+                                              makeLenses, mappingNamer, review, toListOf)
 import           Control.Monad.Base          (MonadBase (..))
 import           Control.Monad.Catch         (MonadCatch (..), MonadThrow (..))
 import           Control.Monad.Catch.Pure    (Catch, runCatch)
@@ -36,12 +35,13 @@ import qualified Data.Binary                 as Binary
 import qualified Data.ByteString.Lazy        as LBS
 import           Data.Coerce                 (coerce)
 import           Data.MessagePack            (MessagePack (..), Object (..))
+import           Data.Reflection             (Given, give, given)
 import qualified Data.Set                    as S
 import qualified Data.Text.Buildable
 import           Data.Text.Lazy.Builder      (Builder)
 import           Data.Time.Units             (Millisecond, Second)
-import           Formatting                  (Format, bprint, build, later, sformat,
-                                              shortest, string, (%))
+import           Formatting                  (Format, bprint, build, later, sformat, shortest,
+                                              string, (%))
 import           Formatting.Internal         (Format (..))
 import           GHC.Exts                    (IsList (..))
 import qualified GHC.Exts                    as Exts

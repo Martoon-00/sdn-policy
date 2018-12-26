@@ -10,11 +10,10 @@ module Sdn.Protocol.Common.Node where
 
 import           Control.Monad.Reader         (withReaderT)
 import           Control.Monad.Trans.Control  (embed_)
-import           Control.TimeWarp.Logging     (WithNamedLogger, modifyLoggerName,
-                                               usingLoggerName)
-import           Control.TimeWarp.Rpc         (Dict (..), Method, Port, hoistMethod,
-                                               localhost, pickEvi, runMsgPackRpc, serve,
-                                               withExtendedRpcOptions)
+import           Control.TimeWarp.Logging     (WithNamedLogger, modifyLoggerName, usingLoggerName)
+import           Control.TimeWarp.Rpc         (Dict (..), Method, Port, hoistMethod, localhost,
+                                               pickEvi, runMsgPackUdpOpts, serve,
+                                               udpMessageSizeLimit, withExtendedRpcOptions)
 import           Control.TimeWarp.Timed       (fork_, interval, sec)
 import           Data.Coerce                  (coerce)
 import           Data.Default                 (Default (..))
@@ -29,12 +28,10 @@ import qualified Sdn.Extra.Schedule           as S
 import           Sdn.Extra.Util               (declareMonadicMark, prepareToAct)
 import qualified Sdn.Protocol.Classic         as Classic
 import           Sdn.Protocol.Common.Context
-import           Sdn.Protocol.Common.Phases   (BatchingSettings (..),
-                                               LearningCallback (..), batchingProposal)
-import           Sdn.Protocol.Common.Topology (ProcessEnv, ProcessM,
-                                               ProtocolListeners (..),
-                                               ProtocolListenersSettings (..),
-                                               proposerListeners,
+import           Sdn.Protocol.Common.Phases   (BatchingSettings (..), LearningCallback (..),
+                                               batchingProposal)
+import           Sdn.Protocol.Common.Topology (ProcessEnv, ProcessM, ProtocolListeners (..),
+                                               ProtocolListenersSettings (..), proposerListeners,
                                                versionProtocolListeners)
 import qualified Sdn.Protocol.Fast            as Fast
 import           Sdn.Protocol.Processes
@@ -128,14 +125,14 @@ runProtocolNode
     -> (ProtocolHandlers cstruct -> IO ())
     -> IO ()
 runProtocolNode ProtocolOptions{..} curProcessId ProtocolCallbacks{..} fillProtocolHandlers = do
-    let runLogging = runNoErrorReporting . usingLoggerName mempty
+    let runLogging = runNoErrorReporting . usingLoggerName mempty . setDropLoggerName
 
     let learnersSettings = def
             { listenersLearningCallback = LearningCallback $ liftIO . protocolOnLearned }
 
     -- environment initialization
-    runMsgPackRpc $ withExtendedRpcOptions (pickEvi Dict) $
-    -- runMsgPackUdpOpts def{ udpMessageSizeLimit = 15000 } $
+    -- runMsgPackRpc $ withExtendedRpcOptions (pickEvi Dict) $
+    runMsgPackUdpOpts def{ udpMessageSizeLimit = 15000 } $ withExtendedRpcOptions (pickEvi Dict) $
         runListenersCacheFor (== curPort) $
         runLogging $
         declareMemStorage ioRefMemStorage $
@@ -181,5 +178,3 @@ runProtocolNode ProtocolOptions{..} curProcessId ProtocolCallbacks{..} fillProto
          , acceptorsAddrInfos = protocolPorts . fromIntegral
          , learnersAddrInfos = protocolPorts . fromIntegral
          }
-
-
