@@ -25,13 +25,16 @@ import           Universum
 import           Sdn.Base.Quorum
 import           Sdn.Base.Settings
 import           Sdn.Base.Types
-import           Sdn.Extra.Util       (DeclaredMark, Decomposable (..), MonadicMark (..),
-                                       listF)
+import           Sdn.Extra.Util       (DeclaredMark, Decomposable (..), MonadicMark (..), listF)
 
 -- * Conflict
 
 -- | "Conflict" relationship between two entities.
--- It's enough to define one of 'conflict' and 'agree' functions.
+-- Note that methods of this typeclass should work in @O(1)@, the opposite
+-- would lead to dramatically reduced performance.
+--
+-- TODO: actually I observe 60% of time being spent here for fake policies,
+-- would be nice to do something with it one day.
 class Conflict a b where
     -- | Whether entities conflict, with reason
     conflictReason :: a -> b -> Either Text ()
@@ -47,6 +50,8 @@ class Conflict a b where
     -- | The opposite to 'conflict'.
     agrees :: a -> b -> Bool
     agrees = not ... conflicts
+
+    {-# MINIMAL conflictReason | conflicts | agrees #-}
 
 -- | Whether cstruct conflicts with itself.
 contradictive :: Conflict a a => a -> Bool

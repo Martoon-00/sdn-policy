@@ -72,9 +72,9 @@ main = do
                 forM_ [1..3000 :: Int] $ \p ->
                     push (GoodPolicy $ fromIntegral p)
         , topologyProposerInsistance = \_ -> mempty  -- S.repeating 3 (interval 1 sec)
-        , topologyBallotsSchedule = S.periodic (interval 1 sec)
+        , topologyBallotsSchedule = S.periodic (interval 10 sec)
         , topologyProposalBatchSettings = Just proposalBatchSettings
-        , topologyLifetime = interval 5 sec
+        , topologyLifetime = interval 10 sec
         , topologyCustomSettings = FastTopologySettingsPart{}
         }
 
@@ -83,4 +83,3 @@ main = do
         { batchMaxSize = 10
         , batchMaxJitter = interval 10 ms
         }
-

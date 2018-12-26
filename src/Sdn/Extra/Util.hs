@@ -444,3 +444,15 @@ foldlF' f e l = foldl' (flip f) l e
 
 viewListOf :: MonadReader s m => Getting (Endo [a]) s a -> m [a]
 viewListOf = reader . toListOf
+
+-- | Carries whether asserts in code are enabled.
+type KnowsAsserts = Given AssertsOn
+newtype AssertsOn = AssertsOn Bool
+
+-- | Whether asserts are enabled.
+assertsOn :: KnowsAsserts => Bool
+assertsOn = let AssertsOn enabled = given in enabled
+
+-- | State asserts being enabled or disabled.
+usingAsserts :: Bool -> (KnowsAsserts => a) -> a
+usingAsserts = give . AssertsOn
