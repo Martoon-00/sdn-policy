@@ -32,8 +32,8 @@ module Sdn.Protocol.Common.Context.Data
     , acceptOrRejectIntoStoreS
     ) where
 
-import           Control.Lens           (At (..), Index, IxValue, Ixed, makeLenses, (.=),
-                                         (<<.=))
+import           Control.Exception      (assert)
+import           Control.Lens           (At (..), Index, IxValue, Ixed, makeLenses, (.=), (<<.=))
 import           Data.Default           (Default (..))
 import qualified Data.Set               as S
 import qualified Data.Text.Buildable
@@ -124,6 +124,7 @@ data CStructStore cstruct = CStructStore
       -- Currently it is updated by leader only, since it does the work of
       -- collecting cstructs of acceptors and judging about conflicting/fixated
       -- policies.
+
     , _storedUnstableCmds :: Set (Cmd cstruct)
       -- ^ These are commands which have been proposed and were somehow applied
       -- by local node. Still, majority may make another decision, thus
@@ -134,6 +135,10 @@ data CStructStore cstruct = CStructStore
       -- Other nodes always see sum of core and unstable sets stored at acceptor,
       -- see 'totalCStruct'. Generally, these sets are separated in order to,
       -- when leader extends cstruct, find and remove conficting policies.
+
+    , _storedTotalCStruct :: cstruct
+      -- ^ Exact union of '_storedCoreCStruct' and '_storedUnstableCmds',
+      -- for performance purposes.
     }
 
 makeLenses ''CStructStore
@@ -151,7 +156,7 @@ instance (Buildable cstruct, Buildable (Cmd cstruct), Ord (Cmd cstruct)) =>
             _storedUnstableCmds
 
 instance Default cstruct => Default (CStructStore cstruct) where
-    def = CStructStore def def
+    def = CStructStore def def def
 
 -- | Safe getter for core.
 coreCStruct :: CStructStore cstruct -> cstruct
@@ -159,9 +164,18 @@ coreCStruct = _storedCoreCStruct
 
 -- | Construct sum of core and unstable sets.
 totalCStruct :: PracticalCStruct cstruct => CStructStore cstruct -> cstruct
-totalCStruct CStructStore{..} =
-    either (error "core and unstable sets are contradictory!") identity $
-    foldlM (flip addCommand) _storedCoreCStruct (S.toList _storedUnstableCmds)
+totalCStruct = _storedTotalCStruct
+    -- either (error "core and unstable sets are contradictory!") identity $
+    -- foldlM (flip addCommand) _storedCoreCStruct (S.toList _storedUnstableCmds)
+
+-- | Recalculate cached total cstruct after one of other fields change.
+reevalTotalCStruct
+    :: (CStruct cstruct, HasCallStack)
+    => CStructStore cstruct -> CStructStore cstruct
+reevalTotalCStruct store@CStructStore{..} =
+    store{ _storedTotalCStruct = foldl' attachUnsafe _storedCoreCStruct _storedUnstableCmds  }
+  where
+    attachUnsafe cstruct cmd = either error identity $ addCommand cmd cstruct
 
 -- | Add a policy to unstable set.
 -- If core policy already has this policy, with same acceptance or not,
@@ -172,7 +186,8 @@ addUnstableCmd
 addUnstableCmd cmd store =
     if totalCStruct store `conflicts` cmd
         then (False, store)
-        else (True, store & storedUnstableCmds . at cmd . presence .~ True)
+        else (True, store & storedUnstableCmds . at cmd . presence .~ True
+                          & storedTotalCStruct %~ either error identity . addCommand cmd)
 
 -- | Multiple-version of 'addUnstableCmd'. Returns list of successfully added commands.
 addUnstableCmds
@@ -199,6 +214,7 @@ extendCoreCStruct newCStruct store = do
            & storedCoreCStruct .~ newCStruct
            & storedUnstableCmds %~ S.filter
                (\cmd -> all (agrees cmd) diff && all (/= cmd) diff)
+           & reevalTotalCStruct
 
 -- | Apply policy to store somehow, and return how it was applied.
 -- Policy will be added to unstable set.
@@ -211,5 +227,8 @@ acceptOrRejectIntoStoreS
 acceptOrRejectIntoStoreS policy = do
     total <- gets totalCStruct
     let (policyAcceptance, _) = acceptOrRejectCommand policy total
+    modify $ \store ->
+        let (ok, store') = addUnstableCmd policyAcceptance store
+        in assert ok store'
     storedUnstableCmds . at policyAcceptance . presence .= True
     return policyAcceptance
