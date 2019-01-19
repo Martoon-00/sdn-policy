@@ -25,10 +25,12 @@ library
                        Sdn.Extra.Util
                        Sdn.Policy
                        Sdn.Policy.Fake
+                       Sdn.Policy.OpenFlow
                        Sdn.Protocol
                        Sdn.Protocol.Common
                        Sdn.Protocol.Classic
                        Sdn.Protocol.Fast
+                       Sdn.Protocol.Node
   other-modules:       Sdn.Base.CStruct
                        Sdn.Base.Error
                        Sdn.Base.Settings
@@ -38,7 +40,6 @@ library
                        Sdn.Protocol.Classic.Messages
                        Sdn.Protocol.Classic.Phases
                        Sdn.Protocol.Classic.Topology
-                       Sdn.Protocol.Common.Node
                        Sdn.Protocol.Common.Messages
                        Sdn.Protocol.Common.Phases
                        Sdn.Protocol.Common.Topology
@@ -49,6 +50,8 @@ library
                        Sdn.Protocol.Fast.Messages
                        Sdn.Protocol.Fast.Phases
                        Sdn.Protocol.Fast.Topology
+                       Sdn.Protocol.Node.Launcher
+                       Sdn.Protocol.Node.Options
                        Sdn.Protocol.Processes
                        Sdn.Protocol.Versions
   build-depends:       base >= 4.7 && < 5
@@ -68,6 +71,8 @@ library
                      , monad-stm
                      , msgpack
                      , mtl
+                     , openflow
+                     , optparse-applicative
                      , reflection
                      , spoon
                      , stm
@@ -184,11 +189,50 @@ executable bench
                        ExplicitForAll
   ghc-options:         -Wall
 
+executable bench-distr
+  hs-source-dirs:      bench-distr
+  main-is:             Main.hs
+  other-modules:       Options
+  ghc-options:         -threaded -O2 -rtsopts -with-rtsopts=-N
+  build-depends:       base
+                     , data-default
+                     , formatting
+                     , lens
+                     , mtl
+                     , openflow
+                     , optparse-applicative
+                     , random
+                     , sdn-policy
+                     , text-format
+                     , time-units
+                     , time-warp
+                     , QuickCheck
+                     , universum
+  default-language:    Haskell2010
+  default-extensions:  FlexibleContexts
+                       FlexibleInstances
+                       DeriveGeneric
+                       OverloadedStrings
+                       TypeOperators
+                       ConstraintKinds
+                       LambdaCase
+                       MultiParamTypeClasses
+                       MultiWayIf
+                       NoImplicitPrelude
+                       OverloadedStrings
+                       ScopedTypeVariables
+                       TupleSections
+                       TypeApplications
+                       TypeOperators
+                       RecordWildCards
+                       ViewPatterns
+                       ExplicitForAll
+  ghc-options:         -Wall
+
 executable controller
   hs-source-dirs:      controller
   main-is:             Main.hs
   other-modules:       Options
-                       Sdn.Policy.OpenFlow
   ghc-options:         -threaded -O2 -rtsopts -with-rtsopts=-N
   build-depends:       base
                      , binary
@@ -252,7 +296,7 @@ test-suite sdn-policy-test
                      , formatting
                      , hspec
                      , hspec-core
-                     , MonadRandom 
+                     , MonadRandom
                      , monad-control
                      , mtl
                      , lens

@@ -30,7 +30,7 @@ import           Control.TimeWarp.Logging    (WithNamedLogger)
 import           Control.TimeWarp.Rpc        (MonadRpc (..))
 import qualified Control.TimeWarp.Rpc        as Rpc
 import           Control.TimeWarp.Timed      (Microsecond, MonadTimed (..), ThreadId,
-                                              TimedTOptions (..))
+                                              TimedTOptions (..), for)
 import qualified Data.Binary                 as Binary
 import qualified Data.ByteString.Lazy        as LBS
 import           Data.Coerce                 (coerce)
@@ -39,7 +39,7 @@ import           Data.Reflection             (Given, give, given)
 import qualified Data.Set                    as S
 import qualified Data.Text.Buildable
 import           Data.Text.Lazy.Builder      (Builder)
-import           Data.Time.Units             (Millisecond, Second)
+import           Data.Time.Units             (Millisecond, Minute, Second, TimeUnit, convertUnit)
 import           Formatting                  (Format, bprint, build, later, sformat, shortest,
                                               string, (%))
 import           Formatting.Internal         (Format (..))
@@ -456,3 +456,30 @@ assertsOn = let AssertsOn enabled = given in enabled
 -- | State asserts being enabled or disabled.
 usingAsserts :: Bool -> (KnowsAsserts => a) -> a
 usingAsserts = give . AssertsOn
+
+-- | Read a time with time measure.
+-- Example: @12s@, @30000mcs@.
+readTime :: TimeUnit unit => String -> Maybe unit
+readTime = asum . sequence
+    [ fmap convertUnit . readMaybe @Second
+    , fmap convertUnit . readMaybe @Millisecond
+    , fmap convertUnit . readMaybe @Microsecond
+    , fmap convertUnit . readMaybe @Minute
+    ]
+
+-- | Perform submissions staying as close to the given submissions period
+-- as possible.
+submitEvenly :: MonadTimed m => Microsecond -> m () -> m a
+submitEvenly period action = do
+    startTime <- currentTime
+    go startTime (0 :: Int)
+  where
+    go startTime submitted = do
+        time <- currentTime
+        let expectedSubmissions =
+                (fromIntegral $ (time - startTime) `div` period) + 1
+            missingSubmissions = expectedSubmissions - submitted
+        replicateM_ missingSubmissions action
+
+        wait (for period)
+        go startTime expectedSubmissions

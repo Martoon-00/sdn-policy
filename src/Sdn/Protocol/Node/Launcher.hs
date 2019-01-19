@@ -6,18 +6,19 @@
 
 -- | Running processes required for single node.
 
-module Sdn.Protocol.Common.Node where
+module Sdn.Protocol.Node.Launcher where
 
 import           Control.Monad.Reader         (withReaderT)
 import           Control.Monad.Trans.Control  (embed_)
 import           Control.TimeWarp.Logging     (WithNamedLogger, modifyLoggerName, usingLoggerName)
-import           Control.TimeWarp.Rpc         (Dict (..), Method, Port, hoistMethod, localhost,
-                                               pickEvi, runMsgPackUdpOpts, serve,
-                                               udpMessageSizeLimit, withExtendedRpcOptions)
+import           Control.TimeWarp.Rpc         (Dict (..), Method, hoistMethod, localhost, pickEvi,
+                                               runMsgPackUdpOpts, serve, udpMessageSizeLimit,
+                                               withExtendedRpcOptions)
 import           Control.TimeWarp.Timed       (fork_, interval, sec)
 import           Data.Coerce                  (coerce)
 import           Data.Default                 (Default (..))
 import           Data.Tagged                  (Tagged (..), untag)
+import           System.Random                (mkStdGen)
 import           Universum
 
 import           Sdn.Base
@@ -28,28 +29,15 @@ import qualified Sdn.Extra.Schedule           as S
 import           Sdn.Extra.Util               (declareMonadicMark, prepareToAct)
 import qualified Sdn.Protocol.Classic         as Classic
 import           Sdn.Protocol.Common.Context
-import           Sdn.Protocol.Common.Phases   (BatchingSettings (..), LearningCallback (..),
-                                               batchingProposal)
+import           Sdn.Protocol.Common.Phases   (LearningCallback (..), batchingProposal)
 import           Sdn.Protocol.Common.Topology (ProcessEnv, ProcessM, ProtocolListeners (..),
                                                ProtocolListenersSettings (..), proposerListeners,
                                                versionProtocolListeners)
 import qualified Sdn.Protocol.Fast            as Fast
+import           Sdn.Protocol.Node.Options
 import           Sdn.Protocol.Processes
 import           Sdn.Protocol.Versions
-import           System.Random                (mkStdGen)
 
-
--- | Options assosiated with policies compoition protocol.
-data ProtocolOptions = ProtocolOptions
-    { protocolPorts             :: forall pt. ProcessId pt -> Port
-      -- ^ Port, with which given process which should participate in consensus protocol.
-    , protocolTotalProcesses    :: Int
-      -- ^ Overall number of controllers in network.
-    , protocolLeaderId          :: ProcessId LeaderTag
-      -- ^ Whether given controller is Paxos leader.
-      -- For now this thing will be hardcoded.
-    , protocolProposalsBatching :: BatchingSettings
-    }
 
 -- | Initiate some events in protocol.
 data ProtocolHandlers cstruct = ProtocolHandlers
@@ -119,12 +107,11 @@ inListenerM getter = inProcess getter . fmap (hoistMethod $ inProcess getter)
 runProtocolNode
     :: forall cstruct.
        (PracticalCStruct cstruct)
-    => ProtocolOptions
+    => NodeOptions
     -> GeneralProcessId
     -> ProtocolCallbacks cstruct
-    -> (ProtocolHandlers cstruct -> IO ())
-    -> IO ()
-runProtocolNode ProtocolOptions{..} curProcessId ProtocolCallbacks{..} fillProtocolHandlers = do
+    -> IO (ProtocolHandlers cstruct)
+runProtocolNode NodeOptions{..} curProcessId ProtocolCallbacks{..} = do
     let runLogging = runNoErrorReporting . usingLoggerName mempty . setDropLoggerName
 
     let learnersSettings = def
@@ -146,8 +133,6 @@ runProtocolNode ProtocolOptions{..} curProcessId ProtocolCallbacks{..} fillProto
             protocolShutdown <- pure $ return ()
             let protocolProcessId = curProcessId
 
-            liftIO $ fillProtocolHandlers ProtocolHandlers{..}
-
             when (protocolLeaderId == coerce curProcessId) $
                 fork_ $ S.runSchedule_ (mkStdGen 0) $ do
                     S.periodic (interval 10 sec)
@@ -164,6 +149,7 @@ runProtocolNode ProtocolOptions{..} curProcessId ProtocolCallbacks{..} fillProto
 
             fork_ $ serve curPort listeners
 
+            return ProtocolHandlers{..}
   where
      curPort = protocolPorts curProcessId
      members =

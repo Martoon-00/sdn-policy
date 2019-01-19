@@ -130,6 +130,19 @@ instance Arbitrary a => Arbitrary (Acceptance a) where
 
 instance MessagePack p => MessagePack (Acceptance p)
 
+-- * Installations and removals
+
+-- | Policy installation, removal or their acknowledge.
+data Command p
+    = InstallCmd p
+    | RemoveCmd p
+    | AckInstallCmd p
+    | AckRemoveCmd p
+
+instance Conflict p1 p2 => Conflict (Command p1) (Command p2) where
+    conflictReason (InstallCmd p1) (InstallCmd p2) = conflictReason p1 p2
+    conflictReason _ _                             = pass
+
 -- * Commands & cstructs
 
 -- | Defines basic operations with commands and cstructs.
@@ -170,7 +183,6 @@ class ( Conflict (Cmd cstruct) (Cmd cstruct)
         :: (HasMembers, QuorumFamily qf)
         => Votes qf cstruct -> Either Text cstruct
     combination = combinationDefault
-
 
 -- | 'CStruct', where commands are 'Acceptance's.
 type CStructA cstruct cmd = (CStruct cstruct, Cmd cstruct ~ Acceptance cmd)

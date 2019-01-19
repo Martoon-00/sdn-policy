@@ -7,20 +7,18 @@
 module Options
     ( ControllerOptions (..)
     , PlatformOptions (..)
-    , ProtocolOptions (..)
+    , NodeOptions (..)
     , ProcessId
 
     , getControllerOptions
     ) where
 
 import           Control.TimeWarp.Rpc (Port)
-import           Data.Time.Units
 import qualified Options.Applicative  as Opt
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra.Batching
-import           Sdn.Protocol.Common
+import           Sdn.Protocol.Node
 
 -- | Options assosiated to SDN controller itself.
 data PlatformOptions = PlatformOptions
@@ -32,21 +30,17 @@ data PlatformOptions = PlatformOptions
 data ControllerOptions = ControllerOptions
     { platformOptions :: PlatformOptions
       -- ^ Platform options.
-    , protocolOptions :: ProtocolOptions
+    , protocolOptions :: NodeOptions
       -- ^ Protocol options
     , curProcessId    :: GeneralProcessId
       -- ^ Identifier of given controller.
     }
 
-processPort :: Int -> ProcessId pt -> Port
-processPort startPort processId =
-    fromIntegral $ startPort + fromIntegral processId
-
 -- | Command-line parser of options
 controllerOptionsParser :: Opt.Parser ControllerOptions
 controllerOptionsParser = do
     platformOptions <- do
-        platformPorts <- fmap processPort . Opt.option Opt.auto $ mconcat
+        platformPorts <- fmap processSequentialPort . Opt.option Opt.auto $ mconcat
             [ Opt.long "controllers-start-port"
             , Opt.metavar "START-PORT"
             , Opt.help "Port, at which first process would listen to messages \
@@ -55,53 +49,7 @@ controllerOptionsParser = do
 
         return PlatformOptions{..}
 
-    protocolOptions <- do
-        startPort <- Opt.option Opt.auto $ mconcat
-            [ Opt.long "protocol-start-port"
-            , Opt.metavar "START-PORT"
-            , Opt.help "Port, with which first process would participate in \
-                        \consensus protocol. Other processes use sequentially next ports."
-            ]
-
-        protocolTotalProcesses <- Opt.option Opt.auto $ mconcat
-            [ Opt.short 'n'
-            , Opt.long "processes"
-            , Opt.metavar "NUM"
-            , Opt.help "How much controllers would participate."
-            ]
-
-        protocolLeaderId <- Opt.option (ProcessId <$> Opt.auto) $ mconcat
-            [ Opt.short 'l'
-            , Opt.long "leader"
-            , Opt.metavar "PROCESS-ID"
-            , Opt.help "Identifier of leader process. Should be manually \
-                       \specified for now."
-            , Opt.value 1
-            ]
-
-        protocolProposalsBatching <- do
-            batchMaxSize <- Opt.option Opt.auto $ mconcat
-                [ Opt.long "batch-size"
-                , Opt.metavar "NUM"
-                , Opt.help "How much proposals to collect before submitting \
-                           \them to consensus protocol."
-                , Opt.value 10
-                ]
-
-            batchMaxJitter <- fmap asMillis $ Opt.option Opt.auto $ mconcat
-                [ Opt.long "batch-jitter"
-                , Opt.metavar "MILLISECONDS"
-                , Opt.help "Maximal awaitance duration before submitting \
-                           \a batch of proposals to consensus protocol."
-                , Opt.value 10
-                ]
-
-            return BatchingSettings{..}
-
-        return ProtocolOptions
-            { protocolPorts = \pid -> processPort startPort pid
-            , ..
-            }
+    protocolOptions <- nodeOptionsParser
 
     curProcessId <- Opt.option (ProcessId <$> Opt.auto) $ mconcat
         [ Opt.short 'i'
@@ -111,8 +59,6 @@ controllerOptionsParser = do
         ]
 
     return ControllerOptions{..}
-  where
-    asMillis = convertUnit @Millisecond @_ . fromInteger
 
 -- | Command line interraction, options fetching.
 getControllerOptions :: IO ControllerOptions
@@ -127,4 +73,3 @@ getControllerOptions = Opt.execParser programInfo
     versionOption = Opt.infoOption
         "sdn-policies-0.2.0-fast"
         (Opt.long "version" <> Opt.help "Show version.")
-

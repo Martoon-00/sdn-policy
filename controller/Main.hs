@@ -6,7 +6,7 @@
 module Main where
 
 import           Control.Lens               (at, non', (.=), (<<%=), (<<.=), _Empty)
-import           Control.TimeWarp.Timed     (for, fork_, ms, runTimedIO, wait)
+import           Control.TimeWarp.Timed     (for, ms, runTimedIO, wait)
 import           Data.Coerce                (coerce)
 import qualified Data.Map                   as M
 import           Formatting                 (formatToString, shown, (%))
@@ -17,10 +17,10 @@ import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra.Util             (atomicModifyIORefS, decompose)
-import           Sdn.Protocol.Common
 
 import           Options
 import           Sdn.Policy.OpenFlow
+import           Sdn.Protocol.Node
 
 
 main :: IO ()
@@ -28,14 +28,10 @@ main = do
     ControllerOptions{..} <- getControllerOptions
 
     registeredCallbacks <- newIORef mempty
-    protocolHandlersVar <- newEmptyMVar
 
-    runTimedIO . fork_ . liftIO $
+    protocolHandlers <-
         runProtocolNode @Configuration protocolOptions curProcessId
             (protocolCallbacks registeredCallbacks)
-            (putMVar protocolHandlersVar)
-
-    protocolHandlers <- takeMVar protocolHandlersVar
 
     -- give some time for server to be brought up
     runTimedIO $ wait (for 20 ms)
@@ -128,4 +124,3 @@ messageHandler protocolAccess@(ProtocolHandlers{..}, _) sw = do
         other -> OF.handleHandshake onUnhandled sw other
 
     onUnhandled _ msg = putStrLn $ "Unhandled message from switch: " ++ show msg
-
