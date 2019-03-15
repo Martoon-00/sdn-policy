@@ -82,14 +82,14 @@ instance Buildable AcceptanceType where
         RejectedT -> "rejected"
 
 -- | Acception or denial of command.
-data Acceptance cmd
+data Decision cmd
     = Accepted cmd
     | Rejected cmd
     deriving (Eq, Ord, Show, Generic)
 
-makePrisms ''Acceptance
+makePrisms ''Decision
 
-instance Decomposable (Acceptance cmd) (AcceptanceType, cmd) where
+instance Decomposable (Decision cmd) (AcceptanceType, cmd) where
     decompose = \case
         Accepted cmd -> (AcceptedT, cmd)
         Rejected cmd -> (RejectedT, cmd)
@@ -98,37 +98,37 @@ instance Decomposable (Acceptance cmd) (AcceptanceType, cmd) where
         AcceptedT -> Accepted cmd
         RejectedT -> Rejected cmd
 
-acceptanceCmd :: Acceptance cmd -> cmd
+acceptanceCmd :: Decision cmd -> cmd
 acceptanceCmd = snd . decompose
 
-acceptanceType :: Acceptance cmd -> AcceptanceType
+acceptanceType :: Decision cmd -> AcceptanceType
 acceptanceType = fst . decompose
 
 type family UnAcceptance cmd where
-    UnAcceptance (Acceptance a) = a
+    UnAcceptance (Decision a) = a
 
 -- | Takes raw command.
 -- E.g. when cstruct is network configuration, then true command is
--- @Acceptance Policy@ (because @Configuration@ consists from them),
+-- @Decision Policy@ (because @Configuration@ consists from them),
 -- while form in which policies are proposed (@Policy@) is "raw" command.
 type RawCmd cstruct = UnAcceptance (Cmd cstruct)
 
 -- | Command rejection doesn't conflict with any other command.
-instance (Conflict a a, Eq a) => Conflict (Acceptance a) (Acceptance a) where
+instance (Conflict a a, Eq a) => Conflict (Decision a) (Decision a) where
     Accepted cmd1 `conflicts` Accepted cmd2 = conflicts cmd1 cmd2
     Accepted cmd1 `conflicts` Rejected cmd2 = cmd1 == cmd2
     Rejected cmd1 `conflicts` Accepted cmd2 = cmd1 == cmd2
     Rejected _ `conflicts` Rejected _ = False
 
-instance Buildable p => Buildable (Acceptance p) where
+instance Buildable p => Buildable (Decision p) where
     build = \case
         Accepted p -> bprint ("+ "%build) p
         Rejected p -> bprint ("xx "%build) p
 
-instance Arbitrary a => Arbitrary (Acceptance a) where
+instance Arbitrary a => Arbitrary (Decision a) where
     arbitrary = elements [Accepted, Rejected] <*> arbitrary
 
-instance MessagePack p => MessagePack (Acceptance p)
+instance MessagePack p => MessagePack (Decision p)
 
 -- * Installations and removals
 
@@ -185,12 +185,12 @@ class ( Conflict (Cmd cstruct) (Cmd cstruct)
     combination = combinationDefault
 
 -- | 'CStruct', where commands are 'Acceptance's.
-type CStructA cstruct cmd = (CStruct cstruct, Cmd cstruct ~ Acceptance cmd)
+type CStructA cstruct cmd = (CStruct cstruct, Cmd cstruct ~ Decision cmd)
 
 -- | Construct cstruct from single command.
 liftCommand
-    :: (CStruct cstruct, Cmd cstruct ~ Acceptance cmd)
-    => Acceptance cmd -> cstruct
+    :: (CStruct cstruct, Cmd cstruct ~ Decision cmd)
+    => Decision cmd -> cstruct
 liftCommand cmd =
     fromRight (error "Can't make up cstruct from single command") $
     addCommand cmd def
@@ -218,7 +218,7 @@ checkingConsistency x
 -- Returns acceptance/denial of command which fit and new cstruct.
 acceptOrRejectCommand
     :: CStructA cstruct cmd
-    => cmd -> cstruct -> (Acceptance cmd, cstruct)
+    => cmd -> cstruct -> (Decision cmd, cstruct)
 acceptOrRejectCommand cmd cstruct =
     case try Accepted of
         Right x -> x
@@ -233,13 +233,13 @@ acceptOrRejectCommand cmd cstruct =
 -- | 'State' version of 'acceptOrRejectCommand'.
 acceptOrRejectCommandS
     :: (Monad m, CStructA cstruct cmd)
-    => cmd -> StateT cstruct m (Acceptance cmd)
+    => cmd -> StateT cstruct m (Decision cmd)
 acceptOrRejectCommandS = state . acceptOrRejectCommand
 
 -- | 'acceptOrRejectCommand' for multiple commands.
 acceptOrRejectCommands
     :: CStructA cstruct cmd
-    => [cmd] -> cstruct -> ([Acceptance cmd], cstruct)
+    => [cmd] -> cstruct -> ([Decision cmd], cstruct)
 acceptOrRejectCommands cmds cstruct = usingState cstruct $ mapM acceptOrRejectCommandS cmds
 
 -- | Indicates something unnecessary, extra.
@@ -257,7 +257,7 @@ instance Buildable UndueType where
 -- present commands.
 applyHintCommands
     :: CStructA cstruct cmd
-    => [Acceptance cmd] -> cstruct -> ([(UndueType, Acceptance cmd)], cstruct)
+    => [Decision cmd] -> cstruct -> ([(UndueType, Decision cmd)], cstruct)
 applyHintCommands hints cstruct =
     foldl' addHint ([], cstruct) hints
   where
@@ -323,7 +323,7 @@ class ( CStruct cstruct
       , Eq cstruct  -- TODO: remove?
       , MessagePack cstruct
       , MessagePack (RawCmd cstruct)
-      , Acceptance (RawCmd cstruct) ~ Cmd cstruct
+      , Decision (RawCmd cstruct) ~ Cmd cstruct
       , AtCmd cstruct
       , Typeable cstruct
       , MayHaveProposerId (RawCmd cstruct)

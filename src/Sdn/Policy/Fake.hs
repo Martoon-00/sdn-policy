@@ -15,9 +15,8 @@ module Sdn.Policy.Fake
     , mkConfig
     ) where
 
-import           Control.Lens        (AsEmpty (..), At (..), Index, Iso', IxValue,
-                                      Ixed (..), Wrapped (..), iso, mapping, to,
-                                      _Wrapped')
+import           Control.Lens        (AsEmpty (..), At (..), Index, Iso', IxValue, Ixed (..),
+                                      Wrapped (..), iso, mapping, to, _Wrapped')
 import           Data.Default        (Default (..))
 import qualified Data.Map.Strict     as M
 import           Data.MessagePack    (MessagePack (..))
@@ -25,8 +24,7 @@ import qualified Data.Set            as S
 import qualified Data.Text.Buildable
 import           Formatting          (bprint, build, (%))
 import qualified GHC.Exts            as Exts
-import           Test.QuickCheck     (Arbitrary (..), getNonNegative, oneof, resize,
-                                      suchThat)
+import           Test.QuickCheck     (Arbitrary (..), getNonNegative, oneof, resize, suchThat)
 import           Universum
 
 import           Sdn.Base.CStruct
@@ -60,7 +58,7 @@ policyName = \case
     MoodyPolicy _ name -> name
 
 instance Conflict Policy Policy where
-    agrees a b | a == b                            = True
+    agrees a b                                     | a == b                            = True
     agrees GoodPolicy{} _                          = True
     agrees _ GoodPolicy{}                          = True
     agrees BadPolicy{} _                           = False
@@ -80,7 +78,7 @@ instance Arbitrary Policy where
 instance MessagePack Policy
 
 -- | How policies are included into CStruct.
-type PolicyEntry = Acceptance Policy
+type PolicyEntry = Decision Policy
 
 -- | For our simplified model with abstract policies, cstruct is just set of
 -- policies.
@@ -179,7 +177,7 @@ perPolicy = _Wrapped' . mapping _Wrapped' . iso toPolicyMap fromPolicyMap
         ]
 
 
-pattern HappyPolicy :: PolicyName -> Acceptance Policy
+pattern HappyPolicy :: PolicyName -> Decision Policy
 pattern HappyPolicy name = Accepted (GoodPolicy name)
 
 instance CStruct Configuration where

@@ -53,7 +53,7 @@ main = do
             sequence_ $ fold $ toList callbacks
         }
 
-type CallbacksRegister = IORef $ M.Map PolicyCoord [Acceptance Policy -> IO ()]
+type CallbacksRegister = IORef $ M.Map PolicyCoord [Decision Policy -> IO ()]
 
 type ProtocolAccess = (ProtocolHandlers Configuration, CallbacksRegister)
 

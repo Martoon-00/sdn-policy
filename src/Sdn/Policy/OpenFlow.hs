@@ -23,8 +23,7 @@ import qualified Network.Data.OpenFlow as OF
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra.Util        (binaryFromObject, binaryToObject, listF, pairF,
-                                        presence)
+import           Sdn.Extra.Util        (binaryFromObject, binaryToObject, listF, pairF, presence)
 
 type PolicyCoord = (OF.TransactionID, OF.SwitchID)
 
@@ -79,27 +78,27 @@ instance Default Configuration where
 
 instance MessagePack Configuration
 
-instance Conflict (Acceptance Policy) Configuration where
+instance Conflict (Decision Policy) Configuration where
     conflictReason (Rejected _) _ = Right ()
     conflictReason (Accepted policy) Configuration{..} =
         case M.lookup (policyCoord policy) _configEntry of
             Nothing          -> Right ()
             Just oldPolicies -> mapM_ (conflictReason policy) oldPolicies
 
-instance Conflict Configuration (Acceptance Policy) where
+instance Conflict Configuration (Decision Policy) where
     conflictReason = flip conflictReason
 
 instance Conflict Configuration Configuration where
     conflictReason c1 c2 =
         mapM_ (conflictReason c1 . Accepted) (S.unions . toList $ _configEntry c2)
 
-addCommandUnsafe :: Acceptance Policy -> Configuration -> Configuration
+addCommandUnsafe :: Decision Policy -> Configuration -> Configuration
 addCommandUnsafe (Rejected policy) = configRejected . at policy . presence .~ True
 addCommandUnsafe (Accepted policy) =
     configEntry . at (policyCoord policy) . non mempty . at policy . presence .~ True
 
 instance CStruct Configuration where
-    type Cmd Configuration = Acceptance Policy
+    type Cmd Configuration = Decision Policy
     addCommand = checkingAgreement addCommandUnsafe
     glb = checkingAgreement $ \c1 c2 -> Configuration
         { _configEntry = M.unionWith (S.union) (_configEntry c1) (_configEntry c2)

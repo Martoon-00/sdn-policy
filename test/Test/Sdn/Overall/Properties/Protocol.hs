@@ -56,7 +56,7 @@ learnersAgree = do
         when (l /= l') $ throwError "learners disagree"
 
 -- | Checks that number of learned policies matches predicate.
-numberOfLearnedPolicies :: (Prism' (Acceptance Policy) a)
+numberOfLearnedPolicies :: (Prism' (Decision Policy) a)
                         -> (Word -> Bool)
                         -> PropertyChecker pv Configuration
 numberOfLearnedPolicies predicate cmp = do
