@@ -16,14 +16,13 @@ import           Control.Lens                  (at, makePrisms, (%=), (.=))
 import           Control.Monad.Trans.Cont      (ContT (..), evalContT)
 import qualified Data.Map                      as M
 import qualified Data.Set                      as S
-import           Formatting                    (build, sformat, (%))
+import           Formatting                    (build, sformat, shown, (%))
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra                     (OldNew (..), broadcastTo, compose,
-                                                foldlF', listF, logInfo, panicOnFail,
-                                                presence, takeNoMoreThanOne, throwOnFail,
-                                                wasChanged, whenJust', zoom)
+import           Sdn.Extra                     (OldNew (..), broadcastTo, compose, foldlF', listF,
+                                                logInfo, panicOnFail, presence, takeNoMoreThanOne,
+                                                throwOnFail, wasChanged, whenJust', zoom)
 import qualified Sdn.Protocol.Classic.Messages as Classic
 import qualified Sdn.Protocol.Classic.Phases   as Classic
 import           Sdn.Protocol.Common.Context
@@ -201,6 +200,7 @@ detectConflicts (Fast.AcceptedMsg accId (toList -> cstructDiff)) = do
             PolicyFixated acceptance -> do
                 let policyAcceptance = compose (acceptance, policy)
                 logInfo $ supposedlyLearnedLog policyAcceptance
+                -- traceM $ sformat ("Fixed "%build) policyAcceptance
 
                 -- no need to do anything specific, since decision on policy
                 -- will never change anymore
@@ -217,6 +217,9 @@ detectConflicts (Fast.AcceptedMsg accId (toList -> cstructDiff)) = do
 
                 delegateToRecovery (one policy)
                 logInfo "Policy ^ proposed for next classic ballot"
+                traceM $ sformat ("Undecided: "%build) policy
+
+          -- traceM $ sformat ("with new votes "%shown) (getNew oldnewVotesForPolicy)
   where
     supposedlyLearnedLog =
         sformat ("Policy "%build%" supposedly has been learned, \

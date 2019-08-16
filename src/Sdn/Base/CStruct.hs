@@ -85,9 +85,11 @@ instance Buildable AcceptanceType where
 data Acceptance cmd
     = Accepted cmd
     | Rejected cmd
-    deriving (Eq, Ord, Show, Generic)
+    deriving (Eq, Ord, Show, Generic, Functor)
 
 makePrisms ''Acceptance
+
+instance Hashable cmd => Hashable (Acceptance cmd)
 
 instance Decomposable (Acceptance cmd) (AcceptanceType, cmd) where
     decompose = \case

@@ -26,6 +26,7 @@ library
                        Sdn.Policy
                        Sdn.Policy.Fake
                        Sdn.Policy.OpenFlow
+                       Sdn.Policy.PseudoConflicting
                        Sdn.Protocol
                        Sdn.Protocol.Common
                        Sdn.Protocol.Classic
@@ -65,6 +66,7 @@ library
                      , exceptions
                      , formatting
                      , fmt
+                     , hashable
                      , lens
                      , MonadRandom
                      , monad-control
@@ -227,6 +229,7 @@ executable bench-distr
                        RecordWildCards
                        ViewPatterns
                        ExplicitForAll
+                       DataKinds
   ghc-options:         -Wall
 
 executable controller

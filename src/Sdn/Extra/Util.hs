@@ -35,7 +35,8 @@ import qualified Data.Binary                 as Binary
 import qualified Data.ByteString.Lazy        as LBS
 import           Data.Coerce                 (coerce)
 import           Data.MessagePack            (MessagePack (..), Object (..))
-import           Data.Reflection             (Given, give, given)
+import qualified Data.Ratio                  as Ratio
+import           Data.Reflection             (Given, Reifies (..), give, given)
 import qualified Data.Set                    as S
 import qualified Data.Text.Buildable
 import           Data.Text.Lazy.Builder      (Builder)
@@ -483,3 +484,10 @@ submitEvenly period action = do
 
         wait (for period)
         go startTime expectedSubmissions
+
+-- | Type-level rational number.
+data (a :: Nat) % (b :: Nat)
+
+instance (Reifies a Integer, Reifies b Integer) =>
+         Reifies (a % b) Rational where
+  reflect _ = reflect (Proxy @a) Ratio.% reflect (Proxy @b)

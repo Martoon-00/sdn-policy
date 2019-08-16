@@ -6,10 +6,11 @@
 
 module Main where
 
-import           Control.TimeWarp.Timed (for, fork_, ms, runTimedIO, sec, sleepForever, wait, work)
-import           Data.Coerce            (coerce)
-import qualified Network.Data.OpenFlow  as OF
-import           Test.QuickCheck        (Gen, arbitrary, choose, generate)
+import           Control.TimeWarp.Timed       (for, fork_, ms, runTimedIO, sec, sleepForever, wait,
+                                               work)
+import           Data.Coerce                  (coerce)
+import qualified Network.Data.OpenFlow        as OF
+import           Test.QuickCheck              (Gen, arbitrary, choose, generate)
 import           Universum
 
 import           Sdn.Base
@@ -17,8 +18,12 @@ import           Sdn.Extra.Util
 
 import           Options
 import           Sdn.Policy.OpenFlow
+import           Sdn.Policy.PseudoConflicting
 import           Sdn.Protocol.Node
 
+type ConflictsFrac = 1 % 2
+
+instance PracticalCStruct (PseudoConflicting ConflictsFrac Configuration)
 
 main :: IO ()
 main = do
@@ -29,7 +34,8 @@ main = do
 
     protocolHandlers <-
         runProtocolNode
-            @Configuration protocolOptions curProcessId
+            @(PseudoConflicting ConflictsFrac Configuration)
+            protocolOptions curProcessId
             (protocolCallbacks installedCounter)
 
     -- TODO:
@@ -48,13 +54,14 @@ main = do
         fork_ . forever $ do
             proposed <- readIORef proposedCounter
             putText $ "Proposed " <> show proposed <> " policies"
-            -- installed <- readIORef installedCounter
-            -- putText $ "Installed " <> show installed <> " policies"
+            installed <- readIORef installedCounter
+            putText $ "Installed " <> show installed <> " policies"
             wait (for 1 sec)
 
         fork_ . work (for 10 sec) $
             submitEvenly proposalsDelay . liftIO $ do
-                policy <- generate (genPolicy curProcessId)
+                policy <- PseudoConflicting @ConflictsFrac
+                      <$> generate (genPolicy curProcessId)
 
                 -- putText $ "Proposing " <> show policy
                 protocolMakeProposal protocolHandlers policy

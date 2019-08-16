@@ -1,5 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies    #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 -- | Network policies and configuration for OpenFlow controllers.
 
@@ -14,6 +15,7 @@ module Sdn.Policy.OpenFlow
 
 import           Control.Lens          (at, has, ix, makeLenses, non, to)
 import           Data.Default          (Default (..))
+import           Data.Hashable         (Hashable (..))
 import qualified Data.Map              as M
 import           Data.MessagePack      (MessagePack (..))
 import qualified Data.Set              as S
@@ -23,8 +25,10 @@ import qualified Network.Data.OpenFlow as OF
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra.Util        (binaryFromObject, binaryToObject, listF, pairF,
-                                        presence)
+import           Sdn.Extra.Util        (binaryFromObject, binaryToObject, listF, pairF, presence)
+
+instance Hashable OF.Action
+instance Hashable OF.PseudoPort
 
 type PolicyCoord = (OF.TransactionID, OF.SwitchID)
 
@@ -39,6 +43,8 @@ policyXid = fst . policyCoord
 
 policySwitchId :: Policy -> OF.SwitchID
 policySwitchId = snd . policyCoord
+
+instance Hashable Policy
 
 instance Buildable Policy where
     build = bprint shown
@@ -66,6 +72,12 @@ data Configuration = Configuration
     } deriving (Eq, Show, Generic)
 
 makeLenses ''Configuration
+
+instance Hashable Configuration where
+  hashWithSalt s (Configuration e r) =
+    hashWithSalt s ( hashWithSalt s (second S.toList <$> M.toList e)
+                   , hashWithSalt s (S.toList r)
+                   )
 
 instance Buildable Configuration where
     build Configuration{..} =

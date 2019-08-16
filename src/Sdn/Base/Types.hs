@@ -9,6 +9,7 @@ module Sdn.Base.Types where
 import           Control.Lens        (Wrapped (..))
 import           Data.Binary         (Binary)
 import           Data.Default        (Default (..))
+import           Data.Hashable       (Hashable (..))
 import           Data.MessagePack    (MessagePack)
 import qualified Data.Text.Buildable
 import           Formatting          (bprint, build, (%))
@@ -34,6 +35,9 @@ instance Arbitrary BallotId where
 -- | Identifier of abstract process.
 newtype ProcessId pt = ProcessId Int
     deriving (Eq, Ord, Enum, Show, Num, MessagePack, Binary, Real, Integral)
+
+instance Hashable (ProcessId i) where
+    hashWithSalt s (ProcessId i) = hashWithSalt s i
 
 instance Buildable (Proxy pt) => Buildable (ProcessId pt) where
     build (ProcessId i) = bprint (build%" #"%build) (Proxy @pt) i
