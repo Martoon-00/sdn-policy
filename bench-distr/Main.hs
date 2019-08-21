@@ -21,7 +21,7 @@ import           Sdn.Policy.OpenFlow
 import           Sdn.Policy.PseudoConflicting
 import           Sdn.Protocol.Node
 
-type ConflictsFrac = 1 % 2
+type ConflictsFrac = 1 % 500
 
 instance PracticalCStruct (PseudoConflicting ConflictsFrac Configuration)
 
@@ -31,12 +31,13 @@ main = do
 
     proposedCounter <- newIORef (0 :: Int)
     installedCounter <- newIORef (0 :: Int)
+    rejectedCounter <- newIORef (0 :: Int)
 
     protocolHandlers <-
         runProtocolNode
             @(PseudoConflicting ConflictsFrac Configuration)
             protocolOptions curProcessId
-            (protocolCallbacks installedCounter)
+            (protocolCallbacks installedCounter rejectedCounter)
 
     -- TODO:
     -- For time measuring - 1 second warmup and then count, printing time and
@@ -55,7 +56,12 @@ main = do
             proposed <- readIORef proposedCounter
             putText $ "Proposed " <> show proposed <> " policies"
             installed <- readIORef installedCounter
-            putText $ "Installed " <> show installed <> " policies"
+            rejected <- readIORef rejectedCounter
+            let acceptancePercent =
+                  100 - (round @Double @Int (fromIntegral rejected * 10000 / fromIntegral installed) `div` 100)
+            putText $ "Installed " <> show installed <> " policies \
+                      \(rejected " <> show rejected <>
+                      " / accepted " <> show acceptancePercent <> "%)"
             wait (for 1 sec)
 
         fork_ . work (for 10 sec) $
@@ -69,13 +75,15 @@ main = do
 
     runTimedIO sleepForever
   where
-    protocolCallbacks installedCounter =
+    protocolCallbacks installedCounter rejectedCounter =
         ProtocolCallbacks
         { protocolOnLearned = \policyAccs -> do
               atomicModifyIORef' installedCounter (\c -> (c + length policyAccs, ()))
 
               forM_ policyAccs $ \policyAcc -> case policyAcc of
-                  Rejected p -> putText $ "Policy rejected " <> show p
+                  Rejected _ -> do
+                    -- putText $ "Policy rejected " <> show p
+                    atomicModifyIORef' rejectedCounter (\c -> (c + 1, ()))
                   Accepted _ -> pass
 
               -- putText $ "Learned " <> show _policyAccs

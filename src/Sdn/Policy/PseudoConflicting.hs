@@ -12,7 +12,6 @@ import           Data.Coerce      (coerce)
 import           Data.Default     (Default (..))
 import           Data.Hashable    (Hashable (..))
 import           Data.MessagePack (MessagePack)
-import           Data.Reflection  (Reifies (..))
 import           Universum
 
 import           Sdn.Base
@@ -28,20 +27,19 @@ newtype PseudoConflicting f a = PseudoConflicting { unPseudoConflicting :: a }
 
 instance Wrapped (PseudoConflicting f a)
 
-instance ( f ~ f1
-         , Hashable a, Hashable b
-         , f ~ (k % n), KnownNat k, KnownNat n
-         ) =>
-         Conflict (PseudoConflicting f a) (PseudoConflicting f1 b) where
-  conflictReason (PseudoConflicting a) (PseudoConflicting b) =
-      let diff = fromIntegral $ hash a - hash b
-      in if diff `mod` reflect (Proxy @n) < reflect (Proxy @k)
-          then Left "Conflicting policies (fake)"
-          else pass
+-- instance ( f ~ f1
+--          , Hashable a, Hashable b
+--          , f ~ (k % n), KnownNat k, KnownNat n
+--          ) =>
+--          Conflict (PseudoConflicting f a) (PseudoConflicting f1 b) where
+--   conflictReason (PseudoConflicting a) (PseudoConflicting b) =
+--       let diff = fromIntegral $ hash a - hash b
+--       in if diff `mod` reflect (Proxy @n) < reflect (Proxy @k)
+--           then Left "Conflicting policies (fake)"
+--           else pass
 
 instance ( f ~ f1
-         , Hashable a, Hashable b
-         , f ~ (k % n), KnownNat k, KnownNat n
+         , Conflict (PseudoConflicting f a) (PseudoConflicting f1 b)
          ) =>
          Conflict (PseudoConflicting f a) (Acceptance (PseudoConflicting f1 b)) where
   conflictReason p1 = \case
@@ -49,8 +47,7 @@ instance ( f ~ f1
     Accepted p2 -> conflictReason p1 p2
 
 instance ( f ~ f1
-         , Hashable a, Hashable b
-         , f ~ (k % n), KnownNat k, KnownNat n
+         , Conflict (PseudoConflicting f a) (PseudoConflicting f1 b)
          ) =>
          Conflict (Acceptance (PseudoConflicting f1 b)) (PseudoConflicting f a) where
   conflictReason = flip conflictReason
@@ -62,10 +59,16 @@ instance (AtCmd cfg, Cmd cfg ~ Acceptance rawCmd) =>
          AtCmd (PseudoConflicting f cfg) where
   atCmd rawCmd = _Wrapped' . atCmd @cfg (unPseudoConflicting rawCmd)
 
-instance ( CStruct cfg, Hashable cfg, Hashable rawCmd
+instance ( CStruct cfg, Hashable rawCmd
          , f ~ (k % n), KnownNat k, KnownNat n
          , Cmd cfg ~ Acceptance rawCmd
          , Eq rawCmd
+         , Conflict (PseudoConflicting f rawCmd)
+                    (PseudoConflicting f rawCmd)
+         , Conflict (PseudoConflicting f cfg)
+                    (PseudoConflicting f rawCmd)
+         , Conflict (PseudoConflicting f cfg)
+                    (PseudoConflicting f cfg)
          ) =>
          CStruct (PseudoConflicting f cfg) where
     type Cmd (PseudoConflicting f cfg) =

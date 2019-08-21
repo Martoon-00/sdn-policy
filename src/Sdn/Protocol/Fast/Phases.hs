@@ -16,7 +16,7 @@ import           Control.Lens                  (at, makePrisms, (%=), (.=))
 import           Control.Monad.Trans.Cont      (ContT (..), evalContT)
 import qualified Data.Map                      as M
 import qualified Data.Set                      as S
-import           Formatting                    (build, sformat, shown, (%))
+import           Formatting                    (build, sformat, (%))
 import           Universum
 
 import           Sdn.Base
@@ -217,7 +217,7 @@ detectConflicts (Fast.AcceptedMsg accId (toList -> cstructDiff)) = do
 
                 delegateToRecovery (one policy)
                 logInfo "Policy ^ proposed for next classic ballot"
-                traceM $ sformat ("Undecided: "%build) policy
+                traceM $ sformat ("!!!\nUndecided: "%build%"\n!!!\n") policy
 
           -- traceM $ sformat ("with new votes "%shown) (getNew oldnewVotesForPolicy)
   where

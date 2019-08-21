@@ -1,5 +1,6 @@
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TypeFamilies    #-}
+{-# LANGUAGE TemplateHaskell      #-}
+{-# LANGUAGE TypeFamilies         #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
 -- | Network policies and configuration for OpenFlow controllers.
@@ -13,19 +14,22 @@ module Sdn.Policy.OpenFlow
     , policySwitchId
     ) where
 
-import           Control.Lens          (at, has, ix, makeLenses, non, to)
-import           Data.Default          (Default (..))
-import           Data.Hashable         (Hashable (..))
-import qualified Data.Map              as M
-import           Data.MessagePack      (MessagePack (..))
-import qualified Data.Set              as S
+import           Control.Lens                 (at, has, ix, makeLenses, non, to)
+import           Data.Default                 (Default (..))
+import           Data.Hashable                (Hashable (..))
+import qualified Data.Map                     as M
+import           Data.MessagePack             (MessagePack (..))
+import           Data.Reflection              (Reifies (..))
+import qualified Data.Set                     as S
 import qualified Data.Text.Buildable
-import           Formatting            (bprint, build, sformat, shown, (%))
-import qualified Network.Data.OpenFlow as OF
+import           Formatting                   (bprint, build, sformat, shown, (%))
+import qualified Network.Data.OpenFlow        as OF
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra.Util        (binaryFromObject, binaryToObject, listF, pairF, presence)
+import           Sdn.Extra.Util               (type (%), binaryFromObject, binaryToObject, listF,
+                                               pairF, presence)
+import           Sdn.Policy.PseudoConflicting
 
 instance Hashable OF.Action
 instance Hashable OF.PseudoPort
@@ -72,12 +76,6 @@ data Configuration = Configuration
     } deriving (Eq, Show, Generic)
 
 makeLenses ''Configuration
-
-instance Hashable Configuration where
-  hashWithSalt s (Configuration e r) =
-    hashWithSalt s ( hashWithSalt s (second S.toList <$> M.toList e)
-                   , hashWithSalt s (S.toList r)
-                   )
 
 instance Buildable Configuration where
     build Configuration{..} =
@@ -144,3 +142,32 @@ instance MayHaveProposerId Policy where
     cmdProposerId = Just . policyCreatorPid
 
 instance PracticalCStruct Configuration
+
+-- * Other instances
+
+instance (f ~ f1, f ~ (k % n), KnownNat k, KnownNat n) =>
+         Conflict (PseudoConflicting f Policy) (PseudoConflicting f1 Policy) where
+  conflictReason (PseudoConflicting a) (PseudoConflicting b) =
+      let diff = fromIntegral $ hash (a, b)
+      in if diff `mod` reflect (Proxy @n) < reflect (Proxy @k)
+          then Left "Conflicting policies (fake)"
+          else pass
+
+instance (f ~ f1, f ~ (k % n), KnownNat k, KnownNat n) =>
+         Conflict (PseudoConflicting f Policy)
+                  (PseudoConflicting f1 Configuration) where
+    conflictReason p (PseudoConflicting c2) =
+        mapM_ (conflictReason p . Accepted)
+              (fmap PseudoConflicting . toList . S.unions . toList $ _configEntry c2)
+
+instance (f ~ f1, f ~ (k % n), KnownNat k, KnownNat n) =>
+         Conflict (PseudoConflicting f Configuration)
+                  (PseudoConflicting f1 Policy) where
+    conflictReason = flip conflictReason
+
+instance (f ~ f1, f ~ (k % n), KnownNat k, KnownNat n) =>
+         Conflict (PseudoConflicting f Configuration)
+                  (PseudoConflicting f1 Configuration) where
+    conflictReason c1 (PseudoConflicting c2) =
+        mapM_ (conflictReason c1 . Accepted)
+              (fmap PseudoConflicting . toList . S.unions . toList $ _configEntry c2)

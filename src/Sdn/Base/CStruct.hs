@@ -89,8 +89,6 @@ data Acceptance cmd
 
 makePrisms ''Acceptance
 
-instance Hashable cmd => Hashable (Acceptance cmd)
-
 instance Decomposable (Acceptance cmd) (AcceptanceType, cmd) where
     decompose = \case
         Accepted cmd -> (AcceptedT, cmd)
@@ -194,7 +192,7 @@ liftCommand
     :: (CStruct cstruct, Cmd cstruct ~ Acceptance cmd)
     => Acceptance cmd -> cstruct
 liftCommand cmd =
-    fromRight (error "Can't make up cstruct from single command") $
+    fromRight (error "Failed to make up cstruct from single command") $
     addCommand cmd def
 
 -- | Whether sctruct contains command, accepted or rejected.
