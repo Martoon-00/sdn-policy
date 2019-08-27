@@ -8,9 +8,7 @@ module Main where
 
 import           Control.TimeWarp.Timed       (for, fork_, ms, runTimedIO, sec, sleepForever, wait,
                                                work)
-import           Data.Coerce                  (coerce)
-import qualified Network.Data.OpenFlow        as OF
-import           Test.QuickCheck              (Gen, arbitrary, choose, generate)
+import           Test.QuickCheck              (generate)
 import           Universum
 
 import           Sdn.Base
@@ -21,7 +19,7 @@ import           Sdn.Policy.OpenFlow
 import           Sdn.Policy.PseudoConflicting
 import           Sdn.Protocol.Node
 
-type ConflictsFrac = 1 % 500
+type ConflictsFrac = 1 % 5
 
 instance PracticalCStruct (PseudoConflicting ConflictsFrac Configuration)
 
@@ -87,14 +85,4 @@ main = do
                   Accepted _ -> pass
 
               -- putText $ "Learned " <> show _policyAccs
-        }
-
-genPolicy :: ProcessId p -> Gen Policy
-genPolicy pid = do
-    xid <- arbitrary
-    sid <- choose (0, 100)
-    return Policy
-        { policyCoord = (xid, sid)
-        , policyAction = OF.actionSequenceToList OF.flood
-        , policyCreatorPid = coerce pid
         }

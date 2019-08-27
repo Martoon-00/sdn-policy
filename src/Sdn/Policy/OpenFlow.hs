@@ -1,3 +1,5 @@
+{-# LANGUAGE AllowAmbiguousTypes  #-}
+{-# LANGUAGE DeriveFunctor        #-}
 {-# LANGUAGE TemplateHaskell      #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -12,11 +14,19 @@ module Sdn.Policy.OpenFlow
 
     , policyXid
     , policySwitchId
+    , genPolicy
+
+    , ConflictReport (..)
+    , averageConflictReports
+    , withAcceptancePercent
+    , emulateConflicts
     ) where
 
 import           Control.Lens                 (at, has, ix, makeLenses, non, to)
+import           Data.Coerce                  (coerce)
 import           Data.Default                 (Default (..))
 import           Data.Hashable                (Hashable (..))
+import qualified Data.List                    as L
 import qualified Data.Map                     as M
 import           Data.MessagePack             (MessagePack (..))
 import           Data.Reflection              (Reifies (..))
@@ -24,11 +34,12 @@ import qualified Data.Set                     as S
 import qualified Data.Text.Buildable
 import           Formatting                   (bprint, build, sformat, shown, (%))
 import qualified Network.Data.OpenFlow        as OF
+import           Test.QuickCheck              (Gen, arbitrary, choose)
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra.Util               (type (%), binaryFromObject, binaryToObject, listF,
-                                               pairF, presence)
+import           Sdn.Extra.Util               (type (%), binaryFromObject, binaryToObject,
+                                               decompose, listF, pairF, presence)
 import           Sdn.Policy.PseudoConflicting
 
 instance Hashable OF.Action
@@ -171,3 +182,54 @@ instance (f ~ f1, f ~ (k % n), KnownNat k, KnownNat n) =>
     conflictReason c1 (PseudoConflicting c2) =
         mapM_ (conflictReason c1 . Accepted)
               (fmap PseudoConflicting . toList . S.unions . toList $ _configEntry c2)
+
+genPolicy :: ProcessId p -> Gen Policy
+genPolicy pid = do
+    xid <- arbitrary
+    sid <- choose (0, 100)
+    return Policy
+        { policyCoord = (xid, sid)
+        , policyAction = OF.actionSequenceToList OF.flood
+        , policyCreatorPid = coerce pid
+        }
+
+-- * Stuff
+
+data ConflictReport a = ConflictReport
+  { crTotal    :: a
+  , crAccepted :: a
+  , crRejected :: a
+  } deriving (Show, Functor)
+
+mergeConflictReports :: (a -> a -> a) -> ConflictReport a -> ConflictReport a -> ConflictReport a
+mergeConflictReports f r1 r2 =
+  ConflictReport
+  { crTotal = f (crTotal r1) (crTotal r2)
+  , crAccepted = f (crAccepted r1) (crAccepted r2)
+  , crRejected = f (crRejected r1) (crRejected r2)
+  }
+
+averageConflictReports :: [ConflictReport Int] -> ConflictReport Int
+averageConflictReports reports =
+  fmap (`div` length reports) $
+  foldr1 (mergeConflictReports (+)) reports
+
+withAcceptancePercent :: ConflictReport Int -> (ConflictReport Int, Double)
+withAcceptancePercent report@ConflictReport{..} =
+  (report, fromIntegral crAccepted / fromIntegral crRejected * 100)
+
+emulateConflicts
+  :: forall frac k n.
+      (frac ~ (k % n), KnownNat k, KnownNat n)
+  => Int -> Gen (ConflictReport Int)
+emulateConflicts policiesNum = do
+  let genPolicyConflicting = PseudoConflicting <$> genPolicy (ProcessId 0)
+  policies <- replicateM policiesNum genPolicyConflicting
+  let initConfig = def @(PseudoConflicting frac Configuration)
+  let (accs, _) = acceptOrRejectCommands policies initConfig
+  let (oks, rejected) = L.partition ((== AcceptedT) . fst . decompose) accs
+  return . fmap length $ ConflictReport
+    { crTotal = accs
+    , crAccepted = oks
+    , crRejected = rejected
+    }

@@ -152,6 +152,7 @@ executable demo
                        RecordWildCards
                        ViewPatterns
                        ExplicitForAll
+                       DataKinds
   ghc-options:         -Wall
 
 executable bench
@@ -189,6 +190,7 @@ executable bench
                        RecordWildCards
                        ViewPatterns
                        ExplicitForAll
+                       DataKinds
   ghc-options:         -Wall
 
 executable bench-distr
@@ -275,6 +277,7 @@ executable controller
                        RecordWildCards
                        ViewPatterns
                        ExplicitForAll
+                       DataKinds
   ghc-options:         -Wall
 
 test-suite sdn-policy-test
@@ -328,6 +331,7 @@ test-suite sdn-policy-test
                        RecordWildCards
                        ViewPatterns
                        ExplicitForAll
+                       DataKinds
   ghc-options:         -Wall
 
 
