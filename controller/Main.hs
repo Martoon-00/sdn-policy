@@ -6,7 +6,7 @@
 module Main where
 
 import           Control.Lens               (at, non', (.=), (<<%=), (<<.=), _Empty)
-import           Control.TimeWarp.Timed     (for, ms, runTimedIO, wait)
+import           Control.TimeWarp.Timed     (Microsecond, for, ms, runTimedIO, wait)
 import           Data.Coerce                (coerce)
 import qualified Data.Map                   as M
 import           Formatting                 (formatToString, shown, (%))
@@ -112,6 +112,7 @@ messageHandler protocolAccess@(ProtocolHandlers{..}, _) sw = do
             let policy = Policy (xid, sid)
                                 (OF.actionSequenceToList actions)
                                 (coerce protocolProcessId)
+                                (0 :: Microsecond)
             installPolicy protocolAccess policy $ \case
                 RejectedT -> putStrLn $ "Policy rejected: " <> pretty policy
                 AcceptedT -> do

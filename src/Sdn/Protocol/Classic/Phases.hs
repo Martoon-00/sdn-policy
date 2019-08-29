@@ -19,9 +19,9 @@ import           Formatting                    (build, sformat, (%))
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra                     (OldNew (..), broadcastTo, exit, foldlF',
-                                                listF, logInfo, pairF, submit,
-                                                throwOnFail, wasChanged, zoom, (<<<%=))
+import           Sdn.Extra                     (OldNew (..), broadcastTo, exit, foldlF', listF,
+                                                logInfo, pairF, submit, throwOnFail, wasChanged,
+                                                zoom, (<<<%=))
 import           Sdn.Protocol.Classic.Messages
 import           Sdn.Protocol.Common.Context
 import           Sdn.Protocol.Common.Phases
@@ -191,4 +191,5 @@ phase2b (AcceptRequestMsg bal cstruct) = do
 learn
     :: (MonadPhase cstruct m, HasContextOf Learner pv m)
     => LearningCallback m -> AcceptedMsg cstruct -> m ()
-learn callback (AcceptedMsg accId cstruct) = learnCStruct callback combination accId cstruct
+learn callback (AcceptedMsg accId cstruct) = do
+  learnCStruct callback combination accId cstruct

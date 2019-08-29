@@ -15,13 +15,14 @@ import           Data.MessagePack (MessagePack)
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra
 
 -- | This wrapper entirely modifies semantics of 'Conflict' instance:
 -- in addition to existing conflict conditions, two items are considered
 -- conflicting arbitrarily with probability @f@.
 --
 -- Use '(%)' datatype to construct the first type parameter.
+-- There might be another datatype passed there, then it's semantics should be
+-- specified via 'Conflict' instance.
 newtype PseudoConflicting f a = PseudoConflicting { unPseudoConflicting :: a }
     deriving (Show, Eq, Ord, Buildable, Generic, MessagePack, MayHaveProposerId)
 
@@ -60,7 +61,6 @@ instance (AtCmd cfg, Cmd cfg ~ Acceptance rawCmd) =>
   atCmd rawCmd = _Wrapped' . atCmd @cfg (unPseudoConflicting rawCmd)
 
 instance ( CStruct cfg, Hashable rawCmd
-         , f ~ (k % n), KnownNat k, KnownNat n
          , Cmd cfg ~ Acceptance rawCmd
          , Eq rawCmd
          , Conflict (PseudoConflicting f rawCmd)

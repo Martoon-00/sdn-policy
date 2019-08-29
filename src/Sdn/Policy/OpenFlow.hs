@@ -17,21 +17,27 @@ module Sdn.Policy.OpenFlow
     , genPolicy
 
     , ConflictReport (..)
+    , crAcceptedPercent
+    , TimeLimitMillis
     , averageConflictReports
     , withAcceptancePercent
     , emulateConflicts
+    , simpleTimestampsSeq
     ) where
 
 import           Control.Lens                 (at, has, ix, makeLenses, non, to)
 import           Data.Coerce                  (coerce)
 import           Data.Default                 (Default (..))
 import           Data.Hashable                (Hashable (..))
+import           Data.Kind                    (Type)
 import qualified Data.List                    as L
 import qualified Data.Map                     as M
 import           Data.MessagePack             (MessagePack (..))
 import           Data.Reflection              (Reifies (..))
 import qualified Data.Set                     as S
 import qualified Data.Text.Buildable
+import           Data.Time.Units              (Microsecond, Millisecond, convertUnit,
+                                               toMicroseconds)
 import           Formatting                   (bprint, build, sformat, shown, (%))
 import qualified Network.Data.OpenFlow        as OF
 import           Test.QuickCheck              (Gen, arbitrary, choose)
@@ -44,6 +50,8 @@ import           Sdn.Policy.PseudoConflicting
 
 instance Hashable OF.Action
 instance Hashable OF.PseudoPort
+instance Hashable Microsecond where
+  hashWithSalt s = hashWithSalt s . toMicroseconds
 
 type PolicyCoord = (OF.TransactionID, OF.SwitchID)
 
@@ -51,6 +59,7 @@ data Policy = Policy
     { policyCoord      :: PolicyCoord
     , policyAction     :: [OF.Action]
     , policyCreatorPid :: ProcessId ProposerTag
+    , policyTimestamp  :: Microsecond
     } deriving (Eq, Ord, Show, Generic)
 
 policyXid :: Policy -> OF.TransactionID
@@ -65,7 +74,7 @@ instance Buildable Policy where
     build = bprint shown
 
 instance Conflict Policy Policy where
-    conflictReason (Policy coord1 action1 _) (Policy coord2 action2 _) =
+    conflictReason (Policy coord1 action1 _ _) (Policy coord2 action2 _ _) =
         let pack action = M.fromList $ map (\a -> (OF.actionToType a, a)) action
             [at1, at2] = map pack [action1, action2]
             actionsOfSameTypeAreSame = M.intersectionWith (==) at1 at2
@@ -75,10 +84,10 @@ instance Conflict Policy Policy where
                         action1 action2
 
 instance MessagePack Policy where
-    toObject (Policy xid action pid) = binaryToObject (xid, action, pid)
+    toObject (Policy xid action pid time) = binaryToObject (xid, action, pid, time)
     fromObject o = do
-        (xid, action, pid) <- binaryFromObject o
-        return (Policy xid action pid)
+        (xid, action, pid, time) <- binaryFromObject o
+        return (Policy xid action pid time)
 
 
 data Configuration = Configuration
@@ -156,41 +165,68 @@ instance PracticalCStruct Configuration
 
 -- * Other instances
 
-instance (f ~ f1, f ~ (k % n), KnownNat k, KnownNat n) =>
-         Conflict (PseudoConflicting f Policy) (PseudoConflicting f1 Policy) where
+instance (f1 ~ (k % n), KnownNat k, KnownNat n) =>
+         Conflict (PseudoConflicting (k % n) Policy) (PseudoConflicting f1 Policy) where
   conflictReason (PseudoConflicting a) (PseudoConflicting b) =
       let diff = fromIntegral $ hash (a, b)
       in if diff `mod` reflect (Proxy @n) < reflect (Proxy @k)
           then Left "Conflicting policies (fake)"
           else pass
 
-instance (f ~ f1, f ~ (k % n), KnownNat k, KnownNat n) =>
+-- | Period of time which allowed for conflicts to happen.
+--
+-- In real life controllers do not propose policies which conflict with already
+-- installed ones, this datatype helps to simulate that.
+data TimeLimitMillis :: Nat -> Type -> Type
+
+instance ( f1 ~ TimeLimitMillis t f, KnownNat t
+         , Conflict (PseudoConflicting f Policy) (PseudoConflicting f Policy)
+         ) =>
+         Conflict (PseudoConflicting (TimeLimitMillis t f) Policy) (PseudoConflicting f1 Policy) where
+  conflictReason (PseudoConflicting a) (PseudoConflicting b) =
+     let time = fromInteger @Millisecond $ natVal (Proxy @t)
+     in if
+           -- trace @Text (show (policyTimestamp a) <> " - " <> show (policyTimestamp b) <>
+           --               " = " <> show (policyTimestamp a - policyTimestamp b) <>
+           --               " vs " <> show time) $
+           policyTimestamp a - policyTimestamp b < convertUnit time
+          then (conflictReason `on` (PseudoConflicting @f)) a b
+          else pass
+
+instance ( Conflict (PseudoConflicting f Policy) (PseudoConflicting f Policy)
+         , f ~ f1
+         ) =>
          Conflict (PseudoConflicting f Policy)
                   (PseudoConflicting f1 Configuration) where
     conflictReason p (PseudoConflicting c2) =
         mapM_ (conflictReason p . Accepted)
               (fmap PseudoConflicting . toList . S.unions . toList $ _configEntry c2)
 
-instance (f ~ f1, f ~ (k % n), KnownNat k, KnownNat n) =>
+instance ( Conflict (PseudoConflicting f1 Policy) (PseudoConflicting f1 Policy)
+         , f ~ f1
+         ) =>
          Conflict (PseudoConflicting f Configuration)
                   (PseudoConflicting f1 Policy) where
     conflictReason = flip conflictReason
 
-instance (f ~ f1, f ~ (k % n), KnownNat k, KnownNat n) =>
+instance ( Conflict (PseudoConflicting f1 Policy) (PseudoConflicting f1 Policy)
+         , f ~ f1
+         ) =>
          Conflict (PseudoConflicting f Configuration)
                   (PseudoConflicting f1 Configuration) where
     conflictReason c1 (PseudoConflicting c2) =
         mapM_ (conflictReason c1 . Accepted)
               (fmap PseudoConflicting . toList . S.unions . toList $ _configEntry c2)
 
-genPolicy :: ProcessId p -> Gen Policy
-genPolicy pid = do
+genPolicy :: ProcessId p -> Microsecond -> Gen Policy
+genPolicy pid timestamp = do
     xid <- arbitrary
     sid <- choose (0, 100)
     return Policy
         { policyCoord = (xid, sid)
         , policyAction = OF.actionSequenceToList OF.flood
         , policyCreatorPid = coerce pid
+        , policyTimestamp = timestamp
         }
 
 -- * Stuff
@@ -200,6 +236,11 @@ data ConflictReport a = ConflictReport
   , crAccepted :: a
   , crRejected :: a
   } deriving (Show, Functor)
+
+crAcceptedPercent :: ConflictReport Int -> Double
+crAcceptedPercent ConflictReport{..} =
+  let frac = fromIntegral crAccepted / fromIntegral crTotal
+  in fromIntegral (round @Double @Int $ frac * 10000) / 100
 
 mergeConflictReports :: (a -> a -> a) -> ConflictReport a -> ConflictReport a -> ConflictReport a
 mergeConflictReports f r1 r2 =
@@ -215,16 +256,15 @@ averageConflictReports reports =
   foldr1 (mergeConflictReports (+)) reports
 
 withAcceptancePercent :: ConflictReport Int -> (ConflictReport Int, Double)
-withAcceptancePercent report@ConflictReport{..} =
-  (report, fromIntegral crAccepted / fromIntegral crRejected * 100)
+withAcceptancePercent report = (report, crAcceptedPercent report)
 
 emulateConflicts
-  :: forall frac k n.
-      (frac ~ (k % n), KnownNat k, KnownNat n)
-  => Int -> Gen (ConflictReport Int)
-emulateConflicts policiesNum = do
-  let genPolicyConflicting = PseudoConflicting <$> genPolicy (ProcessId 0)
-  policies <- replicateM policiesNum genPolicyConflicting
+  :: forall frac.
+      (Conflict (PseudoConflicting frac Policy) (PseudoConflicting frac Policy))
+  => Int -> [Millisecond] -> Gen (ConflictReport Int)
+emulateConflicts policiesNum (map convertUnit -> timesSeq) = do
+  let genPolicyConflicting time = PseudoConflicting <$> genPolicy (ProcessId 0) time
+  policies <- forM (take policiesNum timesSeq) genPolicyConflicting
   let initConfig = def @(PseudoConflicting frac Configuration)
   let (accs, _) = acceptOrRejectCommands policies initConfig
   let (oks, rejected) = L.partition ((== AcceptedT) . fst . decompose) accs
@@ -233,3 +273,7 @@ emulateConflicts policiesNum = do
     , crAccepted = oks
     , crRejected = rejected
     }
+
+simpleTimestampsSeq :: Int -> Millisecond -> [Millisecond]
+simpleTimestampsSeq controllersNum proposalDelay =
+  [0, proposalDelay ..] <* replicate controllersNum ()

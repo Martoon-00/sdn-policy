@@ -40,7 +40,8 @@ import           Data.Reflection             (Given, Reifies (..), give, given)
 import qualified Data.Set                    as S
 import qualified Data.Text.Buildable
 import           Data.Text.Lazy.Builder      (Builder)
-import           Data.Time.Units             (Millisecond, Minute, Second, TimeUnit, convertUnit)
+import           Data.Time.Units             (Millisecond, Minute, Second, TimeUnit, convertUnit,
+                                              fromMicroseconds, toMicroseconds)
 import           Formatting                  (Format, bprint, build, later, sformat, shortest,
                                               string, (%))
 import           Formatting.Internal         (Format (..))
@@ -269,6 +270,14 @@ instance MessagePack a => MessagePack (NonEmpty a) where
 instance (MessagePack a, Ord a) => MessagePack (S.Set a) where
     toObject = toObject . toList
     fromObject = fmap fromList . fromObject
+
+instance MessagePack Microsecond where
+    toObject = binaryToObject
+    fromObject = binaryFromObject
+
+instance Binary.Binary Microsecond where
+    put = Binary.put . toMicroseconds
+    get = fromMicroseconds <$> Binary.get
 
 binaryToObject :: Binary.Binary a => a -> Object
 binaryToObject = ObjectBin . LBS.toStrict . Binary.encode

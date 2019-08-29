@@ -1,13 +1,14 @@
 {-# LANGUAGE EmptyCase                 #-}
 {-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE NoMonomorphismRestriction #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 -- | Benchmark indented for a whole cluster performance measuring.
 
 module Main where
 
-import           Control.TimeWarp.Timed       (for, fork_, ms, runTimedIO, sec, sleepForever, wait,
-                                               work)
+import           Control.TimeWarp.Timed       (currentTime, for, fork_, ms, runTimedIO, sec,
+                                               sleepForever, wait, work)
 import           Test.QuickCheck              (generate)
 import           Universum
 
@@ -19,7 +20,7 @@ import           Sdn.Policy.OpenFlow
 import           Sdn.Policy.PseudoConflicting
 import           Sdn.Protocol.Node
 
-type ConflictsFrac = 1 % 5
+type ConflictsFrac = TimeLimitMillis 10 (1 % 5)
 
 instance PracticalCStruct (PseudoConflicting ConflictsFrac Configuration)
 
@@ -63,13 +64,15 @@ main = do
             wait (for 1 sec)
 
         fork_ . work (for 10 sec) $
-            submitEvenly proposalsDelay . liftIO $ do
-                policy <- PseudoConflicting @ConflictsFrac
-                      <$> generate (genPolicy curProcessId)
+            submitEvenly proposalsDelay $ do
+                time <- currentTime
+                liftIO $ do
+                  policy <- PseudoConflicting @ConflictsFrac
+                        <$> generate (genPolicy curProcessId time)
 
-                -- putText $ "Proposing " <> show policy
-                protocolMakeProposal protocolHandlers policy
-                atomicModifyIORef' proposedCounter (\c -> (c + 1, ()))
+                  -- putText $ "Proposing " <> show policy
+                  protocolMakeProposal protocolHandlers policy
+                  atomicModifyIORef' proposedCounter (\c -> (c + 1, ()))
 
     runTimedIO sleepForever
   where
