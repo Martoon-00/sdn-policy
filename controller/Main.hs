@@ -18,7 +18,7 @@ import           Universum
 import           Sdn.Base
 import           Sdn.Extra.Util             (atomicModifyIORefS, decompose)
 
-import           Options
+import           OptionsController
 import           Sdn.Policy.OpenFlow
 import           Sdn.Protocol.Node
 

@@ -238,7 +238,7 @@ executable bench-distr
 executable controller
   hs-source-dirs:      controller
   main-is:             Main.hs
-  other-modules:       Options
+  other-modules:       OptionsController
   ghc-options:         -threaded -O2 -rtsopts -with-rtsopts=-N
   build-depends:       base
                      , binary

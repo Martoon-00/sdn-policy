@@ -4,7 +4,7 @@
 
 -- | Options for running a controller.
 
-module Options
+module OptionsController
     ( ControllerOptions (..)
     , PlatformOptions (..)
     , NodeOptions (..)
