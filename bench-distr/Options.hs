@@ -18,6 +18,7 @@ data BenchControllerOptions = BenchControllerOptions
     , curProcessId        :: GeneralProcessId
     , proposalsStartDelay :: Second
     , proposalsDelay      :: Microsecond
+    , mStartTime          :: Maybe Microsecond
     }
 
 -- | Command-line parser of options
@@ -45,6 +46,12 @@ benchControllerOptionsParser = do
         , Opt.metavar "TIME"
         , Opt.help "Time delay between consequent proposals."
         , Opt.value (convertUnit @Second 5)
+        ]
+
+    mStartTime <- Opt.optional . Opt.option (Opt.maybeReader readTime) $ mconcat
+        [ Opt.long "start-time"
+        , Opt.metavar "TIMESTAMP"
+        , Opt.help "Preferred start time, can be used for nodes synchronization"
         ]
 
     return BenchControllerOptions{..}

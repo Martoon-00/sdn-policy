@@ -7,8 +7,9 @@
 
 module Main where
 
-import           Control.TimeWarp.Timed       (currentTime, for, fork_, ms, runTimedIO, sec,
+import           Control.TimeWarp.Timed       (Microsecond, for, fork_, ms, runTimedIO, sec,
                                                sleepForever, wait, work)
+import qualified Data.Time.Clock.POSIX        as Time
 import           Test.QuickCheck              (generate)
 import           Universum
 
@@ -20,7 +21,7 @@ import           Sdn.Policy.OpenFlow
 import           Sdn.Policy.PseudoConflicting
 import           Sdn.Protocol.Node
 
-type ConflictsFrac = TimeLimitMillis 10 (1 % 5)
+type ConflictsFrac = TimeLimitMillis 50 (1 % 30)
 
 instance PracticalCStruct (PseudoConflicting ConflictsFrac Configuration)
 
@@ -43,12 +44,21 @@ main = do
     -- configuration size each second.
     -- Define conflict relation so that wildcards work too
 
+    mStartDelay <- forM mStartTime $ \startTime -> do
+        time <- round @_ @Microsecond . (* 1000000) <$> Time.getPOSIXTime
+        return (startTime - time)
+
     runTimedIO $ do
         -- give some time for server to be brought up
         wait (for 20 ms)
         putStrLn @Text "Consensus protocol initiated"
 
-        wait (for proposalsStartDelay)
+        case mStartDelay of
+          Just startDelay -> do
+            putStrLn @Text "Waiting for start"
+            wait (for startDelay)
+          Nothing ->
+            wait (for proposalsStartDelay)
         putStrLn @Text "Proposing policies"
 
         fork_ . forever $ do
@@ -56,19 +66,19 @@ main = do
             putText $ "Proposed " <> show proposed <> " policies"
             installed <- readIORef installedCounter
             rejected <- readIORef rejectedCounter
+            let accepted = installed - rejected
             let acceptancePercent =
-                  100 - (round @Double @Int (fromIntegral rejected * 10000 / fromIntegral installed) `div` 100)
+                  (round @Double @Int (fromIntegral accepted * 10000 / fromIntegral installed) `div` 100)
             putText $ "Installed " <> show installed <> " policies \
                       \(rejected " <> show rejected <>
-                      " / accepted " <> show acceptancePercent <> "%)"
+                      " / accepted " <> show accepted <> " (" <> show acceptancePercent <> "%))"
             wait (for 1 sec)
 
         fork_ . work (for 10 sec) $
-            submitEvenly proposalsDelay $ do
-                time <- currentTime
+            submitEvenlyExact proposalsDelay $ \pretendedTime -> do
                 liftIO $ do
                   policy <- PseudoConflicting @ConflictsFrac
-                        <$> generate (genPolicy curProcessId time)
+                        <$> generate (genPolicy curProcessId pretendedTime)
 
                   -- putText $ "Proposing " <> show policy
                   protocolMakeProposal protocolHandlers policy

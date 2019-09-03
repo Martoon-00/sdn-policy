@@ -135,7 +135,7 @@ runProtocolNode NodeOptions{..} curProcessId ProtocolCallbacks{..} = do
 
             when (protocolLeaderId == coerce curProcessId) $
                 fork_ $ S.runSchedule_ (mkStdGen 0) $ do
-                    S.periodic (interval 10 sec)
+                    S.periodic (interval 99 sec)
                     lift $ inProcess subLeaderState Classic.phase1a
 
             let ProtocolListeners{..} = versionProtocolListeners @Fast learnersSettings

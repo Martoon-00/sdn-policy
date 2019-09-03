@@ -7,7 +7,9 @@ window=${session}:0
 N=${1:-3}
 proposal_delay=${2:-3s}
 
-controller_options="-n $N --batch-size 1 --protocol-start-port 4020 --proposals-delay $proposal_delay"
+start_time=$(($(date +%s%N -d '1 second') / 1000))
+
+controller_options="-n $N --batch-size 1 --protocol-start-port 4020 --proposals-delay $proposal_delay --start-time ${start_time}µs"
 
 tmux new-session -d -s "$session"
 

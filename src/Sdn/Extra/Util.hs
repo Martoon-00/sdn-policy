@@ -479,8 +479,9 @@ readTime = asum . sequence
 
 -- | Perform submissions staying as close to the given submissions period
 -- as possible.
-submitEvenly :: MonadTimed m => Microsecond -> m () -> m a
-submitEvenly period action = do
+-- This function aims to best performance, workflow can fluctuate singificantly.
+submitEvenlyPerformant :: MonadTimed m => Microsecond -> m () -> m a
+submitEvenlyPerformant period action = do
     startTime <- currentTime
     go startTime (0 :: Int)
   where
@@ -493,6 +494,23 @@ submitEvenly period action = do
 
         wait (for period)
         go startTime expectedSubmissions
+
+-- | Version of 'submitEvenlyPerformant' for slow submission rate when
+-- exact timing is necessary.
+submitEvenlyExact :: MonadTimed m => Microsecond -> (Microsecond -> m ()) -> m a
+submitEvenlyExact period action = do
+    startTime <- currentTime
+    go startTime (0 :: Int)
+  where
+    go startTime submitted = do
+        let pretendedTime = startTime + period * fromIntegral submitted
+        action pretendedTime
+
+        let submitted' = submitted + 1
+        let nextIterTime = startTime + period * fromIntegral submitted'
+        delay <- (nextIterTime -) <$> currentTime
+        wait (for delay)
+        go startTime submitted'
 
 -- | Type-level rational number.
 data (a :: Nat) % (b :: Nat)
