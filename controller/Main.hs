@@ -5,22 +5,29 @@
 
 module Main where
 
-import           Control.Lens               (at, non', (.=), (<<%=), (<<.=), _Empty)
-import           Control.TimeWarp.Timed     (Microsecond, for, ms, runTimedIO, wait)
-import           Data.Coerce                (coerce)
-import qualified Data.Map                   as M
-import           Formatting                 (formatToString, shown, (%))
-import qualified Network.Data.OF13.Handlers as OF
-import qualified Network.Data.OF13.Server   as OF
-import qualified Network.Data.OpenFlow      as OF
+import           Control.Lens                 (at, non', (.=), (<<%=), (<<.=), _Empty)
+import           Control.TimeWarp.Timed       (Microsecond, for, ms, runTimedIO, wait)
+import           Data.Coerce                  (coerce)
+import qualified Data.Map                     as M
+import           Formatting                   (formatToString, shown, (%))
+import qualified Network.Data.OF13.Handlers   as OF
+import qualified Network.Data.OF13.Server     as OF
+import qualified Network.Data.OpenFlow        as OF
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra.Util             (atomicModifyIORefS, decompose)
+import           Sdn.Extra.Util               (type (%), atomicModifyIORefS, decompose)
 
 import           OptionsController
 import           Sdn.Policy.OpenFlow
+import           Sdn.Policy.PseudoConflicting
 import           Sdn.Protocol.Node
+
+type ConflictsFrac = TimeLimitMillis 50 (0 % 30)
+type Policy' = PseudoConflicting ConflictsFrac Policy
+type Configuration' = PseudoConflicting ConflictsFrac Configuration
+
+instance PracticalCStruct (PseudoConflicting ConflictsFrac Configuration)
 
 
 main :: IO ()
@@ -30,7 +37,10 @@ main = do
     registeredCallbacks <- newIORef mempty
 
     protocolHandlers <-
-        runProtocolNode @Configuration protocolOptions curProcessId
+        runProtocolNode
+            @Configuration'
+            protocolOptions
+            curProcessId
             (protocolCallbacks registeredCallbacks)
 
     -- give some time for server to be brought up
@@ -39,12 +49,12 @@ main = do
 
     runPlatform (protocolHandlers, registeredCallbacks) platformOptions curProcessId
   where
-    protocolCallbacks :: CallbacksRegister -> ProtocolCallbacks Configuration
+    protocolCallbacks :: CallbacksRegister -> ProtocolCallbacks Configuration'
     protocolCallbacks callbacksReg =
         ProtocolCallbacks
         { protocolOnLearned = \policyAccs -> do
             callbacks <- atomicModifyIORefS callbacksReg $ do
-                forM policyAccs $ \policyAcceptance -> do
+                forM policyAccs $ \(fmap unPseudoConflicting -> policyAcceptance) -> do
                     let (_, policy) = decompose policyAcceptance
                     mCallbacks <- at (policyCoord policy) <<.= Nothing
                     let callbacks = fromMaybe [] mCallbacks
@@ -55,7 +65,7 @@ main = do
 
 type CallbacksRegister = IORef $ M.Map PolicyCoord [Acceptance Policy -> IO ()]
 
-type ProtocolAccess = (ProtocolHandlers Configuration, CallbacksRegister)
+type ProtocolAccess = (ProtocolHandlers Configuration', CallbacksRegister)
 
 runPlatform :: ProtocolAccess -> PlatformOptions -> GeneralProcessId -> IO ()
 runPlatform protocolAccess PlatformOptions{..} processId = do
@@ -78,7 +88,7 @@ installPolicy (ProtocolHandlers{..}, callbacksRegister) policy onLearned = do
 
     let isNewPolicy = null oldCallbacks
     when isNewPolicy $
-        protocolMakeProposal policy
+        protocolMakeProposal (PseudoConflicting policy)
   where
     callback policyAcceptance = do
         removeCallback
