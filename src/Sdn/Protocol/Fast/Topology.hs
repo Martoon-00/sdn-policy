@@ -56,6 +56,9 @@ instance HasVersionTopologyActions Fast where
             -- (which is quite dumb as-is, but anyway) pick and apply
             -- conflicting policies "Classically".
             Classic.phase1a
+
+            -- Disabled in favor of immediate reaction
+            -- pass
         , topologyListeners =
             versionProtocolListeners def
         }

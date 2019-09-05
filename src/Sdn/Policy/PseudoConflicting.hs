@@ -28,17 +28,6 @@ newtype PseudoConflicting f a = PseudoConflicting { unPseudoConflicting :: a }
 
 instance Wrapped (PseudoConflicting f a)
 
--- instance ( f ~ f1
---          , Hashable a, Hashable b
---          , f ~ (k % n), KnownNat k, KnownNat n
---          ) =>
---          Conflict (PseudoConflicting f a) (PseudoConflicting f1 b) where
---   conflictReason (PseudoConflicting a) (PseudoConflicting b) =
---       let diff = fromIntegral $ hash a - hash b
---       in if diff `mod` reflect (Proxy @n) < reflect (Proxy @k)
---           then Left "Conflicting policies (fake)"
---           else pass
-
 instance ( f ~ f1
          , Conflict (PseudoConflicting f a) (PseudoConflicting f1 b)
          ) =>

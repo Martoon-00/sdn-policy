@@ -6,7 +6,7 @@
 module Main where
 
 import           Control.Lens                 (at, non', (.=), (<<%=), (<<.=), _Empty)
-import           Control.TimeWarp.Timed       (Microsecond, for, ms, runTimedIO, wait)
+import           Control.TimeWarp.Timed       (currentTime, for, ms, runTimedIO, wait)
 import           Data.Coerce                  (coerce)
 import qualified Data.Map                     as M
 import           Formatting                   (formatToString, shown, (%))
@@ -23,7 +23,14 @@ import           Sdn.Policy.OpenFlow
 import           Sdn.Policy.PseudoConflicting
 import           Sdn.Protocol.Node
 
-type ConflictsFrac = TimeLimitMillis 50 (0 % 30)
+type TL = 200  -- average latency
+
+-- type ConflictsFrac = TimeLimitMillis TL (0 % 1)
+-- type ConflictsFrac = TimeLimitMillis TL (1000 % 4419)
+-- type ConflictsFrac = TimeLimitMillis TL (1000 % 3200)
+-- type ConflictsFrac = TimeLimitMillis TL (1000 % 2209)
+type ConflictsFrac = TimeLimitMillis TL (1000 % 1600)
+
 type Policy' = PseudoConflicting ConflictsFrac Policy
 type Configuration' = PseudoConflicting ConflictsFrac Configuration
 
@@ -119,12 +126,16 @@ messageHandler protocolAccess@(ProtocolHandlers{..}, _) sw = do
             let actions = OF.flood
             let out = OF.bufferedPacketOut bufferId (Just inPort) actions
 
+            time <- runTimedIO currentTime
+
             let policy = Policy (xid, sid)
                                 (OF.actionSequenceToList actions)
                                 (coerce protocolProcessId)
-                                (0 :: Microsecond)
+                                time
             installPolicy protocolAccess policy $ \case
-                RejectedT -> putStrLn $ "Policy rejected: " <> pretty policy
+                RejectedT -> do
+                    putStrLn $ "Policy rejected: " <> pretty policy
+                    OF.sendToSwitch sw $ OF.PacketOut xid out
                 AcceptedT -> do
                     putStrLn $ "Policy installed, telling switch: " <> pretty policy
                     OF.sendToSwitch sw $ OF.PacketOut xid out

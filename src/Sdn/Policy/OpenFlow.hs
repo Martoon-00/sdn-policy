@@ -169,7 +169,11 @@ instance (f1 ~ (k % n), KnownNat k, KnownNat n) =>
          Conflict (PseudoConflicting (k % n) Policy) (PseudoConflicting f1 Policy) where
   conflictReason (PseudoConflicting a) (PseudoConflicting b) =
       let diff = fromIntegral $ hash (a, b)
-      in if diff `mod` reflect (Proxy @n) < reflect (Proxy @k)
+      in if and
+          [ diff `mod` reflect (Proxy @n) < reflect (Proxy @k)
+          -- , sort [policyCreatorPid a, policyCreatorPid b] ==
+          --    [ProcessId 1, ProcessId 2]
+          ]
           then Left "Conflicting policies (fake)"
           else pass
 

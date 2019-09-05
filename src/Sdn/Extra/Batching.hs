@@ -6,8 +6,8 @@ module Sdn.Extra.Batching
    ) where
 
 import           Control.Monad.Catch    (handleAll)
-import           Control.TimeWarp.Timed (Microsecond, MonadTimed, for, fork, fork_, fork_, interval,
-                                         ms, throwTo, wait)
+import           Control.TimeWarp.Timed (Microsecond, MonadTimed, for, fork, fork_, interval, ms,
+                                         throwTo, wait)
 import           Data.Default           (Default (..))
 import qualified Data.Text.Buildable
 import           Formatting             (bprint, build, (%))

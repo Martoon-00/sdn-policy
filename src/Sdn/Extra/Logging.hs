@@ -47,8 +47,8 @@ import           GHC.IO.Unsafe               (unsafePerformIO)
 import qualified System.Console.ANSI         as ANSI
 import           Universum                   hiding (pass)
 
-import           Sdn.Extra.Util              (DefaultStM, MonadicMark (..), WrappedM (..),
-                                              coloredF, gray)
+import           Sdn.Extra.Util              (DefaultStM, MonadicMark (..), WrappedM (..), coloredF,
+                                              gray)
 
 -- * Util
 
@@ -224,7 +224,7 @@ instance Monad m => MonadReporting (NoErrorReporting m) where
 
 logError :: (MonadLog m, MonadReporting m) => Text -> m ()
 logError msg = do
-    logInfo $ withColor (ANSI.Dull, ANSI.Red) "Error: " <> msg
+    !_ <- traceM $ withColor (ANSI.Dull, ANSI.Red) "Error: " <> msg
     reportError msg
 
 -- * Pure logging & error reporting
@@ -281,4 +281,3 @@ instance Monad m => MonadLog (DroppingLog m) where
 
 instance Monad m => MonadReporting (DroppingLog m) where
     reportError _ = return ()
-
