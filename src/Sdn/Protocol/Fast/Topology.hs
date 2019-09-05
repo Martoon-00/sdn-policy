@@ -29,7 +29,7 @@ instance HasVersionProtocolListeners Fast where
         { leaderListeners =
             [ listener @Leader Classic.rememberProposal
             , listener @Leader Classic.phase2a
-            , listener @Leader Fast.detectConflicts
+            , listener @Leader (Fast.detectConflicts pass)
             ]
         , acceptorListeners =
             [ listener @Acceptor Classic.phase1b

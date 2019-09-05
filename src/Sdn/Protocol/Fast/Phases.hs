@@ -37,7 +37,7 @@ import           Sdn.Protocol.Versions
 -- this type represents a decision on policy acceptance based on received votes.
 data PolicyChoiceStatus
       -- | We still didn't get enough votes to make any decisions.
-    = TooFewVotes
+    = PolicyChoiceUnknown
       -- | Some value gained so many votes, that no any quorum can accept
       -- another value.
     | OnlyPossible AcceptanceType
@@ -64,7 +64,7 @@ decideOnPolicyStatus votesForPolicy = evalContT $ do
         -- optimization
         let heardFromSome = excludesOtherQuorum votesForPolicy
         unless heardFromSome $
-            finishWith TooFewVotes
+            finishWith PolicyChoiceUnknown
 
     do
         mValueFixated <-
@@ -74,17 +74,18 @@ decideOnPolicyStatus votesForPolicy = evalContT $ do
             finishWith $ PolicyFixated acceptance
 
     do
-        mValueCouldBeChosen <-
-            lift . takeNoMoreThanOne "possibly chosen value" $
-            M.keys $ M.filter excludesOtherQuorum perValueVotes
-        whenJust mValueCouldBeChosen $ \acceptance ->
-            finishWith $ OnlyPossible acceptance
+        let valuesCouldBeChosen =
+              M.keys $ M.filter excludesOtherQuorum perValueVotes
+        case valuesCouldBeChosen of
+            []           -> pass
+            [acceptance] -> finishWith $ OnlyPossible acceptance
+            _            -> finishWith Undecidable
 
     -- TODO: another quorum can go here
     do
         let heardFromQuorum = isQuorum votesForPolicy
         unless heardFromQuorum $
-            finishWith TooFewVotes
+            finishWith PolicyChoiceUnknown
 
     finishWith Undecidable
   where
@@ -183,47 +184,64 @@ delegateToRecovery conflictingPolicies = do
 detectConflicts
     :: forall cstruct m.
        (MonadPhase cstruct m, HasContextOf Leader Fast m)
-    => Fast.AcceptedMsg Leader cstruct -> m ()
-detectConflicts (Fast.AcceptedMsg accId (toList -> cstructDiff)) = do
+    => m () -> Fast.AcceptedMsg Leader cstruct -> m ()
+detectConflicts onConflict (Fast.AcceptedMsg accId (toList -> cstructDiff)) = do
     voteUpdates <- forM cstructDiff $ \policyAcceptance ->
         withProcessStateAtomically $
             rememberVoteForPolicy @cstruct leaderFastVotes accId policyAcceptance
 
     forM_ voteUpdates $ \(policy, oldnewVotesForPolicy) -> do
-        oldnewPolicyStatus <- forM oldnewVotesForPolicy $
-            throwOnFail ProtocolError . decideOnPolicyStatus
+        oldnewPolicyStatus <- forM oldnewVotesForPolicy $ \votes ->
+            throwOnFail ProtocolError $ do
+              status <- decideOnPolicyStatus votes
+              return (isQuorum votes, status)
 
         when (wasChanged oldnewPolicyStatus) $ do
+          -- Some optimization
           case getNew oldnewPolicyStatus of
-            TooFewVotes -> return ()
+            (_, OnlyPossible acceptance) -> do
+                let policyAcceptance = compose (acceptance, policy)
+                withProcessStateAtomically $
+                    leaderHintPolicies . at policyAcceptance . presence .= True
+            _ -> pass
 
-            PolicyFixated acceptance -> do
+          -- Decide whether the destiny of this policy is clear
+          case getNew oldnewPolicyStatus of
+            (_, PolicyFixated acceptance) -> do
                 let policyAcceptance = compose (acceptance, policy)
                 logInfo $ supposedlyLearnedLog policyAcceptance
                 -- traceM $ sformat ("Fixed "%build) policyAcceptance
 
-                -- no need to do anything specific, since decision on policy
-                -- will never change anymore
-
-            OnlyPossible acceptance -> do
-                let policyAcceptance = compose (acceptance, policy)
-                logInfo $ onlyChosenLog policyAcceptance
-
-                withProcessStateAtomically $
-                    leaderHintPolicies . at policyAcceptance . presence .= True
-
-            Undecidable -> do
+            (_, Undecidable) -> do
                 logInfo $ conflictLog policy
 
                 delegateToRecovery (one policy)
                 logInfo "Policy ^ proposed for next classic ballot"
-                traceM $ sformat ("!!!\nUndecided: "%build%"\n!!!\n") policy
+
+                onConflict
+
+            (False, _) -> do
+                -- Didn't get a quorum of messages yet, passing
+                pass
+
+            (True, PolicyChoiceUnknown) -> do
+                logInfo (unknownStatusLog policy)
+                onConflict
+
+            (True, OnlyPossible acceptance) -> do
+                let policyAcceptance = compose (acceptance, policy)
+                logInfo $ onlyChosenLog policyAcceptance
+
+                onConflict
 
           -- traceM $ sformat ("with new votes "%shown) (getNew oldnewVotesForPolicy)
   where
     supposedlyLearnedLog =
         sformat ("Policy "%build%" supposedly has been learned, \
                  \not tracking it further")
+    unknownStatusLog =
+        sformat ("Policy "%build%" has unknown status after getting \
+                 \a quorum of messages")
     onlyChosenLog =
         sformat ("Policy "%build%" is considered possibly chosen")
     conflictLog =
