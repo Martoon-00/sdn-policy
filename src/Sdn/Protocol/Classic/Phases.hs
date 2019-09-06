@@ -181,7 +181,7 @@ phase2b (AcceptRequestMsg bal cstruct) = do
         -- form message
         AcceptedMsg
             <$> use acceptorId
-            <*> use (acceptorCStruct . to totalCStruct)
+            <*> use (acceptorCStruct . to coreCStruct)
 
     whenJust maybeMsg $
         broadcastTo (processesAddresses Learner)
