@@ -168,14 +168,18 @@ instance PracticalCStruct Configuration
 instance (f1 ~ (k % n), KnownNat k, KnownNat n) =>
          Conflict (PseudoConflicting (k % n) Policy) (PseudoConflicting f1 Policy) where
   conflictReason (PseudoConflicting a) (PseudoConflicting b) =
-      let diff = fromIntegral $ hash (a, b)
+      -- Note: no policy should conflict with itself
+      let diff = fromIntegral $ hash' (hash a) * hash b - hash' (hash b) * hash a
       in if and
-          [ diff `mod` reflect (Proxy @n) < reflect (Proxy @k)
+          [ diff `mod` reflect (Proxy @n) > reflect (Proxy @k)
           -- , sort [policyCreatorPid a, policyCreatorPid b] ==
           --    [ProcessId 1, ProcessId 2]
           ]
-          then Left "Conflicting policies (fake)"
+          then Left $ sformat ("Conflicting policies (fake): "%build%" vs "%build) a b
           else pass
+    where
+      -- @hash @Int@ is the same as @id@, thus applying something a bit smarter
+      hash' k = k * 237 + 4315431
 
 -- | Period of time which allowed for conflicts to happen.
 --
