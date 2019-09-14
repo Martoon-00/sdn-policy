@@ -60,7 +60,7 @@ policyName = \case
     MoodyPolicy _ name -> name
 
 instance Conflict Policy Policy where
-    agrees a b | a == b                            = True
+    agrees a b                                     | a == b                            = True
     agrees GoodPolicy{} _                          = True
     agrees _ GoodPolicy{}                          = True
     agrees BadPolicy{} _                           = False

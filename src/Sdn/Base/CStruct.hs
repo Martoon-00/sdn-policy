@@ -114,11 +114,14 @@ type family UnAcceptance cmd where
 type RawCmd cstruct = UnAcceptance (Cmd cstruct)
 
 -- | Command rejection doesn't conflict with any other command.
-instance (Conflict a a, Eq a) => Conflict (Acceptance a) (Acceptance a) where
-    Accepted cmd1 `conflicts` Accepted cmd2 = conflicts cmd1 cmd2
-    Accepted cmd1 `conflicts` Rejected cmd2 = cmd1 == cmd2
-    Rejected cmd1 `conflicts` Accepted cmd2 = cmd1 == cmd2
-    Rejected _ `conflicts` Rejected _ = False
+instance (Conflict a a, Eq a, Buildable a) => Conflict (Acceptance a) (Acceptance a) where
+    Accepted cmd1 `conflictReason` Accepted cmd2 = conflictReason cmd1 cmd2
+    Accepted cmd1 `conflictReason` Rejected cmd2
+      | cmd1 == cmd2 = Left $ "Same policy is accepted and rejected: " <> pretty cmd1
+      | otherwise = pass
+    Rejected cmd1 `conflictReason` Accepted cmd2 =
+      Accepted cmd2 `conflictReason` Rejected cmd1
+    Rejected _ `conflictReason` Rejected _ = pass
 
 instance Buildable p => Buildable (Acceptance p) where
     build = \case
@@ -210,9 +213,10 @@ checkingAgreement f a b = conflictReason a b $> f a b
 checkingConsistency
     :: (Conflict a a, Buildable a, MonadError Text m)
     => a -> m a
-checkingConsistency x
-    | contradictive x = throwError $ "got contradictive cstruct: " <> pretty x
-    | otherwise       = pure x
+checkingConsistency x =
+    either throwError pure $
+    first (("got contradictive cstruct: " <> pretty x <> ": ") <>) $
+    conflictReason x x $> x
 
 -- | Try to add command to cstruct; on fail add denial of that command.
 -- Returns acceptance/denial of command which fit and new cstruct.

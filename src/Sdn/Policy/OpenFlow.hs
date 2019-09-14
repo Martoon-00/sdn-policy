@@ -74,14 +74,14 @@ instance Buildable Policy where
     build = bprint shown
 
 instance Conflict Policy Policy where
-    conflictReason (Policy coord1 action1 _ _) (Policy coord2 action2 _ _) =
+    conflictReason p1@(Policy coord1 action1 _ _) p2@(Policy coord2 action2 _ _) =
         let pack action = M.fromList $ map (\a -> (OF.actionToType a, a)) action
             [at1, at2] = map pack [action1, action2]
             actionsOfSameTypeAreSame = M.intersectionWith (==) at1 at2
         in  if coord1 == coord2 && and actionsOfSameTypeAreSame
-            then Right ()
-            else Left $ sformat ("Policies "%shown%" & "%shown%" conflict!")
-                        action1 action2
+            then Left $ sformat ("Openflow policies "%shown%" & "%shown%" conflict!")
+                        p1 p2
+            else Right ()
 
 instance MessagePack Policy where
     toObject (Policy xid action pid time) = binaryToObject (xid, action, pid, time)
@@ -168,10 +168,10 @@ instance PracticalCStruct Configuration
 instance (f1 ~ (k % n), KnownNat k, KnownNat n) =>
          Conflict (PseudoConflicting (k % n) Policy) (PseudoConflicting f1 Policy) where
   conflictReason (PseudoConflicting a) (PseudoConflicting b) =
-      -- Note: no policy should conflict with itself
+      -- Note: reflexivity and symmetry should still hold
       let diff = fromIntegral $ hash' (hash a) * hash b - hash' (hash b) * hash a
       in if and
-          [ diff `mod` reflect (Proxy @n) > reflect (Proxy @k)
+          [ abs diff `mod` reflect (Proxy @n) > reflect (Proxy @k)
           -- , sort [policyCreatorPid a, policyCreatorPid b] ==
           --    [ProcessId 1, ProcessId 2]
           ]
@@ -197,7 +197,7 @@ instance ( f1 ~ TimeLimitMillis t f, KnownNat t
            -- trace @Text (show (policyTimestamp a) <> " - " <> show (policyTimestamp b) <>
            --               " = " <> show (policyTimestamp a - policyTimestamp b) <>
            --               " vs " <> show time) $
-           policyTimestamp a - policyTimestamp b < convertUnit time
+           abs (policyTimestamp a - policyTimestamp b) < convertUnit time
           then (conflictReason `on` (PseudoConflicting @f)) a b
           else pass
 
