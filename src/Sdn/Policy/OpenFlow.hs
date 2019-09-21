@@ -170,8 +170,10 @@ instance (f1 ~ (k % n), KnownNat k, KnownNat n) =>
   conflictReason (PseudoConflicting a) (PseudoConflicting b) =
       -- Note: reflexivity and symmetry should still hold
       let diff = fromIntegral $ hash' (hash a) * hash b - hash' (hash b) * hash a
+          n = reflect (Proxy @n)
+          k = reflect (Proxy @k)
       in if and
-          [ abs diff `mod` reflect (Proxy @n) > reflect (Proxy @k)
+          [ abs diff `mod` n >= n - k
           -- , sort [policyCreatorPid a, policyCreatorPid b] ==
           --    [ProcessId 1, ProcessId 2]
           ]
