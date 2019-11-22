@@ -10,6 +10,7 @@ module Sdn.Protocol.Classic.Messages
     , PromiseMsg (..)
     , AcceptRequestMsg (..)
     , AcceptedMsg (..)
+    , BallotComplete (..)
     ) where
 
 import           Data.MessagePack             (MessagePack)
@@ -105,3 +106,18 @@ instance MessagePack cstruct => MessagePack (AcceptedMsg cstruct)
 
 declareMessage 15 ''AcceptedMsg
 
+
+-- | Message sent by leader to all nodes to notify about new epoch start.
+data BallotComplete = BallotComplete BallotId
+    deriving (Generic)
+
+instance Buildable BallotComplete where
+    build (BallotComplete b) =
+        bprint ("Ballot "%build%" complete message") b
+
+instance HasMessageShortcut BallotComplete where
+    messageShortcut = mempty
+
+instance MessagePack BallotComplete
+
+declareMessage 16 ''BallotComplete

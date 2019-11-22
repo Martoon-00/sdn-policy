@@ -33,7 +33,7 @@ instance HasVersionProtocolListeners Fast where
             ]
         , acceptorListeners =
             [ listener @Acceptor Classic.phase1b
-            , listener @Acceptor Classic.phase2b
+            , listener @Acceptor $ Classic.phase2b (Fast.acceptPolicies listenersPolicyTargets)
             , listener @Acceptor $ Fast.phase2b listenersPolicyTargets
             ]
         , learnerListeners =

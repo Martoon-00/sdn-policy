@@ -30,9 +30,9 @@ module Sdn.Protocol.Common.Context.Data
     , addUnstableCmds
     , extendCoreCStruct
     , acceptOrRejectIntoStoreS
+    , storeCombination
     ) where
 
-import           Control.Exception      (assert)
 import           Control.Lens           (At (..), Index, IxValue, Ixed, makeLenses, (.=), (<<.=))
 import           Data.Default           (Default (..))
 import qualified Data.Set               as S
@@ -42,7 +42,7 @@ import           Formatting             (Format, bprint, build, later, (%))
 import           Universum
 
 import           Sdn.Base
-import           Sdn.Extra.Util         (listF, pairF, presence)
+import           Sdn.Extra.Util         (listF, pairF, presence, throwOnFail)
 
 -- | Keeps instances for classic and fast versions of algorithm separately.
 data ForBothRoundTypes a = ForBothRoundTypes
@@ -177,17 +177,31 @@ reevalTotalCStruct store@CStructStore{..} =
   where
     attachUnsafe cstruct cmd = either error identity $ addCommand cmd cstruct
 
+-- | Internal function to add unstable command to store.
+addUnstableCmdUnsafe
+    :: (PracticalCStruct cstruct, HasCallStack)
+    => Cmd cstruct -> CStructStore cstruct -> CStructStore cstruct
+addUnstableCmdUnsafe cmd store =
+    store & storedUnstableCmds . at cmd . presence .~ True
+          & storedTotalCStruct %~ either error identity . addCommand cmd
+
+-- | Add a policy to unstable set if it produces no conflict, fail otherwise.
+addUnstableCmd
+    :: (PracticalCStruct cstruct, HasCallStack)
+    => Cmd cstruct -> CStructStore cstruct -> Either Text (CStructStore cstruct)
+addUnstableCmd cmd store =
+    (totalCStruct store `conflictReason` cmd) $> addUnstableCmdUnsafe cmd store
+
 -- | Add a policy to unstable set.
 -- If core policy already has this policy, with same acceptance or not,
 -- nothing happens.
-addUnstableCmd
-    :: PracticalCStruct cstruct
+optionallyAddUnstableCmd
+    :: (PracticalCStruct cstruct, HasCallStack)
     => Cmd cstruct -> CStructStore cstruct -> (Bool, CStructStore cstruct)
-addUnstableCmd cmd store =
+optionallyAddUnstableCmd cmd store =
     if totalCStruct store `conflicts` cmd
         then (False, store)
-        else (True, store & storedUnstableCmds . at cmd . presence .~ True
-                          & storedTotalCStruct %~ either error identity . addCommand cmd)
+        else (True, addUnstableCmdUnsafe cmd store)
 
 -- | Multiple-version of 'addUnstableCmd'. Returns list of successfully added commands.
 addUnstableCmds
@@ -196,7 +210,7 @@ addUnstableCmds
 addUnstableCmds cmds initStore = foldl' attach ([], initStore) cmds
   where
     attach (!applied, !store) cmd =
-        let (added, store') = addUnstableCmd cmd store
+        let (added, store') = optionallyAddUnstableCmd cmd store
         in  (if added then cmd : applied else applied, store')
 
 -- | Replaces core cstruct. It's only valid to extend core cstruct,
@@ -222,13 +236,31 @@ extendCoreCStruct newCStruct store = do
 -- If decision on policy was already present, it is returned
 -- (it may be better to return Nothing in this case, but let it be for now).
 acceptOrRejectIntoStoreS
-    :: (PracticalCStruct cstruct, MonadState (CStructStore cstruct) m)
+    :: (PracticalCStruct cstruct, MonadState (CStructStore cstruct) m, MonadThrow m)
     => RawCmd cstruct -> m (Cmd cstruct)
 acceptOrRejectIntoStoreS policy = do
     total <- gets totalCStruct
     let (policyAcceptance, _) = acceptOrRejectCommand policy total
-    modify $ \store ->
-        let (ok, store') = addUnstableCmd policyAcceptance store
-        in assert ok store'
-    storedUnstableCmds . at policyAcceptance . presence .= True
+    store <- get
+    newStore <- throwOnFail ProtocolError $ addUnstableCmd policyAcceptance store
+    put newStore
     return policyAcceptance
+
+-- | This is 'combination' extended on 'CStructStore'.
+--
+-- This function is needed because core cstruct should be merged accroding to
+-- the classic quorum, while core + unstable policies - following the fast quorum.
+storeCombination
+  :: (PracticalCStruct cstruct, HasMembers, QuorumFamily fastQ, QuorumFamily classicQ)
+  => Proxy classicQ
+  -> Proxy fastQ
+  -> Votes q (CStructStore cstruct)
+  -> Either Text cstruct
+storeCombination (_ :: Proxy classicQ) (_ :: Proxy fastQ) votes = do
+  combCoreCStruct <-
+    first ("core combination: " <>) $
+    combination . fmap coreCStruct $ coerceVotes @classicQ votes
+  combTotalCStruct <-
+    first ("overall combination: " <>) $
+    combination . fmap totalCStruct $ coerceVotes @fastQ votes
+  combCoreCStruct `glb` combTotalCStruct

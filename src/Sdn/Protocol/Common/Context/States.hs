@@ -90,6 +90,10 @@ data AcceptorState pv cstruct = AcceptorState
       -- ^ Identificator of this acceptor, should be read-only
     , _acceptorLastKnownBallotId :: BallotId
       -- ^ Last heard ballotId from leader
+    , _acceptorLastKnownEpochId  :: BallotId
+      -- ^ Current known epoch.
+    , _acceptorFastPending       :: [RawCmd cstruct]
+      -- ^ List of policies waiting for fast round being enabled.
     , _acceptorCStruct           :: CStructStore cstruct
       -- ^ Gathered CStruct so far
     }
@@ -112,7 +116,7 @@ defAcceptorState
     :: forall pv cstruct.
        Default cstruct
     => AcceptorId -> (AcceptorState pv cstruct)
-defAcceptorState id = AcceptorState id def def
+defAcceptorState id = AcceptorState id def def def def
 
 -- * Learner
 
@@ -161,4 +165,3 @@ instance (ProtocolVersion pv, PracticalCStruct cstruct) =>
             _leaderState
             _acceptorsStates
             _learnersStates
-

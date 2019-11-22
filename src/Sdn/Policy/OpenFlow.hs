@@ -9,7 +9,7 @@
 
 module Sdn.Policy.OpenFlow
     ( Policy (..)
-    , Configuration
+    , Configuration (..)
     , PolicyCoord
 
     , policyXid

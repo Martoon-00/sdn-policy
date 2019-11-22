@@ -7,6 +7,7 @@
 
 module Sdn.Protocol.Fast.Phases
     ( propose
+    , acceptPolicies
     , phase2b
     , learn
     , detectConflicts
@@ -14,6 +15,7 @@ module Sdn.Protocol.Fast.Phases
 
 import           Control.Lens                  (at, makePrisms, (%=), (.=))
 import           Control.Monad.Trans.Cont      (ContT (..), evalContT)
+import           Data.List                     (nubBy)
 import qualified Data.Map                      as M
 import qualified Data.Set                      as S
 import           Formatting                    (build, sformat, (%))
@@ -108,36 +110,55 @@ propose policies = do
 
 -- * Phase 2
 
+-- | Handle policy proposal, add it to unstable set in configuration.
+acceptPolicies
+    :: forall cstruct pv m.
+       (MonadPhase cstruct m, HasContextOf Acceptor Fast m)
+    => PolicyTargets cstruct
+    -> NonEmpty (RawCmd cstruct)
+    -> TransactionM (AcceptorState pv cstruct) (m ())
+acceptPolicies policyTargets policiesToApply = do
+    logInfo $ sformat ("Expected fast accepted: "%listF ", " build)
+                      (nubBy conflicts . map Accepted $ toList policiesToApply)
+
+    appliedPolicies <-
+        zoom acceptorCStruct $
+        mapM acceptOrRejectIntoStoreS policiesToApply
+
+    logInfo $ logFastApplied appliedPolicies
+
+    accId <- use acceptorId
+    let leaderMsg = Fast.AcceptedMsg @Leader @cstruct accId appliedPolicies
+    let learnersMsg =
+            [ (targets, Fast.AcceptedMsg @Learner @cstruct accId policies)
+            | (targets, policies) <-
+                groupPolicyTargets policyTargets acceptanceCmd (toList appliedPolicies)
+            ]
+    return $ do
+      broadcastTo (processAddresses Leader) leaderMsg
+      forM_ learnersMsg $ \(learners, msg) ->
+          broadcastTo (processAddress <$> learners) msg
+  where
+    logFastApplied =
+        sformat ("List of fast applied policies:"
+                %"\n    "%listF ", " build)
+
 phase2b
     :: forall cstruct m.
        (MonadPhase cstruct m, HasContextOf Acceptor Fast m)
     => PolicyTargets cstruct -> Fast.ProposalMsg cstruct -> m ()
 phase2b policyTargets (Fast.ProposalMsg policiesToApply) = do
     logInfo "Got proposal"
-    (leaderMsg, learnersMsg) <- withProcessStateAtomically $ do
-        appliedPolicies <-
-            zoom (acceptorCStruct) $
-            mapM acceptOrRejectIntoStoreS policiesToApply
 
-        logInfo $ logFastApplied appliedPolicies
-
-        accId <- use acceptorId
-        let leaderMsg = Fast.AcceptedMsg @Leader @cstruct accId appliedPolicies
-        let learnersMsg =
-                [ (targets, Fast.AcceptedMsg @Learner @cstruct accId policies)
-                | (targets, policies) <-
-                    groupPolicyTargets policyTargets acceptanceCmd (toList appliedPolicies)
-                ]
-        pure $ (leaderMsg, learnersMsg)
-
-    broadcastTo (processAddresses Leader) leaderMsg
-    forM_ learnersMsg $ \(learners, msg) ->
-        broadcastTo (processAddress <$> learners) msg
-  where
-    logFastApplied =
-        sformat ("List of fast applied policies:"
-                %"\n    "%listF ", " build)
-
+    join $ withProcessStateAtomically $ do
+      inClassic <- acceptorIsInClassicRound
+      if inClassic
+        then do
+          logInfo "Fast rounds blocked, will apply policy later"
+          acceptorFastPending %= (<> toList policiesToApply)
+          return pass
+        else do
+          acceptPolicies policyTargets policiesToApply
 
 -- * Learning
 
@@ -147,7 +168,8 @@ learn
     => LearningCallback m -> Fast.AcceptedMsg Learner cstruct -> m ()
 learn callback (Fast.AcceptedMsg accId (toList -> cstructDiff)) = do
     voteUpdates <- withProcessStateAtomically $
-        forM cstructDiff $ rememberUnstableCmdVote learnerVotes accId
+        forM cstructDiff $
+        rememberUnstableCmdVote learnerVotes accId
 
     fixatedValues <- fmap catMaybes . forM voteUpdates $ \(policy, votesForPolicy) -> do
         policyStatus <- forM votesForPolicy $
@@ -210,10 +232,9 @@ detectConflicts onConflict (Fast.AcceptedMsg accId (toList -> cstructDiff)) = do
             (_, PolicyFixated acceptance) -> do
                 let policyAcceptance = compose (acceptance, policy)
                 logInfo $ supposedlyLearnedLog policyAcceptance
-                -- traceM $ sformat ("Fixed "%build) policyAcceptance
 
             (_, Undecidable) -> do
-                logInfo $ conflictLog policy
+                logInfo $ undecidableLog policy
 
                 delegateToRecovery (one policy)
                 logInfo "Policy ^ proposed for next classic ballot"
@@ -233,8 +254,6 @@ detectConflicts onConflict (Fast.AcceptedMsg accId (toList -> cstructDiff)) = do
                 logInfo $ onlyChosenLog policyAcceptance
 
                 onConflict
-
-          -- traceM $ sformat ("with new votes "%shown) (getNew oldnewVotesForPolicy)
   where
     supposedlyLearnedLog =
         sformat ("Policy "%build%" supposedly has been learned, \
@@ -244,7 +263,6 @@ detectConflicts onConflict (Fast.AcceptedMsg accId (toList -> cstructDiff)) = do
                  \a quorum of messages")
     onlyChosenLog =
         sformat ("Policy "%build%" is considered possibly chosen")
-    conflictLog =
-        sformat ("Heard about "%build%" by quorum, but no value \
-                 \still has been even potentially chosen. \
+    undecidableLog =
+        sformat ("No quorum will be gathered on policy "%build%" \
                  \Declaring policy conflict!")

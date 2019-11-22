@@ -9,8 +9,8 @@
 
 module Sdn.Base.Quorum where
 
-import           Control.Lens        (At (..), Index, Iso', IxValue, Ixed (..),
-                                      Wrapped (..), mapMOf, traverseOf)
+import           Control.Lens        (At (..), Index, Iso', IxValue, Ixed (..), Wrapped (..),
+                                      mapMOf, traverseOf)
 import           Data.List           (groupBy, subsequences)
 import qualified Data.Map            as M
 import           Data.Reflection     (Reifies (..))
@@ -177,4 +177,3 @@ instance Reifies ThreeQuarters Rational where
 
 type ClassicMajorityQuorum = MajorityQuorum OneHalf
 type FastMajorityQuorum = MajorityQuorum ThreeQuarters
-

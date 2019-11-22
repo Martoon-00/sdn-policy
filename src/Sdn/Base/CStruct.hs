@@ -188,7 +188,7 @@ class ( Conflict (Cmd cstruct) (Cmd cstruct)
     combination = combinationDefault
 
 -- | 'CStruct', where commands are 'Acceptance's.
-type CStructA cstruct cmd = (CStruct cstruct, Cmd cstruct ~ Acceptance cmd)
+type CStructA cstruct cmd = (CStruct cstruct, Cmd cstruct ~ Acceptance cmd, Show cstruct, Show cmd)
 
 -- | Construct cstruct from single command.
 liftCommand

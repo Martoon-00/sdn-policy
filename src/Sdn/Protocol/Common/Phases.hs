@@ -16,9 +16,10 @@ module Sdn.Protocol.Common.Phases
     , groupPolicyTargets
 
     , MonadPhase
+    , acceptorIsInClassicRound
     , updateLearnedValue
     , onFixatedPolicies
-    , learnCStruct
+    , learnCStructClassic
     , rememberVoteForPolicy
     , rememberUnstableCmdVote
     , confirmCommitted
@@ -39,15 +40,13 @@ import           Universum
 
 import           Sdn.Base
 import           Sdn.Extra                    (MFunctored (..), MonadLog, MonadReporting,
-                                               OldNew (..), PreparedAction (..),
-                                               decompose, foldlF', logError, logInfo,
-                                               presence, throwOnFail, zoom, (<<<%=))
+                                               OldNew (..), PreparedAction (..), decompose, foldlF',
+                                               logError, logInfo, presence, throwOnFail, zoom)
 import           Sdn.Extra.Batching
 import           Sdn.Extra.Networking
 import           Sdn.Protocol.Common.Context
 import           Sdn.Protocol.Common.Messages
 import           Sdn.Protocol.Processes
-import           Sdn.Protocol.Versions
 
 -- | Action which makes a proposal.
 type MakeProposal m = PreparedAction (DeclaredRawCmd m) m
@@ -119,6 +118,17 @@ type MonadPhase cstruct m =
     , PracticalCStruct cstruct
     )
 
+-- * Acceptor
+
+-- | Whether currently acceptor is participating in classic round.
+acceptorIsInClassicRound :: TransactionM (AcceptorState pv cstruct) Bool
+acceptorIsInClassicRound = do
+  ballotId <- use acceptorLastKnownBallotId
+  epochId <- use acceptorLastKnownEpochId
+  case ballotId `compare` epochId of
+    LT -> error "Ballot number is fewer than epoch number"
+    EQ -> return False
+    GT -> return True
 
 -- * Learning
 
@@ -178,14 +188,13 @@ onFixatedPolicies (LearningCallback callback) policyAcceptances = do
                         submit (evalAddr pid) (CommittedMsg @cstruct ps)
 
 -- | Learning phase of algorithm.
-learnCStruct
+learnCStructClassic
     :: (MonadPhase cstruct m, HasContextOf Learner pv m)
     => LearningCallback m
-    -> (Votes (VersionQuorum pv) cstruct -> Either Text cstruct)
     -> AcceptorId
     -> cstruct
     -> m ()
-learnCStruct callback combinator accId (cstruct :: cstruct) = do
+learnCStructClassic callback accId (cstruct :: cstruct) = do
     newLearnedPolicies <- withProcessStateAtomically $ do
         -- rewrite cstruct kept for this acceptor
         zoom (learnerVotes . at accId . non def) $ do
@@ -198,6 +207,9 @@ learnCStruct callback combinator accId (cstruct :: cstruct) = do
                 Right store' ->
                     put store'
 
+        let classicQuorum = Proxy @(MajorityQuorum OneHalf)
+        let fastQuorum = Proxy @(MajorityQuorum ThreeQuarters)
+
         -- update total learned cstruct
         -- it should be safe (i.e. it does not induce commands losses)
         -- to learn votes even from fast round if recovery is going
@@ -205,7 +217,7 @@ learnCStruct callback combinator accId (cstruct :: cstruct) = do
         -- always holds.
         learnedDifference <-
             use learnerVotes
-            >>= throwOnFail ProtocolError . combinator . fmap totalCStruct
+            >>= throwOnFail ProtocolError . storeCombination classicQuorum fastQuorum
             >>= updateLearnedValue
 
         return learnedDifference
@@ -244,8 +256,22 @@ rememberUnstableCmdVote
     -> Cmd cstruct
     -> TransactionM s (RawCmd cstruct, OldNew (Votes qf AcceptanceType))
 rememberUnstableCmdVote atStore accId policyAcc = do
-    change <- atStore <<<%= (at accId . non def %~ snd . addUnstableCmd policyAcc)
-    let policyVotes = fmap @OldNew takeVotesForPolicy change
+    oldVotes <- use atStore
+    let oldAccVote = oldVotes ^. at accId . non def
+
+    -- If application of new policy decision fails, it means that the
+    -- corresponding acceptor has participated in classic round where
+    -- @policyAcc@ have been removed, and message from that acceptor to us
+    -- from classic round has outrun the one from the fast round
+    -- (which we are processing at the moment).
+    let newAccVote =
+          either (const oldAccVote) identity $
+          addUnstableCmd policyAcc oldAccVote
+    let newVotes = oldVotes & at accId . non def .~ newAccVote
+    atStore .= newVotes
+    let policyVotes =
+           fmap takeVotesForPolicy
+           OldNew{ getOld = oldVotes, getNew = newVotes }
     return (acceptanceCmd policyAcc, policyVotes)
   where
     policy = acceptanceCmd policyAcc

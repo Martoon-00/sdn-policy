@@ -31,6 +31,8 @@ instance Default BallotId where
 instance Arbitrary BallotId where
     arbitrary = BallotId . getNonNegative <$> arbitrary
 
+-- | Epoch number - id of last finished classic ballot.
+type EpochId = BallotId
 
 -- | Identifier of abstract process.
 newtype ProcessId pt = ProcessId Int

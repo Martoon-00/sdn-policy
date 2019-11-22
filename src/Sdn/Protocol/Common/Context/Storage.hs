@@ -37,4 +37,3 @@ withProcessStateAtomically modifier = do
     ProcessContext{..} <- ask
     MemStorage{..} <- getMemStorage
     launchPureLog ({-# SCC state_modification #-} atomicallyModifyMemStorage pcState) modifier
-

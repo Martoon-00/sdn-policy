@@ -10,10 +10,11 @@ module Sdn.Protocol.Classic.Phases
     , phase1b
     , phase2a
     , phase2b
+    , noteBallotCompletion
     , learn
     ) where
 
-import           Control.Lens                  (at, non, to, (%=), (.=), (<+=))
+import           Control.Lens                  (at, non, to, (%=), (.=), (<+=), (<<.=))
 import qualified Data.Set                      as S
 import           Formatting                    (build, sformat, (%))
 import           Universum
@@ -130,6 +131,7 @@ phase2a (PromiseMsg accId bal cstruct) = do
     maybeMsg <- withProcessStateAtomically $ runMaybeT $ do
         -- add received vote to set of votes stored locally for this ballot,
         -- initializing this set if doesn't exist yet
+
         oldnewVotes <- leaderVotes . at bal . non mempty <<<%= addVote accId cstruct
 
         when (isMinQuorum $ getNew oldnewVotes) $
@@ -142,20 +144,20 @@ phase2a (PromiseMsg accId bal cstruct) = do
         if isMinQuorum (getNew oldnewVotes) || wasChanged oldnewCombined
         then do
             cstructWithNewPolicies <- lift $ applyWaitingPolicies bal (getNew oldnewCombined)
-
-            logInfo $ "Broadcasting new cstruct: " <> pretty cstructWithNewPolicies
             pure $ AcceptRequestMsg bal cstructWithNewPolicies
         else exit
 
     -- when got a message to submit - broadcast it
-    whenJust maybeMsg $
+    whenJust maybeMsg $ do
         broadcastTo (processesAddresses Acceptor)
   where
 
 phase2b
     :: (MonadPhase cstruct m, HasContextOf Acceptor pv m)
-    => AcceptRequestMsg cstruct -> m ()
-phase2b (AcceptRequestMsg bal cstruct) = do
+    => (NonEmpty (RawCmd cstruct) -> TransactionM (AcceptorState pv cstruct) (m ()))
+    -> AcceptRequestMsg cstruct
+    -> m ()
+phase2b onCompletion (AcceptRequestMsg bal cstruct) = do
     maybeMsg <- withProcessStateAtomically $ runMaybeT $ do
         localBallotId <- use $ acceptorLastKnownBallotId
         coreCstruct <- use $ acceptorCStruct . to coreCStruct
@@ -186,10 +188,38 @@ phase2b (AcceptRequestMsg bal cstruct) = do
     whenJust maybeMsg $
         broadcastTo (processesAddresses Learner)
 
+    -- TODO: no wrapper
+    noteBallotCompletion onCompletion (BallotComplete bal)
+
+
+-- TODO: we also need to report last completed ballot periodically for resilience.
+noteBallotCompletion
+    :: (MonadPhase cstruct m, HasContextOf Acceptor pv m)
+    => (NonEmpty (RawCmd cstruct) -> TransactionM (AcceptorState pv cstruct) (m ()))
+    -> BallotComplete -> m ()
+noteBallotCompletion onCompletion (BallotComplete ballotId) = do
+    logInfo "Ballot has been reported to complete"
+    join $ withProcessStateAtomically $ do
+        wasInClassic <- acceptorIsInClassicRound
+
+        acceptorLastKnownEpochId %= max ballotId
+        -- Current ballot is always not smaller than current epoch number.
+        acceptorLastKnownBallotId %= max ballotId
+
+        isInClassic <- acceptorIsInClassicRound
+        if wasInClassic && not isInClassic
+          then do
+              logInfo "Fast phases unlocked"
+              policies <- acceptorFastPending <<.= []
+              case nonEmpty policies of
+                  Nothing        -> return pass
+                  Just policies' -> onCompletion policies'
+          else return pass
+
 -- * Learning
 
 learn
     :: (MonadPhase cstruct m, HasContextOf Learner pv m)
     => LearningCallback m -> AcceptedMsg cstruct -> m ()
 learn callback (AcceptedMsg accId cstruct) = do
-  learnCStruct callback combination accId cstruct
+  learnCStructClassic callback accId cstruct

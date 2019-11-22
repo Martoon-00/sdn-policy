@@ -52,6 +52,7 @@ instance (AtCmd cfg, Cmd cfg ~ Acceptance rawCmd) =>
 instance ( CStruct cfg, Hashable rawCmd
          , Cmd cfg ~ Acceptance rawCmd
          , Eq rawCmd
+         , Buildable rawCmd
          , Conflict (PseudoConflicting f rawCmd)
                     (PseudoConflicting f rawCmd)
          , Conflict (PseudoConflicting f cfg)

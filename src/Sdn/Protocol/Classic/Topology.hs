@@ -32,7 +32,7 @@ instance HasVersionProtocolListeners Classic where
             ]
         , acceptorListeners =
             [ listener @Acceptor phase1b
-            , listener @Acceptor phase2b
+            , listener @Acceptor $ phase2b (\_ -> return pass)
             ]
         , learnerListeners =
             [ listener @Learner $ learn callback

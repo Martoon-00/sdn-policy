@@ -29,7 +29,8 @@ newtype ProposalMsg cstruct = ProposalMsg (NonEmpty (RawCmd cstruct))
 
 instance Buildable (RawCmd cstruct) =>
          Buildable (ProposalMsg cstruct) where
-    build (ProposalMsg p) = bprint ("Proposal message "%listF "," build) p
+    build (ProposalMsg p) =
+      bprint ("Proposal message "%listF "," build) p
 
 instance HasMessageShortcut (ProposalMsg cstruct) where
     messageShortcut = "rem" <> "f"
@@ -43,7 +44,7 @@ declareMessage 21 ''ProposalMsg
 -- | Message sent by acceptor to learners, notifying them about
 -- new value.
 -- This can be sent to leader as well. Thus, recipient is specified
--- in type, because networing enging doesn't allow listening
+-- in type, because networking enging doesn't allow listening
 -- for same message from different places.
 data AcceptedMsg recip cstruct = AcceptedMsg AcceptorId (NonEmpty $ Cmd cstruct)
     deriving (Generic)
@@ -65,5 +66,3 @@ instance RpcRequest (AcceptedMsg Leader cstruct) where
 instance RpcRequest (AcceptedMsg Learner cstruct) where
     type Response (AcceptedMsg Learner cstruct) = ()
     messageId _ = 23
-
-
