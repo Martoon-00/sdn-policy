@@ -22,8 +22,8 @@ import           Sdn.Policy.PseudoConflicting
 import           Sdn.Protocol.Node
 
 type ConflictsFrac = TimeLimitMillis 50 (1 % 30)
-
-instance PracticalCStruct (PseudoConflicting ConflictsFrac Configuration)
+type Policy' = PseudoConflicting ConflictsFrac Policy
+type Configuration' = SimpleConfig Policy'
 
 main :: IO ()
 main = do
@@ -35,7 +35,7 @@ main = do
 
     protocolHandlers <-
         runProtocolNode
-            @(PseudoConflicting ConflictsFrac Configuration)
+            @Configuration'
             protocolOptions curProcessId
             (protocolCallbacks installedCounter rejectedCounter)
 

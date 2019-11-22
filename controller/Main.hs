@@ -34,7 +34,7 @@ type ConflictsFrac = TimeLimitMillis TL (1000 % 1600)
 type Policy' = PseudoConflicting ConflictsFrac Policy
 type Configuration' = PseudoConflicting ConflictsFrac Configuration
 
-instance PracticalCStruct (PseudoConflicting ConflictsFrac Configuration)
+instance PracticalCStruct Configuration'
 
 
 main :: IO ()

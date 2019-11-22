@@ -32,10 +32,13 @@ library
                        Sdn.Protocol.Classic
                        Sdn.Protocol.Fast
                        Sdn.Protocol.Node
-  other-modules:       Sdn.Base.CStruct
+
+  other-modules:
+                       Sdn.Base.CStruct
                        Sdn.Base.Error
                        Sdn.Base.Settings
                        Sdn.Base.Quorum
+                       Sdn.Base.SimpleConfig
                        Sdn.Base.Types
 
                        Sdn.Protocol.Classic.Messages
